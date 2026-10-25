@@ -15,7 +15,7 @@ import { EASE_OUT, project, rubberband } from './motion';
 /** Width of the revealed button, as in Mail and Clock. */
 const ACTION_WIDTH = 88;
 /** Past this share of the row, letting go deletes without tapping the button. */
-const FULL_SWIPE = 0.5;
+const FULL_SWIPE = 0.55;
 const SETTLE = { duration: 350, dampingRatio: 1 };
 
 // Captured by the gesture worklets, which call back into JS with scheduleOnRN.
@@ -24,6 +24,11 @@ const disarmHaptic = haptics.light;
 
 /** Only one row stays open at a time, as in iOS lists. */
 let closeOpenRow: (() => void) | null = null;
+
+/** Closes the row left open, e.g. when the list starts scrolling, as iOS does. */
+export function closeOpenSwipeRow(): void {
+  closeOpenRow?.();
+}
 
 type SwipeToDeleteProps = {
   children: ReactNode;
@@ -146,11 +151,14 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina' }
   const contentStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
   // The red layer sits behind the row and shows where the row has moved away.
   const actionStyle = useAnimatedStyle(() => ({ opacity: x.get() < -0.5 ? 1 : 0 }));
-  // At rest the label sits at the right; once armed it follows the row's edge.
+  // As in Messages and Mail: the label stays centred in the red area while it grows, and once a
+  // full swipe is armed it jumps to the row's edge and follows the finger.
   const labelStyle = useAnimatedStyle(() => {
-    const reveal = -x.get();
-    const shift = width.get() - ACTION_WIDTH + armedProgress.get() * (ACTION_WIDTH - reveal);
-    return { transform: [{ translateX: Math.max(0, shift) }] };
+    const rowWidth = width.get();
+    const reveal = Math.max(0, -x.get());
+    const centred = rowWidth - reveal / 2 - ACTION_WIDTH / 2;
+    const atEdge = rowWidth - reveal;
+    return { transform: [{ translateX: centred + (atEdge - centred) * armedProgress.get() }] };
   });
 
   return (

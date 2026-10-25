@@ -119,7 +119,11 @@ export default function AddScreen() {
     <ScreenScroll>
       <Stack.Screen
         options={{
-          title: forDiary ? `${mealLabel(meal)} · ${formatDayTitle(date)}` : 'Aggiungi ingrediente',
+          title: forDiary
+            ? `${mealLabel(meal)} · ${formatDayTitle(date)}`
+            : mode === 'ingredient'
+              ? 'Aggiungi ingrediente'
+              : 'Aggiungi ai preferiti',
         }}
       />
       <Stack.Toolbar placement="left">

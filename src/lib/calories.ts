@@ -22,3 +22,11 @@ export function remainingKcal(eaten: number, target: number): { kcal: number; ov
   const remaining = target - eaten;
   return { kcal: Math.abs(remaining), over: remaining < 0 };
 }
+
+/**
+ * Fibre goal from the day's calories: 14 g every 1000 kcal, as in the US dietary guidelines,
+ * and never below the 25 g a day EFSA considers adequate for adults.
+ */
+export function fiberTarget(kcal: number): number {
+  return Math.max(25, Math.round((kcal / 1000) * 14));
+}

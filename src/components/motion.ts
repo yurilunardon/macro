@@ -3,10 +3,12 @@ import { Easing } from 'react-native-reanimated';
 /** Strong ease-out for things entering, leaving or settling. */
 export const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 
-/** Where a flick would come to rest if it kept slowing down: Apple's exponential decay. */
-export function project(velocity: number): number {
+/**
+ * Where a flick would come to rest if it kept slowing down: Apple's exponential decay. 0.998 is
+ * UIScrollView's normal deceleration, 0.99 its "fast" one used for paging.
+ */
+export function project(velocity: number, rate = 0.998): number {
   'worklet';
-  const rate = 0.998;
   return ((velocity / 1000) * rate) / (1 - rate);
 }
 

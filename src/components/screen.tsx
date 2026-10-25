@@ -4,6 +4,8 @@ import { ScrollView, StyleSheet, type ScrollViewProps } from 'react-native';
 import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
+import { closeOpenSwipeRow } from './swipe-to-delete';
+
 /**
  * Scrollable screen body. It must be the first child of the screen so iOS can collapse the
  * large title and inset the content under the header and tab bar.
@@ -18,6 +20,7 @@ export function ScreenScroll({ children, ...props }: { children: ReactNode } & S
       keyboardDismissMode="interactive"
       style={{ backgroundColor: theme.background }}
       contentContainerStyle={styles.content}
+      onScrollBeginDrag={closeOpenSwipeRow}
       {...props}>
       {children}
     </ScrollView>

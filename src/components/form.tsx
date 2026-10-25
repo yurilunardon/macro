@@ -55,38 +55,7 @@ export function FieldRow({
   );
 }
 
-type SegmentedProps<T extends string> = {
-  options: readonly { key: T; label: string }[];
-  value: T;
-  onChange: (value: T) => void;
-};
-
-export function Segmented<T extends string>({ options, value, onChange }: SegmentedProps<T>) {
-  const theme = useTheme();
-  return (
-    <View style={[styles.segmented, { backgroundColor: theme.track }]} accessibilityRole="tablist">
-      {options.map((option) => {
-        const selected = option.key === value;
-        return (
-          <Pressable
-            key={option.key}
-            onPress={() => {
-              if (selected) return;
-              haptics.selection();
-              onChange(option.key);
-            }}
-            accessibilityRole="tab"
-            accessibilityState={{ selected }}
-            style={[styles.segment, selected && { backgroundColor: theme.card }]}>
-            <AppText variant="footnote" weight={selected ? '600' : '500'} numberOfLines={1}>
-              {option.label}
-            </AppText>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
+export { Segmented } from './segmented';
 
 type ChipProps = { label: string; selected?: boolean; onPress: () => void };
 
@@ -130,21 +99,6 @@ const styles = StyleSheet.create({
   },
   textInput: { fontVariant: [] },
   suffix: { minWidth: 28 },
-  segmented: {
-    flexDirection: 'row',
-    borderRadius: Radius.sm + 1,
-    borderCurve: 'continuous',
-    padding: 2,
-  },
-  segment: {
-    flex: 1,
-    minHeight: 32,
-    alignItems: 'center',
-    justifyContent: 'center',
-    borderRadius: Radius.sm - 1,
-    borderCurve: 'continuous',
-    paddingHorizontal: Spacing.xs,
-  },
   chip: {
     minHeight: 36,
     paddingHorizontal: Spacing.md,

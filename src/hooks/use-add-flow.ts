@@ -5,8 +5,11 @@ import { isMealKey, mealForTime, type MealKey } from '@/lib/meals';
 
 type RawParams = { meal?: string; date?: string; foodId?: string; barcode?: string; mode?: string };
 
-/** "diary" logs the chosen food; "ingredient" adds it to the recipe being edited. */
-export type AddFlowMode = 'diary' | 'ingredient';
+/**
+ * "diary" logs the chosen food; "ingredient" adds it to the recipe being edited; "favorite"
+ * stars it, from Profilo → I miei alimenti → Preferiti.
+ */
+export type AddFlowMode = 'diary' | 'ingredient' | 'favorite';
 
 export type AddFlowParams = {
   meal: MealKey;
@@ -24,7 +27,7 @@ export function useAddFlowParams(): AddFlowParams {
   const foodId = raw.foodId ? Number(raw.foodId) : NaN;
   const meal = isMealKey(raw.meal) ? raw.meal : mealForTime();
   const date = isDateKey(raw.date) ? raw.date : todayKey();
-  const mode: AddFlowMode = raw.mode === 'ingredient' ? 'ingredient' : 'diary';
+  const mode: AddFlowMode = raw.mode === 'ingredient' || raw.mode === 'favorite' ? raw.mode : 'diary';
   return {
     meal,
     date,

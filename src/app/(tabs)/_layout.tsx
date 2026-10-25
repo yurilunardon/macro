@@ -7,8 +7,8 @@ export default function TabsLayout() {
   return (
     <NativeTabs tintColor={theme.accent}>
       <NativeTabs.Trigger name="(diary)">
-        <NativeTabs.Trigger.Label>Diario</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'book', selected: 'book.fill' }} md="menu_book" />
+        <NativeTabs.Trigger.Label>Alimentazione</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="fork.knife" md="restaurant" />
       </NativeTabs.Trigger>
       <NativeTabs.Trigger name="progress">
         <NativeTabs.Trigger.Label>Progressi</NativeTabs.Trigger.Label>

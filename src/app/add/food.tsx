@@ -214,6 +214,13 @@ function FoodDetail({
   const isOwnRecipe = mode === 'ingredient' && draft.id === food.id;
 
   const add = async () => {
+    if (mode === 'favorite') {
+      await setFavorite(db, food.id, true);
+      haptics.success();
+      toast.show('Aggiunto ai preferiti', 'star.fill');
+      close();
+      return;
+    }
     if (quantity === null) return;
     if (mode === 'ingredient') {
       recipeDraft.addIngredient({
@@ -324,9 +331,17 @@ function FoodDetail({
 
       <View style={styles.addButton}>
         <Button
-          title={mode === 'ingredient' ? 'Aggiungi alla ricetta' : `Aggiungi a ${mealLabel(meal).toLowerCase()}`}
+          title={
+            mode === 'favorite'
+              ? food.favorite
+                ? 'È già tra i preferiti'
+                : 'Aggiungi ai preferiti'
+              : mode === 'ingredient'
+                ? 'Aggiungi alla ricetta'
+                : `Aggiungi a ${mealLabel(meal).toLowerCase()}`
+          }
           onPress={() => void add()}
-          disabled={quantity === null || isOwnRecipe}
+          disabled={mode === 'favorite' ? food.favorite : quantity === null || isOwnRecipe}
           loading={adding}
         />
       </View>

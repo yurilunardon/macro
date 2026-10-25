@@ -56,6 +56,20 @@ Lista di controlli per la prima prova, da fare prima in **Expo Go** e poi con l'
 - [ ] **Copia**: nel Diario tieni premuta una voce → **Copia in oggi/domani**. Il pulsante **⋯** in alto a sinistra copia o svuota il giorno intero.
 - [ ] **CSV**: Profilo → Diario in CSV → apri il file con Numbers: colonne separate, decimali con la virgola, accenti corretti.
 
+## Novità della versione 1.4
+
+- [ ] **Nome**: la prima tab si chiama **Alimentazione**, con l'icona di forchetta e coltello.
+- [ ] **Settimana**: sotto la data c'è la settimana da lunedì a domenica, con un piccolo anello per giorno. Tocca un giorno: il cerchio scuro scorre fin lì. Scorri la striscia a sinistra o a destra: cambia settimana.
+- [ ] **Pagine dei giorni**: trascina l'anello a sinistra. Il giorno dopo entra da destra già con i suoi dati: nessun numero del giorno prima, neanche per un istante. Lascia a metà: torna indietro. Un colpo veloce basta per cambiare giorno.
+- [ ] **Oggi**: su un altro giorno compare il pulsante **Oggi** accanto alla data.
+- [ ] **Nutrienti**: nel riquadro ci sono 4 caselle, Proteine, Carboidrati, Grassi e **Fibre**, con assunte / obiettivo. Toccane una: si apre un foglio con gli alimenti da cui arriva quel nutriente, dal più grande, con la percentuale. Nel foglio puoi passare da un nutriente all'altro.
+- [ ] **Allenamento/Riposo**: è un menu dentro il riquadro, sotto le kcal rimanenti, con la spunta su quello attuale.
+- [ ] **Pasti**: ogni pasto è una sola card. Nell'intestazione ci sono icona, nome, macro in pillole colorate e kcal totali; sotto, le voci, con macro in pillole e kcal a destra. Il testo ha il suo margine a sinistra.
+- [ ] **Selettori**: in I miei alimenti, Progressi e nella scheda di un alimento i selettori sono quelli di sistema, e la selezione scorre da un'opzione all'altra.
+- [ ] **Swipe**: scorrendo poco, «Elimina» resta centrato nell'area rossa che si allarga. Oltre metà riga si aggancia al bordo della riga e la segue, con un colpetto. Con una riga aperta, se scorri la pagina la riga si richiude.
+- [ ] **Scanner**: in alto a destra c'è la **X** per chiuderlo.
+- [ ] **I miei alimenti**: in Creati da me c'è **Crea un alimento**; in Preferiti c'è **Aggiungi un preferito**, che apre la ricerca: scegli un alimento → **Aggiungi ai preferiti**. Nei preferiti lo swipe dice «Togli» e li toglie solo dai preferiti.
+
 ## Novità della versione 1.3
 
 - [ ] **Titolo grande**: nel Diario scorri piano verso il basso. «Diario» deve rimpicciolirsi e andare al centro in modo fluido, seguendo il dito, senza scatti. Idem in Progressi e Profilo.

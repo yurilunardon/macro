@@ -77,6 +77,17 @@ export function formatWeekdayInitial(key: DateKey): string {
   return weekdayShort.format(fromDateKey(key)).toUpperCase();
 }
 
+/** The seven days, Monday first as in Italy, of the week containing `key`. */
+export function weekOf(key: DateKey): DateKey[] {
+  const monday = addDays(key, -((fromDateKey(key).getDay() + 6) % 7));
+  return Array.from({ length: 7 }, (_, i) => addDays(monday, i));
+}
+
+/** "Domenica 25 ottobre". */
+export function formatLongDate(key: DateKey): string {
+  return capitalize(weekdayDayMonth.format(fromDateKey(key)));
+}
+
 /** Day of the week as in Date.getDay(): 0 is Sunday. */
 export function weekdayOf(key: DateKey): number {
   return fromDateKey(key).getDay();

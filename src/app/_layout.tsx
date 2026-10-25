@@ -41,6 +41,15 @@ export default function RootLayout() {
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="add" options={{ presentation: 'modal', headerShown: false }} />
               <Stack.Screen
+                name="nutrients"
+                options={{
+                  presentation: 'formSheet',
+                  sheetAllowedDetents: [0.7, 1],
+                  sheetGrabberVisible: true,
+                  headerShown: false,
+                }}
+              />
+              <Stack.Screen
                 name="entry/[id]"
                 options={{
                   presentation: 'formSheet',

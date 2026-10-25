@@ -9,7 +9,7 @@ import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { Icon } from '@/components/icon';
 import { Radius, Spacing } from '@/constants/theme';
-import { useAddFlowParams } from '@/hooks/use-add-flow';
+import { useAddFlowParams, useCloseAddFlow } from '@/hooks/use-add-flow';
 import { useTheme } from '@/hooks/use-theme';
 import { haptics } from '@/services/haptics';
 
@@ -20,6 +20,7 @@ export default function ScanScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
+  const close = useCloseAddFlow();
   const { forward } = useAddFlowParams();
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
@@ -60,14 +61,20 @@ export default function ScanScreen() {
   };
 
   // White header over the camera; on the light permission screen white would be invisible.
+  // The X closes the whole sheet: swiping it down works too, but is not obvious.
   const header = (
-    <Stack.Screen
-      options={
-        permission?.granted
-          ? { headerTintColor: '#FFFFFF', headerTitleStyle: { color: '#FFFFFF' } }
-          : { headerTintColor: theme.accent, headerTitleStyle: { color: theme.text } }
-      }
-    />
+    <>
+      <Stack.Screen
+        options={
+          permission?.granted
+            ? { headerTintColor: '#FFFFFF', headerTitleStyle: { color: '#FFFFFF' } }
+            : { headerTintColor: theme.accent, headerTitleStyle: { color: theme.text } }
+        }
+      />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi" onPress={close} />
+      </Stack.Toolbar>
+    </>
   );
 
   if (!permission) return <View style={[styles.fill, { backgroundColor: theme.background }]}>{header}</View>;
