@@ -33,7 +33,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Macro usa la fotocamera per leggere i codici a barre degli alimenti.",
+          "cameraPermission": "Macro usa la fotocamera per leggere i codici a barre e le tabelle nutrizionali degli alimenti.",
           "microphonePermission": false,
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true
