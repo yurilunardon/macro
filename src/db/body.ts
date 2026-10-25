@@ -30,20 +30,3 @@ export async function getWeightsSince(db: SQLiteDatabase, from: DateKey): Promis
 export async function getLatestWeight(db: SQLiteDatabase): Promise<Weight | null> {
   return db.getFirstAsync<Weight>('SELECT date, kg FROM weights ORDER BY date DESC LIMIT 1');
 }
-
-export async function getWater(db: SQLiteDatabase, date: DateKey): Promise<number> {
-  const row = await db.getFirstAsync<{ ml: number }>('SELECT ml FROM water WHERE date = ?', date);
-  return row?.ml ?? 0;
-}
-
-/** Adds (or removes, with a negative amount) water for a day, never going below zero. */
-export async function addWater(db: SQLiteDatabase, date: DateKey, deltaMl: number): Promise<void> {
-  await db.runAsync(
-    `INSERT INTO water (date, ml) VALUES (?, MAX(0, ?))
-     ON CONFLICT (date) DO UPDATE SET ml = MAX(0, water.ml + ?)`,
-    date,
-    deltaMl,
-    deltaMl,
-  );
-  notifyChange();
-}

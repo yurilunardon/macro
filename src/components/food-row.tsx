@@ -11,7 +11,7 @@ import { AppText } from './app-text';
 import { Icon } from './icon';
 import { MacroInline } from './nutrition';
 
-const SOURCE_ICONS = { off: 'barcode', custom: 'fork.knife', generic: 'leaf.fill' } as const;
+const SOURCE_ICONS = { off: 'barcode', custom: 'fork.knife', generic: 'leaf.fill', recipe: 'frying.pan.fill' } as const;
 
 type FoodRowProps = {
   food: FoodDraft & { favorite?: boolean; category?: string | null };

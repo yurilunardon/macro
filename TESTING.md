@@ -33,8 +33,17 @@ Lista di controlli per la prima prova, da fare prima in **Expo Go** e poi con l'
 - [ ] Toccando una voce si modifica quantità o pasto; tenendo premuto compare il menu con "Elimina".
 - [ ] **Aggiunta rapida**: solo 500 kcal → compare nel pasto. Poi riaprila e modificala.
 - [ ] Passa a **ieri** con la freccia, aggiungi qualcosa a colazione, torna a oggi: compare **Copia da ieri** e funziona.
-- [ ] **Acqua**: + e − cambiano i litri e la barra.
 - [ ] Toccando il titolo del giorno si torna a "Oggi".
+
+## Novità della versione con le ricette
+
+- [ ] **Swipe**: nel Diario scorri a sinistra su una voce → **Elimina**. Funziona anche in I miei alimenti, nelle pesate, negli ingredienti di una ricetta e nelle liste di ricette e pasti.
+- [ ] **Pasto salvato**: nel Diario tocca **•••** accanto a un pasto con delle voci → **Salva come pasto…** → dagli un nome. Poi Aggiungi su un altro giorno → **Miei** → toccalo: si aggiungono tutte le voci.
+- [ ] **Ricetta**: Profilo → **Ricette e pasti salvati** → **Nuova ricetta** → aggiungi 2-3 ingredienti (anche con lo scanner) → metti peso cotto e porzioni → controlla i valori in fondo → **Salva**. Poi registrala dal Diario cercandone il nome.
+- [ ] **Modifica ricetta**: riaprila, cambia una quantità toccando l'ingrediente, salva. Le voci già nel diario non cambiano.
+- [ ] **Allenamento e riposo**: Profilo → Calorie e macro → attiva **Obiettivi diversi nei giorni di riposo** → scegli i giorni → salva. Nel Diario compare il selettore Allenamento/Riposo e l'obiettivo cambia.
+- [ ] **Scadenza**: Profilo → Informazioni mostra **Scadenza dell'app** (solo nell'app installata con AltStore, non in Expo Go). Nei 3 giorni prima compare un avviso anche nel Diario.
+- [ ] **Acqua**: non c'è più da nessuna parte.
 
 ## Obiettivi e progressi
 

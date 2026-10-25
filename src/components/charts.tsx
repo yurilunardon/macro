@@ -80,15 +80,19 @@ export function WeightChart({ points, from, to }: { points: readonly WeightPoint
   );
 }
 
-type DayBar = { date: DateKey; kcal: number };
+type DayBar = { date: DateKey; kcal: number; target: number };
 
-/** Kcal per day as bars, with a dashed line at the target. Bars over target are red. */
-export function CaloriesChart({ days, target }: { days: readonly DayBar[]; target: number }) {
+/**
+ * Kcal per day as bars, with the target dashed: one line when every day has the same target,
+ * a mark per day when training and rest days differ. Bars over their day's target are red.
+ */
+export function CaloriesChart({ days }: { days: readonly DayBar[] }) {
   const theme = useTheme();
   const { width, onLayout } = useWidth();
   const height = 160;
   const pad = { top: 16, bottom: 22 };
-  const maxValue = Math.max(target * 1.2, ...days.map((d) => d.kcal), 1);
+  const maxValue = Math.max(...days.map((d) => Math.max(d.target * 1.2, d.kcal)), 1);
+  const sameTarget = days.every((d) => d.target === days[0]?.target);
   const plotH = height - pad.top - pad.bottom;
   const slot = days.length > 0 ? width / days.length : 0;
   const barW = Math.min(28, slot * 0.6);
@@ -104,7 +108,7 @@ export function CaloriesChart({ days, target }: { days: readonly DayBar[]; targe
         <Svg width={width} height={height}>
           {days.map((d, i) => {
             const top = y(d.kcal);
-            const over = target > 0 && d.kcal > target * 1.05;
+            const over = d.target > 0 && d.kcal > d.target * 1.05;
             return (
               <Rect
                 key={d.date}
@@ -117,9 +121,33 @@ export function CaloriesChart({ days, target }: { days: readonly DayBar[]; targe
               />
             );
           })}
-          {target > 0 ? (
-            <Line x1={0} x2={width} y1={y(target)} y2={y(target)} stroke={theme.textSecondary} strokeWidth={1} strokeDasharray="4 4" />
+          {sameTarget && days[0]?.target > 0 ? (
+            <Line
+              x1={0}
+              x2={width}
+              y1={y(days[0].target)}
+              y2={y(days[0].target)}
+              stroke={theme.textSecondary}
+              strokeWidth={1}
+              strokeDasharray="4 4"
+            />
           ) : null}
+          {!sameTarget
+            ? days.map((d, i) =>
+                d.target > 0 ? (
+                  <Line
+                    key={`t${d.date}`}
+                    x1={i * slot + slot * 0.1}
+                    x2={i * slot + slot * 0.9}
+                    y1={y(d.target)}
+                    y2={y(d.target)}
+                    stroke={theme.textSecondary}
+                    strokeWidth={1.5}
+                    strokeDasharray="3 3"
+                  />
+                ) : null,
+              )
+            : null}
           {days.map((d, i) => (
             <SvgText
               key={`d${d.date}`}

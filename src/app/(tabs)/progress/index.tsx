@@ -11,11 +11,12 @@ import { Segmented } from '@/components/form';
 import { MACROS } from '@/components/nutrition';
 import { promptNumber } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
+import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { deleteWeight, getLatestWeight, getWeightsSince, setWeight } from '@/db/body';
 import { getDailyTotals } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
-import { getTargets } from '@/db/settings';
+import { getDayPlans } from '@/db/days';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { addDays, formatDayTitle, lastDays } from '@/lib/dates';
@@ -38,13 +39,13 @@ export default function ProgressScreen() {
   const week = lastDays(today, 7);
 
   const { data } = useLiveQuery(`progress:${today}:${range}`, async (database) => {
-    const [weights, latest, totals, goals] = await Promise.all([
+    const [weights, latest, totals, plans] = await Promise.all([
       getWeightsSince(database, from),
       getLatestWeight(database),
       getDailyTotals(database, week[0], today),
-      getTargets(database),
+      getDayPlans(database, week),
     ]);
-    return { weights, latest, totals, targets: goals.targets };
+    return { weights, latest, totals, plans };
   });
 
   const weights = data?.weights ?? [];
@@ -53,7 +54,11 @@ export default function ProgressScreen() {
   const change = first && last && first.date !== last.date ? last.kg - first.kg : null;
 
   const totalsByDay = new Map((data?.totals ?? []).map((t) => [t.date, t]));
-  const days = week.map((date) => ({ date, kcal: totalsByDay.get(date)?.kcal ?? 0 }));
+  const days = week.map((date) => ({
+    date,
+    kcal: totalsByDay.get(date)?.kcal ?? 0,
+    target: data?.plans.get(date)?.targets.kcal ?? 0,
+  }));
   const logged = data?.totals ?? [];
   const average = (key: 'kcal' | 'protein' | 'carbs' | 'fat') =>
     logged.length > 0 ? logged.reduce((sum, t) => sum + t[key], 0) / logged.length : 0;
@@ -104,27 +109,30 @@ export default function ProgressScreen() {
           <SectionTitle>Pesate</SectionTitle>
           <ListGroup>
             {recent.map((w) => (
-              <Row
-                key={w.date}
-                title={formatDayTitle(w.date, today)}
-                detail={`${formatNumber(w.kg, 1)} kg`}
-                chevron={false}
-                onLongPress={() =>
-                  Alert.alert('Eliminare questa pesata?', `${formatDayTitle(w.date, today)} · ${formatNumber(w.kg, 1)} kg`, [
-                    { text: 'Annulla', style: 'cancel' },
-                    { text: 'Elimina', style: 'destructive', onPress: () => void deleteWeight(db, w.date) },
-                  ])
-                }
-              />
+              <SwipeToDelete key={w.date} onDelete={() => void deleteWeight(db, w.date)}>
+                <Row
+                  title={formatDayTitle(w.date, today)}
+                  detail={`${formatNumber(w.kg, 1)} kg`}
+                  chevron={false}
+                  onLongPress={() =>
+                    Alert.alert('Eliminare questa pesata?', `${formatDayTitle(w.date, today)} · ${formatNumber(w.kg, 1)} kg`, [
+                      { text: 'Annulla', style: 'cancel' },
+                      { text: 'Elimina', style: 'destructive', onPress: () => void deleteWeight(db, w.date) },
+                    ])
+                  }
+                />
+              </SwipeToDelete>
             ))}
           </ListGroup>
-          <SectionFooter>Tieni premuto su una pesata per eliminarla. Una pesata al giorno: la nuova sostituisce quella vecchia.</SectionFooter>
+          <SectionFooter>
+            Scorri a sinistra su una pesata per eliminarla. Una pesata al giorno: la nuova sostituisce quella vecchia.
+          </SectionFooter>
         </>
       ) : null}
 
       <SectionTitle>Ultimi 7 giorni</SectionTitle>
       <Card style={styles.weekCard}>
-        <CaloriesChart days={days} target={data?.targets.kcal ?? 0} />
+        <CaloriesChart days={days} />
         <View style={styles.averages}>
           <Average label="Media kcal" value={formatKcal(average('kcal'))} />
           {MACROS.map((m) => (
@@ -134,7 +142,7 @@ export default function ProgressScreen() {
       </Card>
       <SectionFooter>
         {logged.length > 0
-          ? `Medie sui ${logged.length} giorni con almeno un alimento registrato. La linea tratteggiata è il tuo obiettivo.`
+          ? `Medie sui ${logged.length} giorni con almeno un alimento registrato. Il tratteggio è il tuo obiettivo del giorno.`
           : 'Registra qualche pasto per vedere l’andamento della settimana.'}
       </SectionFooter>
     </ScreenScroll>

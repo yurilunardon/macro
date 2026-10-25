@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addDays, daysBetween, formatDayTitle, fromDateKey, isDateKey, lastDays, toDateKey } from '../dates';
+import { addDays, daysBetween, formatDayTitle, fromDateKey, isDateKey, lastDays, toDateKey, weekdayOf } from '../dates';
 import { formatGrams, formatNumber, numberToInput, parseDecimal, servingPresetLabel } from '../format';
 
 describe('date keys', () => {
@@ -22,6 +22,11 @@ describe('date keys', () => {
 
   it('lists the last days oldest first', () => {
     expect(lastDays('2026-10-25', 3)).toEqual(['2026-10-23', '2026-10-24', '2026-10-25']);
+  });
+
+  it('knows the day of the week', () => {
+    expect(weekdayOf('2026-10-25')).toBe(0);
+    expect(weekdayOf('2026-10-26')).toBe(1);
   });
 
   it('validates keys', () => {

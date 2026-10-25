@@ -104,3 +104,58 @@ describe('backupFileName', () => {
     expect(backupFileName(new Date(2026, 9, 5, 23, 30))).toBe('macro-backup-2026-10-05.json');
   });
 });
+
+describe('parseBackup version 3', () => {
+  const nutrients = { kcal: 100, protein: 10, carbs: 5, fat: 2, sugars: null, fiber: null, sat_fat: null, salt: null };
+
+  function v3() {
+    const base = sampleBackup();
+    const { water: _water, ...rest } = base;
+    return {
+      ...rest,
+      version: 3,
+      foods: [
+        ...base.foods,
+        { ...base.foods[0], id: 2, barcode: null, name: 'Pollo e riso', source: 'recipe', ref: null, category: null },
+      ],
+      recipes: [{ food_id: 2, cooked_weight: 1600, servings: 4 }],
+      recipe_ingredients: [
+        { id: 1, recipe_id: 2, position: 0, food_id: 1, name: 'Spaghetti', brand: null, unit: 'g', quantity: 300, ...nutrients },
+        { id: 2, recipe_id: 99, position: 0, food_id: 1, name: 'Orfano', brand: null, unit: 'g', quantity: 1, ...nutrients },
+        { id: 3, recipe_id: 2, position: 1, food_id: 42, name: 'Sparito', brand: null, unit: 'g', quantity: 10, ...nutrients },
+      ],
+      saved_meals: [{ id: 1, name: 'Colazione tipo', created_at: '2026-10-25T08:00:00.000Z' }],
+      saved_meal_items: [
+        { id: 1, saved_meal_id: 1, position: 0, food_id: 1, name: 'Spaghetti', brand: null, unit: 'g', quantity: 80, ...nutrients },
+        { id: 2, saved_meal_id: 7, position: 0, food_id: null, name: 'Orfano', brand: null, unit: 'g', quantity: 0, ...nutrients },
+      ],
+      day_types: [{ date: '2026-10-25', type: 'rest' }],
+    };
+  }
+
+  it('reads the new tables and drops rows that point nowhere', () => {
+    const backup = parseBackup(v3());
+    expect(backup.recipes).toEqual([{ food_id: 2, cooked_weight: 1600, servings: 4 }]);
+    expect(backup.recipe_ingredients.map((i) => [i.name, i.food_id])).toEqual([
+      ['Spaghetti', 1],
+      ['Sparito', null],
+    ]);
+    expect(backup.saved_meal_items.map((i) => i.name)).toEqual(['Spaghetti']);
+    expect(backup.day_types).toEqual([{ date: '2026-10-25', type: 'rest' }]);
+    expect(backup).not.toHaveProperty('water');
+  });
+
+  it('accepts older files without the new tables, ignoring water', () => {
+    const old = parseBackup(sampleBackup());
+    expect(old.recipes).toEqual([]);
+    expect(old.saved_meals).toEqual([]);
+    expect(old.day_types).toEqual([]);
+    expect(old).not.toHaveProperty('water');
+  });
+
+  it('requires the new tables in a version 3 file and checks day types', () => {
+    const { recipes: _recipes, ...noRecipes } = v3();
+    expect(() => parseBackup(noRecipes)).toThrow(/recipes/);
+    expect(() => parseBackup({ ...v3(), day_types: [{ date: '2026-10-25', type: 'gym' }] })).toThrow(/Tipo di giorno/);
+  });
+});

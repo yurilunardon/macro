@@ -20,14 +20,14 @@ export default function ScanScreen() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const focused = useIsFocused();
-  const { meal, date } = useAddFlowParams();
+  const { forward } = useAddFlowParams();
   const [permission, requestPermission] = useCameraPermissions();
   const [torch, setTorch] = useState(false);
   // The camera reports the same code many times per second: handle only the first.
   const handled = useRef(false);
 
   const openBarcode = (barcode: string) => {
-    router.replace({ pathname: '/add/food', params: { meal, date, barcode } });
+    router.replace({ pathname: '/add/food', params: { ...forward, barcode } });
   };
 
   const onScanned = ({ data }: BarcodeScanningResult) => {

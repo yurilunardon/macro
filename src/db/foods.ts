@@ -6,7 +6,7 @@ import { foodSearchText, normalizeSearch } from '@/lib/search';
 
 import { notifyChange } from './live';
 
-const SOURCES: readonly FoodSource[] = ['off', 'custom', 'generic'];
+const SOURCES: readonly FoodSource[] = ['off', 'custom', 'generic', 'recipe'];
 
 export function foodFromRow(row: FoodRow): Food {
   return {

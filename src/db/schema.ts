@@ -73,6 +73,63 @@ export const MIGRATIONS: readonly Migration[] = [
     `);
     await refreshSearchText(db);
   },
+  // 3: recipes, saved meals, training/rest days; water tracking removed.
+  `
+  DROP TABLE IF EXISTS water;
+  DELETE FROM settings WHERE key = 'waterGoalMl';
+
+  CREATE TABLE recipes (
+    food_id INTEGER PRIMARY KEY NOT NULL REFERENCES foods (id) ON DELETE CASCADE,
+    cooked_weight REAL,
+    servings REAL
+  );
+  CREATE TABLE recipe_ingredients (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    recipe_id INTEGER NOT NULL REFERENCES recipes (food_id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    food_id INTEGER REFERENCES foods (id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    brand TEXT,
+    unit TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    kcal REAL NOT NULL,
+    protein REAL NOT NULL,
+    carbs REAL NOT NULL,
+    fat REAL NOT NULL,
+    sugars REAL,
+    fiber REAL,
+    sat_fat REAL,
+    salt REAL
+  );
+  CREATE INDEX recipe_ingredients_recipe ON recipe_ingredients (recipe_id, position);
+
+  CREATE TABLE saved_meals (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE saved_meal_items (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    saved_meal_id INTEGER NOT NULL REFERENCES saved_meals (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    food_id INTEGER REFERENCES foods (id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    brand TEXT,
+    unit TEXT NOT NULL,
+    quantity REAL NOT NULL,
+    kcal REAL NOT NULL,
+    protein REAL NOT NULL,
+    carbs REAL NOT NULL,
+    fat REAL NOT NULL,
+    sugars REAL,
+    fiber REAL,
+    sat_fat REAL,
+    salt REAL
+  );
+  CREATE INDEX saved_meal_items_meal ON saved_meal_items (saved_meal_id, position);
+
+  CREATE TABLE day_types (date TEXT PRIMARY KEY NOT NULL, type TEXT NOT NULL);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

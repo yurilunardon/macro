@@ -5,7 +5,7 @@ import { useAddFlowParams } from '@/hooks/use-add-flow';
 
 export default function CustomFoodScreen() {
   const router = useRouter();
-  const { meal, date, foodId, barcode } = useAddFlowParams();
+  const { foodId, barcode, forward } = useAddFlowParams();
 
   return (
     <>
@@ -15,7 +15,7 @@ export default function CustomFoodScreen() {
         initialBarcode={barcode}
         onSaved={(id, created) => {
           // A new food goes straight to choosing the quantity; an edit returns to where it came from.
-          if (created) router.replace({ pathname: '/add/food', params: { meal, date, foodId: id } });
+          if (created) router.replace({ pathname: '/add/food', params: { ...forward, foodId: id } });
           else router.back();
         }}
       />

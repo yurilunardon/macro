@@ -2,7 +2,7 @@ import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
-import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, Switch, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -12,8 +12,10 @@ import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
 import { Spacing } from '@/constants/theme';
 import { getLatestWeight } from '@/db/body';
+import { getTrainingSettings, setTrainingSettings, type TrainingSettings } from '@/db/days';
 import { useLiveQuery } from '@/db/live';
 import { getSetting, getTargets, setSetting } from '@/db/settings';
+import { useTheme } from '@/hooks/use-theme';
 import { formatKcal, numberToInput } from '@/lib/format';
 import {
   ACTIVITY_LEVELS,
@@ -21,6 +23,7 @@ import {
   ageInYear,
   basalMetabolicRate,
   computeTargets,
+  deriveRestTargets,
   parseProfile,
   parseTargets,
   totalDailyEnergy,
@@ -28,17 +31,19 @@ import {
   type ProfileFields,
   type TargetFields,
   type Targets,
+  WEEKDAYS,
 } from '@/lib/goals';
 import { kcalFromMacros } from '@/lib/nutrition';
 
 export default function GoalsScreen() {
   const { data } = useLiveQuery('goals-form', async (database) => {
-    const [profile, goals, weight] = await Promise.all([
+    const [profile, goals, weight, training] = await Promise.all([
       getSetting(database, 'profile'),
       getTargets(database),
       getLatestWeight(database),
+      getTrainingSettings(database),
     ]);
-    return { profile, targets: goals.targets, latestWeight: weight?.kg ?? null };
+    return { profile, targets: goals.targets, latestWeight: weight?.kg ?? null, training };
   });
 
   if (!data) {
@@ -49,7 +54,14 @@ export default function GoalsScreen() {
     );
   }
   // Mounted once with the saved values, so later reloads never overwrite what is being typed.
-  return <GoalsForm profile={data.profile} targets={data.targets} latestWeight={data.latestWeight} />;
+  return (
+    <GoalsForm
+      profile={data.profile}
+      targets={data.targets}
+      latestWeight={data.latestWeight}
+      training={data.training}
+    />
+  );
 }
 
 function profileFields(profile: Profile | null, latestWeight: number | null): ProfileFields {
@@ -73,19 +85,25 @@ function GoalsForm({
   profile,
   targets,
   latestWeight,
+  training,
 }: {
   profile: Profile | null;
   targets: Targets;
   latestWeight: number | null;
+  training: TrainingSettings;
 }) {
   const db = useSQLiteContext();
   const router = useRouter();
+  const theme = useTheme();
   const year = new Date().getFullYear();
   const [pf, setPf] = useState<ProfileFields>(() => profileFields(profile, latestWeight));
   const [tf, setTf] = useState<TargetFields>(() => targetFields(targets));
   const [showProfileErrors, setShowProfileErrors] = useState(false);
   const [showTargetErrors, setShowTargetErrors] = useState(false);
   const [saving, setSaving] = useState(false);
+  const [split, setSplit] = useState(training.restTargets !== null);
+  const [weekdays, setWeekdays] = useState<number[]>(training.trainingWeekdays);
+  const [rf, setRf] = useState<TargetFields>(() => targetFields(training.restTargets ?? deriveRestTargets(targets)));
 
   const parsedProfile = parseProfile(pf, year);
   const parsedTargets = parseTargets(tf);
@@ -94,6 +112,10 @@ function GoalsForm({
   const pInvalid = (key: 'birthYear' | 'heightCm' | 'weightKg' | 'proteinPerKg' | 'fatPercent') =>
     showProfileErrors && parsedProfile.invalid.has(key);
   const tInvalid = (key: keyof Targets) => showTargetErrors && parsedTargets.invalid.has(key);
+  const parsedRest = parseTargets(rf);
+  const setR = (key: keyof TargetFields) => (value: string) => setRf((f) => ({ ...f, [key]: value }));
+  const rInvalid = (key: keyof Targets) => showTargetErrors && split && parsedRest.invalid.has(key);
+  const noTrainingDays = split && weekdays.length === 0;
 
   const energy = parsedProfile.profile
     ? {
@@ -111,15 +133,33 @@ function GoalsForm({
     setShowProfileErrors(true);
     if (!parsedProfile.profile) return;
     void Haptics.selectionAsync();
-    setTf(targetFields(computeTargets(parsedProfile.profile, year)));
+    const computed = computeTargets(parsedProfile.profile, year);
+    setTf(targetFields(computed));
+    setRf(targetFields(deriveRestTargets(computed)));
+  };
+
+  const toggleSplit = (enabled: boolean) => {
+    setSplit(enabled);
+    // Start rest days from the training targets typed so far.
+    if (enabled && parsedTargets.targets) setRf(targetFields(deriveRestTargets(parsedTargets.targets)));
+  };
+
+  const toggleWeekday = (day: number) => {
+    void Haptics.selectionAsync();
+    setWeekdays((days) => (days.includes(day) ? days.filter((d) => d !== day) : [...days, day].sort()));
   };
 
   const save = async () => {
     setShowTargetErrors(true);
     if (!parsedTargets.targets) return;
+    if (split && (!parsedRest.targets || noTrainingDays)) return;
     setSaving(true);
     try {
       await setSetting(db, 'targets', parsedTargets.targets);
+      await setTrainingSettings(db, {
+        restTargets: split ? parsedRest.targets : null,
+        trainingWeekdays: weekdays,
+      });
       if (parsedProfile.profile) await setSetting(db, 'profile', parsedProfile.profile);
       void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
       router.back();
@@ -202,7 +242,7 @@ function GoalsForm({
         </SectionFooter>
       ) : null}
 
-      <SectionTitle>Obiettivi giornalieri</SectionTitle>
+      <SectionTitle>{split ? 'Giorni di allenamento' : 'Obiettivi giornalieri'}</SectionTitle>
       <ListGroup>
         <FieldRow label="Calorie" value={tf.kcal} onChangeText={setT('kcal')} suffix="kcal" numeric invalid={tInvalid('kcal')} />
         <FieldRow label="Proteine" value={tf.protein} onChangeText={setT('protein')} suffix="g" numeric invalid={tInvalid('protein')} />
@@ -211,6 +251,77 @@ function GoalsForm({
       </ListGroup>
       {mismatch && macroKcal !== null ? (
         <SectionFooter>{`Con questi macro mangeresti circa ${formatKcal(macroKcal)} kcal: diverso dall’obiettivo di calorie.`}</SectionFooter>
+      ) : null}
+
+      <SectionTitle>Allenamento e riposo</SectionTitle>
+      <ListGroup>
+        <Row
+          title="Obiettivi diversi nei giorni di riposo"
+          chevron={false}
+          detail={
+            <Switch
+              value={split}
+              onValueChange={toggleSplit}
+              trackColor={{ true: theme.accent }}
+              accessibilityLabel="Obiettivi diversi nei giorni di riposo"
+            />
+          }
+        />
+      </ListGroup>
+      {split ? (
+        <>
+          <View style={styles.weekdays} accessibilityRole="toolbar" accessibilityLabel="Giorni di allenamento">
+            {WEEKDAYS.map((w) => {
+              const selected = weekdays.includes(w.day);
+              return (
+                <Pressable
+                  key={w.day}
+                  onPress={() => toggleWeekday(w.day)}
+                  accessibilityRole="checkbox"
+                  accessibilityLabel={w.label}
+                  accessibilityState={{ checked: selected }}
+                  style={[
+                    styles.weekday,
+                    { backgroundColor: selected ? theme.accent : theme.card, borderColor: selected ? theme.accent : theme.separator },
+                  ]}>
+                  <AppText weight="600" style={{ color: selected ? theme.onAccent : theme.text }}>
+                    {w.short}
+                  </AppText>
+                </Pressable>
+              );
+            })}
+          </View>
+          <SectionFooter>
+            {noTrainingDays && showTargetErrors ? (
+              <AppText variant="footnote" tone="danger">
+                Scegli almeno un giorno di allenamento.
+              </AppText>
+            ) : (
+              'Tocca i giorni in cui ti alleni. Nel Diario puoi cambiare un singolo giorno.'
+            )}
+          </SectionFooter>
+
+          <SectionTitle>Giorni di riposo</SectionTitle>
+          <ListGroup>
+            <FieldRow label="Calorie" value={rf.kcal} onChangeText={setR('kcal')} suffix="kcal" numeric invalid={rInvalid('kcal')} />
+            <FieldRow label="Proteine" value={rf.protein} onChangeText={setR('protein')} suffix="g" numeric invalid={rInvalid('protein')} />
+            <FieldRow label="Carboidrati" value={rf.carbs} onChangeText={setR('carbs')} suffix="g" numeric invalid={rInvalid('carbs')} />
+            <FieldRow label="Grassi" value={rf.fat} onChangeText={setR('fat')} suffix="g" numeric invalid={rInvalid('fat')} />
+          </ListGroup>
+          <SectionFooter>
+            Di solito nei giorni di riposo si mangia un po’ meno, togliendo carboidrati e lasciando uguali proteine e
+            grassi.
+          </SectionFooter>
+          <View style={styles.button}>
+            <Button
+              title="Riposo = allenamento −15%"
+              variant="tinted"
+              compact
+              disabled={!parsedTargets.targets}
+              onPress={() => parsedTargets.targets && setRf(targetFields(deriveRestTargets(parsedTargets.targets)))}
+            />
+          </View>
+        </>
       ) : null}
 
       <View style={styles.button}>
@@ -225,4 +336,13 @@ const styles = StyleSheet.create({
   intro: { paddingHorizontal: Spacing.xs },
   gap: { height: Spacing.md },
   button: { paddingTop: Spacing.xl },
+  weekdays: { flexDirection: 'row', justifyContent: 'space-between', paddingTop: Spacing.md },
+  weekday: {
+    width: 42,
+    height: 42,
+    borderRadius: 21,
+    borderWidth: StyleSheet.hairlineWidth,
+    alignItems: 'center',
+    justifyContent: 'center',
+  },
 });

@@ -3,10 +3,13 @@ import { describe, expect, it } from 'vitest';
 import {
   basalMetabolicRate,
   computeTargets,
+  dayTypeFor,
+  deriveRestTargets,
   parseProfile,
   parseTargets,
   totalDailyEnergy,
   type Profile,
+  WEEKDAYS,
 } from '../goals';
 
 const profile: Profile = {
@@ -91,5 +94,25 @@ describe('parseTargets', () => {
       fat: 70,
     });
     expect([...parseTargets({ kcal: '300', protein: 'x', carbs: '0', fat: '50' }).invalid]).toEqual(['kcal', 'protein']);
+  });
+});
+
+describe('training and rest days', () => {
+  it('follows the weekly schedule unless a day was set by hand', () => {
+    const schedule = [1, 3, 5];
+    expect(dayTypeFor(1, schedule, null)).toBe('training');
+    expect(dayTypeFor(2, schedule, null)).toBe('rest');
+    expect(dayTypeFor(2, schedule, 'training')).toBe('training');
+    expect(dayTypeFor(5, schedule, 'rest')).toBe('rest');
+  });
+
+  it('lists the week from Monday', () => {
+    expect(WEEKDAYS.map((d) => d.day)).toEqual([1, 2, 3, 4, 5, 6, 0]);
+  });
+
+  it('derives rest-day targets by taking calories from carbs', () => {
+    const rest = deriveRestTargets({ kcal: 2800, protein: 160, carbs: 370, fat: 75 });
+    expect(rest).toEqual({ kcal: 2380, protein: 160, carbs: 266, fat: 75 });
+    expect(deriveRestTargets({ kcal: 1500, protein: 200, carbs: 50, fat: 80 }).carbs).toBe(0);
   });
 });

@@ -2,28 +2,36 @@ import * as Haptics from 'expo-haptics';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { ActionSheetIOS, Alert, Linking, Platform, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
-import { Card, ListGroup, Row, SectionTitle } from '@/components/card';
+import { ActionRow, Card, ListGroup, Row, SectionTitle } from '@/components/card';
+import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { MacroInline, MacroProgress } from '@/components/nutrition';
-import { CalorieRing, ProgressBar } from '@/components/progress';
+import { CalorieRing } from '@/components/progress';
 import { ScreenScroll } from '@/components/screen';
+import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
-import { addWater, getWater } from '@/db/body';
-import { copyMeal, deleteEntry, getEntriesForDate, type Entry } from '@/db/entries';
+import { getDayPlan, getTrainingSettings, setDayType } from '@/db/days';
+import { copyMeal, deleteEntry, deleteMealEntries, getEntriesForDate, type Entry } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
-import { DEFAULT_WATER_GOAL_ML, getSetting, getTargets } from '@/db/settings';
+import { saveMealFromDiary } from '@/db/saved-meals';
+import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
-import { addDays, formatDayTitle, type DateKey } from '@/lib/dates';
+import { addDays, formatDayTitle, weekdayOf, type DateKey } from '@/lib/dates';
 import { formatKcal, formatNumber } from '@/lib/format';
+import { dayTypeFor, type DayType } from '@/lib/goals';
 import { MEALS, mealForTime, mealLabel, type MealKey } from '@/lib/meals';
 import { sumNutrients } from '@/lib/nutrition';
+import { formatExpiry, type ExpiryStatus } from '@/lib/provisioning';
 import { QUICK_ADD_NAME } from '@/lib/quick-add';
 
-const WATER_STEP_ML = 250;
+const DAY_TYPES: readonly { key: DayType; label: string }[] = [
+  { key: 'training', label: 'Allenamento' },
+  { key: 'rest', label: 'Riposo' },
+];
 
 /** "120 g · Barilla", or for a quick entry just that it was typed by hand. */
 function entryDetail(entry: Entry): string | null {
@@ -36,35 +44,35 @@ export default function DiaryScreen() {
   const router = useRouter();
   const theme = useTheme();
   const today = useToday();
+  const expiry = useAppExpiry();
   // null means "today", so the diary moves to the new day when the app is reopened tomorrow.
   const [selected, setSelected] = useState<DateKey | null>(null);
   const date = selected ?? today;
   const goTo = (day: DateKey) => setSelected(day === today ? null : day);
 
   const { data } = useLiveQuery(`diary:${date}`, async (database) => {
-    const [entries, yesterday, goals, water, waterGoal] = await Promise.all([
+    const [entries, yesterday, plan, training] = await Promise.all([
       getEntriesForDate(database, date),
       getEntriesForDate(database, addDays(date, -1)),
-      getTargets(database),
-      getWater(database, date),
-      getSetting(database, 'waterGoalMl'),
+      getDayPlan(database, date),
+      getTrainingSettings(database),
     ]);
     return {
       entries,
       yesterdayMeals: new Set(yesterday.map((e) => e.meal)),
-      ...goals,
-      water,
-      waterGoal: waterGoal ?? DEFAULT_WATER_GOAL_ML,
+      plan,
+      scheduledType: dayTypeFor(weekdayOf(date), training.trainingWeekdays, null),
     };
   });
 
   const entries = data?.entries ?? [];
   const totals = sumNutrients(entries.map((e) => e.totals));
+  const targets = data?.plan.targets;
 
   const openAdd = (meal: MealKey, scan = false) =>
     router.push({ pathname: scan ? '/add/scan' : '/add', params: { meal, date } });
 
-  const confirmDelete = (entry: Entry) =>
+  const entryMenu = (entry: Entry) =>
     Alert.alert(entry.name, [entryDetail(entry), `${formatKcal(entry.totals.kcal)} kcal`].filter(Boolean).join(' · '), [
       { text: 'Annulla', style: 'cancel' },
       { text: 'Modifica', onPress: () => router.push(`/entry/${entry.id}`) },
@@ -76,9 +84,51 @@ export default function DiaryScreen() {
     if (copied > 0) void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
   };
 
-  const changeWater = (delta: number) => {
+  const saveAsMeal = (meal: MealKey) =>
+    Alert.prompt(
+      'Salva come pasto',
+      'Lo ritrovi in Aggiungi → Miei e lo registri con un tocco.',
+      [
+        { text: 'Annulla', style: 'cancel' },
+        {
+          text: 'Salva',
+          onPress: async (name?: string) => {
+            const trimmed = (name ?? '').trim();
+            if (trimmed === '') return;
+            await saveMealFromDiary(db, { date, meal, name: trimmed });
+            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+          },
+        },
+      ],
+      'plain-text',
+      `${mealLabel(meal)} tipo`,
+    );
+
+  const mealMenu = (meal: MealKey) => {
+    if (Platform.OS !== 'ios') return;
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: mealLabel(meal),
+        options: ['Salva come pasto…', 'Elimina tutte le voci', 'Annulla'],
+        destructiveButtonIndex: 1,
+        cancelButtonIndex: 2,
+      },
+      (index) => {
+        if (index === 0) saveAsMeal(meal);
+        if (index === 1) {
+          Alert.alert(`Svuotare ${mealLabel(meal).toLowerCase()}?`, formatDayTitle(date, today), [
+            { text: 'Annulla', style: 'cancel' },
+            { text: 'Elimina', style: 'destructive', onPress: () => void deleteMealEntries(db, date, meal) },
+          ]);
+        }
+      },
+    );
+  };
+
+  // Picking the type the schedule already gives clears the manual choice.
+  const changeDayType = (type: DayType) => {
     void Haptics.selectionAsync();
-    void addWater(db, date, delta);
+    void setDayType(db, date, type === data?.scheduledType ? null : type);
   };
 
   return (
@@ -96,6 +146,8 @@ export default function DiaryScreen() {
           ),
         }}
       />
+
+      {expiry && expiry.level !== 'ok' ? <ExpiryBanner status={expiry} /> : null}
 
       <View style={styles.dateBar}>
         <Pressable
@@ -126,7 +178,13 @@ export default function DiaryScreen() {
         </Pressable>
       </View>
 
-      {data?.isDefault ? (
+      {data?.plan.dayType ? (
+        <View style={styles.dayType}>
+          <Segmented options={DAY_TYPES} value={data.plan.dayType} onChange={changeDayType} />
+        </View>
+      ) : null}
+
+      {data?.plan.isDefault ? (
         <Pressable onPress={() => router.navigate('/settings/goals')} accessibilityRole="button">
           <Card style={[styles.banner, { backgroundColor: theme.accentSoft }]}>
             <Icon name="target" size={22} tone="accent" />
@@ -143,14 +201,14 @@ export default function DiaryScreen() {
 
       <Card style={styles.summary}>
         <View style={styles.summaryTop}>
-          <CalorieRing eaten={totals.kcal} target={data?.targets.kcal ?? 0} />
+          <CalorieRing eaten={totals.kcal} target={targets?.kcal ?? 0} />
           <View style={styles.summaryStats}>
-            <Stat label="Obiettivo" value={formatKcal(data?.targets.kcal ?? 0)} />
+            <Stat label="Obiettivo" value={formatKcal(targets?.kcal ?? 0)} />
             <Stat label="Mangiate" value={formatKcal(totals.kcal)} />
             {totals.fiber !== null ? <Stat label="Fibre" value={`${formatNumber(totals.fiber, 0)} g`} /> : null}
           </View>
         </View>
-        {data ? <MacroProgress totals={totals} targets={data.targets} /> : null}
+        {targets ? <MacroProgress totals={totals} targets={targets} /> : null}
       </Card>
 
       {MEALS.map((meal) => {
@@ -162,37 +220,47 @@ export default function DiaryScreen() {
             <SectionTitle
               action={
                 mealEntries.length > 0 ? (
-                  <AppText variant="footnote" tone="textSecondary" weight="600" numeric>
-                    {`${formatKcal(mealKcal)} kcal`}
-                  </AppText>
+                  <View style={styles.mealActions}>
+                    <AppText variant="footnote" tone="textSecondary" weight="600" numeric>
+                      {`${formatKcal(mealKcal)} kcal`}
+                    </AppText>
+                    <Pressable
+                      onPress={() => mealMenu(meal.key)}
+                      hitSlop={12}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Altre azioni per ${meal.label.toLowerCase()}`}>
+                      <Icon name="ellipsis.circle" size={20} tone="accent" />
+                    </Pressable>
+                  </View>
                 ) : undefined
               }>
               {meal.label}
             </SectionTitle>
             <ListGroup>
               {mealEntries.map((entry) => (
-                <Pressable
-                  key={entry.id}
-                  onPress={() => router.push(`/entry/${entry.id}`)}
-                  onLongPress={() => confirmDelete(entry)}
-                  accessibilityRole="button"
-                  accessibilityHint="Tocca per modificare, tieni premuto per altre azioni"
-                  style={({ pressed }) => [styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
-                  <View style={styles.flex}>
-                    <AppText numberOfLines={1}>{entry.name}</AppText>
-                    {entryDetail(entry) ? (
-                      <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                        {entryDetail(entry)}
-                      </AppText>
-                    ) : null}
-                    <MacroInline totals={entry.totals} />
-                  </View>
-                  <AppText variant="callout" weight="600" numeric>
-                    {formatKcal(entry.totals.kcal)}
-                  </AppText>
-                </Pressable>
+                <SwipeToDelete key={entry.id} onDelete={() => void deleteEntry(db, entry.id)}>
+                  <Pressable
+                    onPress={() => router.push(`/entry/${entry.id}`)}
+                    onLongPress={() => entryMenu(entry)}
+                    accessibilityRole="button"
+                    accessibilityHint="Tocca per modificare, scorri a sinistra per eliminare"
+                    style={({ pressed }) => [styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
+                    <View style={styles.flex}>
+                      <AppText numberOfLines={1}>{entry.name}</AppText>
+                      {entryDetail(entry) ? (
+                        <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                          {entryDetail(entry)}
+                        </AppText>
+                      ) : null}
+                      <MacroInline totals={entry.totals} />
+                    </View>
+                    <AppText variant="callout" weight="600" numeric>
+                      {formatKcal(entry.totals.kcal)}
+                    </AppText>
+                  </Pressable>
+                </SwipeToDelete>
               ))}
-              <AddRow label={`Aggiungi a ${mealLabel(meal.key).toLowerCase()}`} onPress={() => openAdd(meal.key)} />
+              <ActionRow label={`Aggiungi a ${mealLabel(meal.key).toLowerCase()}`} onPress={() => openAdd(meal.key)} />
               {canCopy ? (
                 <Row
                   title="Copia da ieri"
@@ -205,30 +273,32 @@ export default function DiaryScreen() {
           </View>
         );
       })}
-
-      <SectionTitle>Acqua</SectionTitle>
-      <Card style={styles.water}>
-        <View style={styles.waterTop}>
-          <Icon name="drop.fill" size={22} tone="water" />
-          <View style={styles.flex}>
-            <AppText variant="headline" numeric>
-              {`${formatNumber((data?.water ?? 0) / 1000, 2)} L`}
-            </AppText>
-            <AppText variant="footnote" tone="textSecondary" numeric>
-              {`su ${formatNumber((data?.waterGoal ?? DEFAULT_WATER_GOAL_ML) / 1000, 1)} L`}
-            </AppText>
-          </View>
-          <RoundButton
-            symbol="minus"
-            label="Togli un bicchiere"
-            onPress={() => changeWater(-WATER_STEP_ML)}
-            disabled={(data?.water ?? 0) === 0}
-          />
-          <RoundButton symbol="plus" label="Aggiungi un bicchiere" onPress={() => changeWater(WATER_STEP_ML)} />
-        </View>
-        <ProgressBar value={data?.water ?? 0} target={data?.waterGoal ?? DEFAULT_WATER_GOAL_ML} color={theme.water} />
-      </Card>
     </ScreenScroll>
+  );
+}
+
+/** Shown from three days before the app's signature expires. */
+function ExpiryBanner({ status }: { status: ExpiryStatus }) {
+  const theme = useTheme();
+  const tone = status.level === 'soon' ? 'warning' : 'danger';
+  const openAltStore = () => {
+    Linking.openURL('altstore://').catch(() => {
+      Alert.alert('Apri AltStore', 'Apri AltStore dalla schermata Home e tocca My Apps → Refresh All.');
+    });
+  };
+  return (
+    <Pressable onPress={openAltStore} accessibilityRole="button" accessibilityHint="Apre AltStore">
+      <Card style={[styles.banner, { backgroundColor: theme.card, borderColor: theme[tone] }, styles.expiry]}>
+        <Icon name="clock.badge.exclamationmark" size={22} tone={tone} />
+        <View style={styles.flex}>
+          <AppText variant="headline">{`Macro scade ${formatExpiry(status.expiresAt)}`}</AppText>
+          <AppText variant="subhead" tone="textSecondary">
+            Rinnovala in AltStore con Refresh All: Mac acceso, AltServer aperto, stessa Wi-Fi. I dati restano.
+          </AppText>
+        </View>
+        <Icon name="chevron.right" size={13} tone="textSecondary" weight="semibold" />
+      </Card>
+    </Pressable>
   );
 }
 
@@ -245,49 +315,6 @@ function Stat({ label, value }: { label: string; value: string }) {
   );
 }
 
-function AddRow({ label, onPress }: { label: string; onPress: () => void }) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      style={({ pressed }) => [styles.addRow, pressed && { backgroundColor: theme.cardPressed }]}>
-      <Icon name="plus.circle.fill" size={20} tone="accent" />
-      <AppText tone="accent" weight="600">
-        {label}
-      </AppText>
-    </Pressable>
-  );
-}
-
-function RoundButton({
-  symbol,
-  label,
-  onPress,
-  disabled = false,
-}: {
-  symbol: 'plus' | 'minus';
-  label: string;
-  onPress: () => void;
-  disabled?: boolean;
-}) {
-  const theme = useTheme();
-  return (
-    <Pressable
-      onPress={onPress}
-      disabled={disabled}
-      accessibilityRole="button"
-      accessibilityLabel={label}
-      style={({ pressed }) => [
-        styles.round,
-        { backgroundColor: theme.track },
-        (pressed || disabled) && { opacity: disabled ? 0.4 : 0.7 },
-      ]}>
-      <Icon name={symbol} size={16} tone="water" weight="bold" />
-    </Pressable>
-  );
-}
-
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   dateBar: {
@@ -298,10 +325,13 @@ const styles = StyleSheet.create({
   },
   dateArrow: { width: 44, height: 44, alignItems: 'center', justifyContent: 'center' },
   dateTitle: { flex: 1, paddingVertical: Spacing.sm },
+  dayType: { marginBottom: Spacing.md },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
+  expiry: { borderWidth: 1.5 },
   summary: { gap: Spacing.xl },
   summaryTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xl },
   summaryStats: { flex: 1, gap: Spacing.md },
+  mealActions: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   entry: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -309,14 +339,4 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.sm + 2,
   },
-  addRow: {
-    minHeight: 48,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.lg,
-  },
-  water: { gap: Spacing.md },
-  waterTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
-  round: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
 });

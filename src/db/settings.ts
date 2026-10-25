@@ -8,7 +8,10 @@ import { notifyChange } from './live';
 type SettingsMap = {
   targets: Targets;
   profile: Profile;
-  waterGoalMl: number;
+  /** Present when rest days have their own targets; `targets` is then for training days. */
+  restTargets: Targets;
+  /** Days of the week (Date.getDay(), 0 = Sunday) that are training days. */
+  trainingWeekdays: number[];
   lastBackupAt: string;
   /** Which version of the shipped basic foods has been added to this phone. */
   genericFoodsVersion: number;
@@ -35,10 +38,13 @@ export async function setSetting<K extends SettingKey>(db: SQLiteDatabase, key: 
   notifyChange();
 }
 
-export const DEFAULT_WATER_GOAL_ML = 2000;
-
 /** Targets plus whether the user has set them (otherwise defaults are shown). */
 export async function getTargets(db: SQLiteDatabase): Promise<{ targets: Targets; isDefault: boolean }> {
   const targets = await getSetting(db, 'targets');
   return targets ? { targets, isDefault: false } : { targets: DEFAULT_TARGETS, isDefault: true };
+}
+
+export async function deleteSetting(db: SQLiteDatabase, key: SettingKey): Promise<void> {
+  await db.runAsync('DELETE FROM settings WHERE key = ?', key);
+  notifyChange();
 }

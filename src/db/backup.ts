@@ -10,10 +10,14 @@ import {
   backupFileName,
   parseBackup,
   type BackupData,
+  type DayTypeRow,
   type EntryRow,
   type FoodRow,
+  type RecipeIngredientRow,
+  type RecipeRow,
+  type SavedMealItemRow,
+  type SavedMealRow,
   type SettingRow,
-  type WaterRow,
   type WeightRow,
 } from '@/lib/backup';
 
@@ -33,19 +37,45 @@ const ENTRY_COLUMNS = [
   'sugars', 'fiber', 'sat_fat', 'salt', 'created_at',
 ] as const satisfies readonly (keyof EntryRow)[];
 
+const NUTRIENT_COLUMNS = ['kcal', 'protein', 'carbs', 'fat', 'sugars', 'fiber', 'sat_fat', 'salt'] as const;
+
+const RECIPE_COLUMNS = ['food_id', 'cooked_weight', 'servings'] as const satisfies readonly (keyof RecipeRow)[];
+
+const RECIPE_INGREDIENT_COLUMNS = [
+  'id', 'recipe_id', 'position', 'food_id', 'name', 'brand', 'unit', 'quantity', ...NUTRIENT_COLUMNS,
+] as const satisfies readonly (keyof RecipeIngredientRow)[];
+
+const SAVED_MEAL_COLUMNS = ['id', 'name', 'created_at'] as const satisfies readonly (keyof SavedMealRow)[];
+
+const SAVED_MEAL_ITEM_COLUMNS = [
+  'id', 'saved_meal_id', 'position', 'food_id', 'name', 'brand', 'unit', 'quantity', ...NUTRIENT_COLUMNS,
+] as const satisfies readonly (keyof SavedMealItemRow)[];
+
+function select(columns: readonly string[], table: string, order: string): string {
+  return `SELECT ${columns.join(', ')} FROM ${table} ORDER BY ${order}`;
+}
+
 export async function readBackup(db: SQLiteDatabase): Promise<BackupData> {
   return {
     app: BACKUP_APP,
     version: BACKUP_VERSION,
     exportedAt: new Date().toISOString(),
-    foods: await db.getAllAsync<FoodRow>(`SELECT ${FOOD_COLUMNS.join(', ')} FROM foods ORDER BY id`),
-    entries: await db.getAllAsync<EntryRow>(`SELECT ${ENTRY_COLUMNS.join(', ')} FROM entries ORDER BY id`),
+    foods: await db.getAllAsync<FoodRow>(select(FOOD_COLUMNS, 'foods', 'id')),
+    entries: await db.getAllAsync<EntryRow>(select(ENTRY_COLUMNS, 'entries', 'id')),
     weights: await db.getAllAsync<WeightRow>('SELECT date, kg FROM weights ORDER BY date'),
-    water: await db.getAllAsync<WaterRow>('SELECT date, ml FROM water ORDER BY date'),
     // These describe this phone, not the data.
     settings: await db.getAllAsync<SettingRow>(
       `SELECT key, value FROM settings WHERE key NOT IN ('lastBackupAt', 'genericFoodsVersion')`,
     ),
+    recipes: await db.getAllAsync<RecipeRow>(select(RECIPE_COLUMNS, 'recipes', 'food_id')),
+    recipe_ingredients: await db.getAllAsync<RecipeIngredientRow>(
+      select(RECIPE_INGREDIENT_COLUMNS, 'recipe_ingredients', 'id'),
+    ),
+    saved_meals: await db.getAllAsync<SavedMealRow>(select(SAVED_MEAL_COLUMNS, 'saved_meals', 'id')),
+    saved_meal_items: await db.getAllAsync<SavedMealItemRow>(
+      select(SAVED_MEAL_ITEM_COLUMNS, 'saved_meal_items', 'id'),
+    ),
+    day_types: await db.getAllAsync<DayTypeRow>('SELECT date, type FROM day_types ORDER BY date'),
   };
 }
 
@@ -87,11 +117,21 @@ async function insertRows<T extends Record<string, unknown>>(
  */
 export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Promise<void> {
   await db.withExclusiveTransactionAsync(async (tx) => {
-    await tx.execAsync('DELETE FROM entries; DELETE FROM foods; DELETE FROM weights; DELETE FROM water; DELETE FROM settings;');
+    // Children before parents, so foreign keys never point at a missing row.
+    await tx.execAsync(`
+      DELETE FROM saved_meal_items; DELETE FROM saved_meals;
+      DELETE FROM recipe_ingredients; DELETE FROM recipes;
+      DELETE FROM entries; DELETE FROM foods;
+      DELETE FROM weights; DELETE FROM day_types; DELETE FROM settings;
+    `);
     await insertRows<FoodRow>(tx, 'foods', FOOD_COLUMNS, backup.foods);
+    await insertRows<RecipeRow>(tx, 'recipes', RECIPE_COLUMNS, backup.recipes);
+    await insertRows<RecipeIngredientRow>(tx, 'recipe_ingredients', RECIPE_INGREDIENT_COLUMNS, backup.recipe_ingredients);
     await insertRows<EntryRow>(tx, 'entries', ENTRY_COLUMNS, backup.entries);
+    await insertRows<SavedMealRow>(tx, 'saved_meals', SAVED_MEAL_COLUMNS, backup.saved_meals);
+    await insertRows<SavedMealItemRow>(tx, 'saved_meal_items', SAVED_MEAL_ITEM_COLUMNS, backup.saved_meal_items);
     await insertRows<WeightRow>(tx, 'weights', ['date', 'kg'], backup.weights);
-    await insertRows<WaterRow>(tx, 'water', ['date', 'ml'], backup.water);
+    await insertRows<DayTypeRow>(tx, 'day_types', ['date', 'type'], backup.day_types);
     await insertRows<SettingRow>(tx, 'settings', ['key', 'value'], backup.settings);
     await refreshSearchText(tx);
   });

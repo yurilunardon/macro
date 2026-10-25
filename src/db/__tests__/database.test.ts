@@ -5,12 +5,24 @@ import { parseBackup } from '@/lib/backup';
 import type { FoodDraft } from '@/lib/nutrition';
 
 import { readBackup, restoreBackup } from '../backup';
-import { addWater, getLatestWeight, getWater, getWeightsSince, setWeight } from '../body';
+import { getLatestWeight, getWeightsSince, setWeight } from '../body';
+import { getDayPlan, getDayPlans, setDayType, setTrainingSettings } from '../days';
+import { deleteRecipe, getRecipe, getRecipes, saveRecipe } from '../recipes';
+import {
+  addSavedMealToDiary,
+  deleteSavedMeal,
+  deleteSavedMealItem,
+  getSavedMeal,
+  getSavedMeals,
+  renameSavedMeal,
+  saveMealFromDiary,
+} from '../saved-meals';
 import {
   addEntry,
   addQuickEntry,
   copyMeal,
   deleteEntry,
+  deleteMealEntries,
   getDailyTotals,
   getEntriesForDate,
   getEntry,
@@ -87,7 +99,17 @@ describe('migrations', () => {
     const tables = await db.getAllAsync<{ name: string }>(
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
     );
-    expect(tables.map((t) => t.name)).toEqual(['entries', 'foods', 'settings', 'water', 'weights']);
+    expect(tables.map((t) => t.name)).toEqual([
+      'day_types',
+      'entries',
+      'foods',
+      'recipe_ingredients',
+      'recipes',
+      'saved_meal_items',
+      'saved_meals',
+      'settings',
+      'weights',
+    ]);
   });
 
   it('upgrades a version 1 diary without losing anything', async () => {
@@ -110,6 +132,24 @@ describe('migrations', () => {
     expect((await getFavoriteFoods(old)).map((f) => f.name)).toEqual(["Caffè d'orzo"]);
     expect(await getEntriesForDate(old, '2026-10-24')).toHaveLength(1);
     expect((await getGenericFoods(old)).flatMap((g) => g.foods)).toHaveLength(GENERIC_FOODS.length);
+  });
+
+  it('upgrades a version 2 diary, dropping water but keeping everything else', async () => {
+    const old = createTestDatabase();
+    await old.execAsync(MIGRATIONS[0] as string);
+    await (MIGRATIONS[1] as (db: SQLiteDatabase) => Promise<void>)(old);
+    await old.execAsync('PRAGMA user_version = 2');
+    await old.runAsync(`INSERT INTO water (date, ml) VALUES ('2026-10-24', 750)`);
+    await old.runAsync(`INSERT INTO settings (key, value) VALUES ('waterGoalMl', '2000'), ('targets', '{"kcal":2500,"protein":150,"carbs":300,"fat":70}')`);
+    await old.runAsync(`INSERT INTO weights (date, kg) VALUES ('2026-10-24', 80)`);
+
+    await migrateDatabase(old);
+
+    const tables = await old.getAllAsync<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'");
+    expect(tables.map((t) => t.name)).not.toContain('water');
+    expect(await old.getFirstAsync(`SELECT * FROM settings WHERE key = 'waterGoalMl'`)).toBeNull();
+    expect((await getTargets(old)).targets.kcal).toBe(2500);
+    expect(await getLatestWeight(old)).toEqual({ date: '2026-10-24', kg: 80 });
   });
 
   it('is safe to run again on an existing database', async () => {
@@ -291,20 +331,161 @@ describe('body and settings', () => {
     expect(await getLatestWeight(db)).toEqual({ date: '2026-10-25', kg: 79.6 });
   });
 
-  it('adds water without going below zero', async () => {
-    await addWater(db, '2026-10-25', -250);
-    expect(await getWater(db, '2026-10-25')).toBe(0);
-    await addWater(db, '2026-10-25', 250);
-    await addWater(db, '2026-10-25', 250);
-    await addWater(db, '2026-10-25', -100);
-    expect(await getWater(db, '2026-10-25')).toBe(400);
-  });
-
   it('stores settings as JSON and falls back to default targets', async () => {
     expect(await getTargets(db)).toMatchObject({ isDefault: true });
     await setSetting(db, 'targets', { kcal: 2600, protein: 170, carbs: 300, fat: 75 });
     expect(await getTargets(db)).toEqual({ targets: { kcal: 2600, protein: 170, carbs: 300, fat: 75 }, isDefault: false });
     expect(await getSetting(db, 'profile')).toBeNull();
+  });
+});
+
+describe('recipes', () => {
+  async function ingredients() {
+    const rice = (await searchLocalFoods(db, 'riso bianco crudo'))[0];
+    const chicken = (await searchLocalFoods(db, 'petto pollo crudo'))[0];
+    const oil = (await searchLocalFoods(db, 'olio extravergine'))[0];
+    return [
+      { foodId: rice.id, name: rice.name, brand: null, unit: rice.unit, quantity: 300, per100: rice.per100 },
+      { foodId: chicken.id, name: chicken.name, brand: null, unit: chicken.unit, quantity: 500, per100: chicken.per100 },
+      { foodId: oil.id, name: oil.name, brand: null, unit: oil.unit, quantity: 20, per100: oil.per100 },
+    ];
+  }
+
+  it('saves a recipe as a food per 100 g of the cooked dish', async () => {
+    const ings = await ingredients();
+    const id = await saveRecipe(db, { id: null, name: 'Pollo e riso', cookedWeight: 1600, servings: 4, ingredients: ings });
+    const recipe = (await getRecipe(db, id))!;
+    const totalKcal = ings.reduce((sum, i) => sum + (i.per100.kcal * i.quantity) / 100, 0);
+    expect(recipe.food).toMatchObject({ name: 'Pollo e riso', source: 'recipe', servingSize: 400, servingLabel: '1 porzione su 4' });
+    expect(recipe.food.per100.kcal).toBeCloseTo(totalKcal / 16);
+    expect(recipe.ingredients.map((i) => i.quantity)).toEqual([300, 500, 20]);
+    expect((await searchLocalFoods(db, 'pollo riso')).map((f) => f.name)).toContain('Pollo e riso');
+    expect((await searchLocalFoods(db, 'ricetta')).map((f) => f.name)).toEqual(['Pollo e riso']);
+    expect(await getRecipes(db)).toEqual([{ food: recipe.food, ingredientCount: 3 }]);
+  });
+
+  it('edits a recipe without changing what was already logged', async () => {
+    const ings = await ingredients();
+    const id = await saveRecipe(db, { id: null, name: 'Pollo e riso', cookedWeight: null, servings: null, ingredients: ings });
+    const before = (await getRecipe(db, id))!;
+    const entryId = await addEntry(db, { date: '2026-10-25', meal: 'lunch', food: before.food, quantity: 400 });
+
+    await saveRecipe(db, { id, name: 'Pollo e riso light', cookedWeight: 1500, servings: 5, ingredients: ings.slice(0, 2) });
+    const after = (await getRecipe(db, id))!;
+    expect(after.food.name).toBe('Pollo e riso light');
+    expect(after.ingredients).toHaveLength(2);
+    expect(after.food.servingSize).toBe(300);
+    expect((await getEntry(db, entryId))?.totals.kcal).toBeCloseTo(before.food.per100.kcal * 4);
+    expect(await getRecipes(db)).toHaveLength(1);
+  });
+
+  it('keeps a recipe working when an ingredient food is deleted', async () => {
+    const ings = await ingredients();
+    const id = await saveRecipe(db, { id: null, name: 'Pollo e riso', cookedWeight: null, servings: null, ingredients: ings });
+    await deleteFood(db, ings[2].foodId);
+    const recipe = (await getRecipe(db, id))!;
+    expect(recipe.ingredients[2]).toMatchObject({ foodId: null, name: 'Olio extravergine di oliva', quantity: 20 });
+  });
+
+  it('deletes a recipe and unlinks the diary', async () => {
+    const id = await saveRecipe(db, { id: null, name: 'Pollo e riso', cookedWeight: null, servings: null, ingredients: await ingredients() });
+    const food = (await getRecipe(db, id))!.food;
+    const entryId = await addEntry(db, { date: '2026-10-25', meal: 'lunch', food, quantity: 300 });
+    await deleteRecipe(db, id);
+    expect(await getRecipe(db, id)).toBeNull();
+    expect(await getRecipes(db)).toEqual([]);
+    expect(await db.getFirstAsync('SELECT * FROM recipe_ingredients')).toBeNull();
+    expect((await getEntry(db, entryId))?.foodId).toBeNull();
+  });
+
+  it('refuses a recipe without ingredients', async () => {
+    await expect(saveRecipe(db, { id: null, name: 'Vuota', cookedWeight: null, servings: null, ingredients: [] })).rejects.toThrow();
+  });
+});
+
+describe('saved meals', () => {
+  it('saves a logged meal and adds it to another day', async () => {
+    const pasta = (await getFood(db, await insertFood(db, spaghetti)))!;
+    const yog = (await getFood(db, await insertFood(db, skyr)))!;
+    await addEntry(db, { date: '2026-10-24', meal: 'breakfast', food: yog, quantity: 150 });
+    await pause();
+    await addQuickEntry(db, {
+      date: '2026-10-24',
+      meal: 'breakfast',
+      name: 'Caffè al bar',
+      totals: { kcal: 40, protein: 1, carbs: 5, fat: 1, sugars: null, fiber: null, satFat: null, salt: null },
+    });
+    await addEntry(db, { date: '2026-10-24', meal: 'lunch', food: pasta, quantity: 100 });
+
+    const id = await saveMealFromDiary(db, { date: '2026-10-24', meal: 'breakfast', name: 'Colazione tipo' });
+    expect(await getSavedMeals(db)).toEqual([
+      { id, name: 'Colazione tipo', itemCount: 2, totals: { kcal: 94.5 + 40, protein: 16.5 + 1, carbs: 6 + 5, fat: 0.3 + 1 } },
+    ]);
+
+    expect(await addSavedMealToDiary(db, id, { date: '2026-10-26', meal: 'snack' })).toBe(2);
+    const added = await getEntriesForDate(db, '2026-10-26');
+    expect(added.map((e) => [e.meal, e.name, e.quantity, e.quick])).toEqual([
+      ['snack', 'Skyr bianco 0%', 150, false],
+      ['snack', 'Caffè al bar', 0, true],
+    ]);
+  });
+
+  it('renames, removes items and deletes saved meals', async () => {
+    const yog = (await getFood(db, await insertFood(db, skyr)))!;
+    await addEntry(db, { date: '2026-10-24', meal: 'dinner', food: yog, quantity: 100 });
+    await addEntry(db, { date: '2026-10-24', meal: 'dinner', food: yog, quantity: 200 });
+    const id = await saveMealFromDiary(db, { date: '2026-10-24', meal: 'dinner', name: 'Cena' });
+
+    await renameSavedMeal(db, id, 'Cena leggera');
+    const meal = (await getSavedMeal(db, id))!;
+    expect(meal.name).toBe('Cena leggera');
+    await deleteSavedMealItem(db, meal.items[0].id);
+    expect((await getSavedMeal(db, id))!.items.map((i) => i.quantity)).toEqual([200]);
+
+    await deleteSavedMeal(db, id);
+    expect(await getSavedMeal(db, id)).toBeNull();
+    expect(await db.getFirstAsync('SELECT * FROM saved_meal_items')).toBeNull();
+  });
+
+  it('empties a meal of one day', async () => {
+    const yog = (await getFood(db, await insertFood(db, skyr)))!;
+    await addEntry(db, { date: '2026-10-24', meal: 'dinner', food: yog, quantity: 100 });
+    await addEntry(db, { date: '2026-10-24', meal: 'lunch', food: yog, quantity: 100 });
+    await deleteMealEntries(db, '2026-10-24', 'dinner');
+    expect((await getEntriesForDate(db, '2026-10-24')).map((e) => e.meal)).toEqual(['lunch']);
+  });
+});
+
+describe('training and rest days', () => {
+  const training = { kcal: 2800, protein: 160, carbs: 370, fat: 75 };
+  const rest = { kcal: 2400, protein: 160, carbs: 270, fat: 75 };
+
+  it('uses the same targets every day until rest days are configured', async () => {
+    await setSetting(db, 'targets', training);
+    expect(await getDayPlan(db, '2026-10-25')).toEqual({ targets: training, isDefault: false, dayType: null, overridden: false });
+  });
+
+  it('follows the weekly schedule, with days set by hand winning', async () => {
+    await setSetting(db, 'targets', training);
+    await setTrainingSettings(db, { restTargets: rest, trainingWeekdays: [1, 3, 5] });
+    // 2026-10-26 is a Monday, 2026-10-27 a Tuesday.
+    expect(await getDayPlan(db, '2026-10-26')).toMatchObject({ targets: training, dayType: 'training', overridden: false });
+    expect(await getDayPlan(db, '2026-10-27')).toMatchObject({ targets: rest, dayType: 'rest', overridden: false });
+
+    await setDayType(db, '2026-10-27', 'training');
+    expect(await getDayPlan(db, '2026-10-27')).toMatchObject({ targets: training, dayType: 'training', overridden: true });
+    await setDayType(db, '2026-10-27', null);
+    expect(await getDayPlan(db, '2026-10-27')).toMatchObject({ dayType: 'rest', overridden: false });
+
+    const plans = await getDayPlans(db, ['2026-10-26', '2026-10-27', '2026-10-28']);
+    expect([...plans.values()].map((p) => p.targets.kcal)).toEqual([2800, 2400, 2800]);
+  });
+
+  it('goes back to one set of targets when rest days are turned off', async () => {
+    await setSetting(db, 'targets', training);
+    await setTrainingSettings(db, { restTargets: rest, trainingWeekdays: [1] });
+    await setTrainingSettings(db, { restTargets: null, trainingWeekdays: [1] });
+    expect(await getDayPlan(db, '2026-10-27')).toMatchObject({ targets: training, dayType: null });
   });
 });
 
@@ -316,7 +497,15 @@ describe('backup', () => {
     await addEntry(db, { date: '2026-10-25', meal: 'lunch', food: pasta, quantity: 90 });
     await addEntry(db, { date: '2026-10-25', meal: 'snack', food: mela, quantity: 180 });
     await setWeight(db, '2026-10-25', 79.6);
-    await addWater(db, '2026-10-25', 750);
+    const recipeId = await saveRecipe(db, {
+      id: null,
+      name: 'Pasta al pomodoro',
+      cookedWeight: 500,
+      servings: 2,
+      ingredients: [{ foodId: pasta.id, name: pasta.name, brand: pasta.brand, unit: 'g', quantity: 200, per100: pasta.per100 }],
+    });
+    const savedId = await saveMealFromDiary(db, { date: '2026-10-25', meal: 'snack', name: 'Spuntino' });
+    await setDayType(db, '2026-10-25', 'rest');
     await setSetting(db, 'targets', { kcal: 2600, protein: 170, carbs: 300, fat: 75 });
     await setSetting(db, 'lastBackupAt', '2026-10-25T10:00:00.000Z');
 
@@ -334,7 +523,10 @@ describe('backup', () => {
     expect((await getFavoriteFoods(phone)).map((f) => f.name)).toEqual(['Mela']);
     expect(await searchLocalFoods(phone, 'sostituito')).toEqual([]);
     expect((await searchLocalFoods(phone, 'spaghetti')).map((f) => f.name)).toEqual(['Spaghetti n.5']);
-    expect(await getWater(phone, '2026-10-25')).toBe(750);
+    expect((await getRecipe(phone, recipeId))?.ingredients).toHaveLength(1);
+    expect((await getSavedMeal(phone, savedId))?.items.map((i) => i.name)).toEqual(['Mela']);
+    expect((await searchLocalFoods(phone, 'pasta pomodoro')).map((f) => f.name)).toEqual(['Pasta al pomodoro']);
+    expect((await searchLocalFoods(phone, 'ricetta')).map((f) => f.name)).toEqual(['Pasta al pomodoro']);
     // New rows keep counting after the restored ids.
     const nextId = await insertFood(phone, { ...skyr, name: 'Nuovo' });
     expect(nextId).toBeGreaterThan(Math.max(...restored.foods.map((f) => f.id)));
@@ -354,7 +546,7 @@ describe('backup', () => {
       ],
       entries: [],
       weights: [],
-      water: [],
+      water: [{ date: '2026-10-20', ml: 500 }],
       settings: [],
     };
     await restoreBackup(db, parseBackup(v1));

@@ -1,3 +1,4 @@
+import type { SFSymbol } from 'expo-symbols';
 import { Children, Fragment, isValidElement, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
 
@@ -106,6 +107,30 @@ export function Row({
       accessibilityHint={accessibilityHint}
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.cardPressed }]}>
       {content}
+    </Pressable>
+  );
+}
+
+/** A row that starts an action, e.g. "Aggiungi ingrediente", in the accent colour. */
+export function ActionRow({
+  label,
+  onPress,
+  symbol = 'plus.circle.fill',
+}: {
+  label: string;
+  onPress: () => void;
+  symbol?: SFSymbol;
+}) {
+  const theme = useTheme();
+  return (
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.cardPressed }]}>
+      <Icon name={symbol} size={20} tone="accent" />
+      <AppText tone="accent" weight="600" style={styles.rowText}>
+        {label}
+      </AppText>
     </Pressable>
   );
 }

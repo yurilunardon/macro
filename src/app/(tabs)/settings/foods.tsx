@@ -9,8 +9,10 @@ import { FoodRow } from '@/components/food-row';
 import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
+import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { deleteFood, getCustomFoods, getFavoriteFoods, getRecentFoods } from '@/db/foods';
+import { deleteRecipe } from '@/db/recipes';
 import { useLiveQuery } from '@/db/live';
 import type { Food } from '@/lib/nutrition';
 
@@ -31,11 +33,16 @@ export default function FoodsScreen() {
     list === 'custom' ? getCustomFoods(database) : list === 'favorites' ? getFavoriteFoods(database) : getRecentFoods(database, 100),
   );
 
-  const edit = (food: Food) => router.push({ pathname: '/settings/food-edit', params: { foodId: food.id } });
+  // A recipe's values come from its ingredients, so it opens in the recipe editor.
+  const edit = (food: Food) =>
+    food.source === 'recipe'
+      ? router.push({ pathname: '/settings/recipe', params: { id: food.id } })
+      : router.push({ pathname: '/settings/food-edit', params: { foodId: food.id } });
+  const remove = (food: Food) => void (food.source === 'recipe' ? deleteRecipe(db, food.id) : deleteFood(db, food.id));
   const askDelete = (food: Food) =>
     Alert.alert(food.name, 'Eliminare l’alimento? Le voci già nel diario restano invariate.', [
       { text: 'Annulla', style: 'cancel' },
-      { text: 'Elimina', style: 'destructive', onPress: () => void deleteFood(db, food.id) },
+      { text: 'Elimina', style: 'destructive', onPress: () => remove(food) },
     ]);
 
   return (
@@ -59,10 +66,15 @@ export default function FoodsScreen() {
         <>
           <ListGroup>
             {data.map((food) => (
-              <FoodRow key={food.id} food={food} onPress={() => edit(food)} onLongPress={() => askDelete(food)} />
+              <SwipeToDelete key={food.id} onDelete={() => remove(food)}>
+                <FoodRow food={food} onPress={() => edit(food)} onLongPress={() => askDelete(food)} />
+              </SwipeToDelete>
             ))}
           </ListGroup>
-          <SectionFooter>Tocca un alimento per correggerlo, tieni premuto per eliminarlo.</SectionFooter>
+          <SectionFooter>
+            Tocca un alimento per correggerlo, scorri a sinistra per eliminarlo. Le voci già nel diario restano
+            invariate.
+          </SectionFooter>
         </>
       ) : data ? (
         <AppText tone="textSecondary" align="center" style={styles.empty}>

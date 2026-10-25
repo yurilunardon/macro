@@ -1,3 +1,4 @@
+import * as Haptics from 'expo-haptics';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import type { SFSymbol } from 'expo-symbols';
@@ -20,9 +21,12 @@ import {
   searchLocalFoods,
 } from '@/db/foods';
 import { useLiveQuery } from '@/db/live';
+import { getRecipes } from '@/db/recipes';
+import { addSavedMealToDiary, getSavedMeals, type SavedMealSummary } from '@/db/saved-meals';
 import { useAddFlowParams, useCloseAddFlow } from '@/hooks/use-add-flow';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDayTitle } from '@/lib/dates';
+import { formatKcal } from '@/lib/format';
 import { mealLabel } from '@/lib/meals';
 import type { Food, FoodDraft } from '@/lib/nutrition';
 import { OffNetworkError, searchProducts } from '@/lib/off';
@@ -36,10 +40,9 @@ const LISTS: readonly { key: ListKey; label: string }[] = [
   { key: 'custom', label: 'Miei' },
 ];
 
-const EMPTY_MESSAGES: Record<Exclude<ListKey, 'basic'>, string> = {
+const EMPTY_MESSAGES: Record<'recent' | 'favorites', string> = {
   recent: 'Qui compariranno gli alimenti che registri.',
   favorites: 'Tocca la stella su un alimento per averlo qui.',
-  custom: 'Gli alimenti che crei a mano compariranno qui.',
 };
 
 type OnlineState =
@@ -53,7 +56,8 @@ export default function AddScreen() {
   const router = useRouter();
   const theme = useTheme();
   const close = useCloseAddFlow();
-  const { meal, date } = useAddFlowParams();
+  const { meal, date, mode, forward: params } = useAddFlowParams();
+  const forDiary = mode === 'diary';
   const [query, setQuery] = useState('');
   const [list, setList] = useState<ListKey>('recent');
   const [online, setOnline] = useState<OnlineState>({ status: 'idle' });
@@ -61,14 +65,17 @@ export default function AddScreen() {
   const trimmed = query.trim();
 
   const lists = useLiveQuery(`add-lists:${list}`, (database) =>
-    list === 'recent'
-      ? getRecentFoods(database)
-      : list === 'favorites'
-        ? getFavoriteFoods(database)
-        : list === 'custom'
-          ? getCustomFoods(database)
-          : Promise.resolve([]),
+    list === 'recent' ? getRecentFoods(database) : list === 'favorites' ? getFavoriteFoods(database) : Promise.resolve([]),
   );
+  const mine = useLiveQuery(`add-mine:${list === 'custom'}:${forDiary}`, async (database) => {
+    if (list !== 'custom') return null;
+    const [savedMeals, recipes, custom] = await Promise.all([
+      forDiary ? getSavedMeals(database) : Promise.resolve([]),
+      getRecipes(database),
+      getCustomFoods(database),
+    ]);
+    return { savedMeals, recipes: recipes.map((r) => r.food), custom };
+  });
   const basic = useLiveQuery(`add-basic:${list === 'basic'}`, (database) =>
     list === 'basic' ? getGenericFoods(database) : Promise.resolve([]),
   );
@@ -93,11 +100,15 @@ export default function AddScreen() {
     }
   };
 
-  const params = { meal, date };
   const openFood = (food: Food) => router.push({ pathname: '/add/food', params: { ...params, foodId: food.id } });
   const openOnline = async (draft: FoodDraft) => {
     const food = await saveOffFood(db, draft);
     openFood(food);
+  };
+  const addSavedMeal = async (saved: SavedMealSummary) => {
+    await addSavedMealToDiary(db, saved.id, { date, meal });
+    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    close();
   };
 
   const onlineMatchesQuery = online.status !== 'idle' && online.query === trimmed;
@@ -106,7 +117,7 @@ export default function AddScreen() {
     <ScreenScroll>
       <Stack.Screen
         options={{
-          title: `${mealLabel(meal)} · ${formatDayTitle(date)}`,
+          title: forDiary ? `${mealLabel(meal)} · ${formatDayTitle(date)}` : 'Aggiungi ingrediente',
           headerLeft: () => (
             <Pressable onPress={close} hitSlop={10} accessibilityRole="button" accessibilityLabel="Chiudi">
               <Icon name="xmark" size={18} tone="textSecondary" weight="semibold" />
@@ -139,11 +150,13 @@ export default function AddScreen() {
               label="Scansiona"
               onPress={() => router.push({ pathname: '/add/scan', params })}
             />
-            <ActionTile
-              symbol="bolt.fill"
-              label="Aggiunta rapida"
-              onPress={() => router.push({ pathname: '/add/quick', params })}
-            />
+            {forDiary ? (
+              <ActionTile
+                symbol="bolt.fill"
+                label="Aggiunta rapida"
+                onPress={() => router.push({ pathname: '/add/quick', params })}
+              />
+            ) : null}
             <ActionTile
               symbol="square.and.pencil"
               label="Crea alimento"
@@ -154,6 +167,16 @@ export default function AddScreen() {
           <View style={styles.listGap} />
           {list === 'basic' ? (
             <BasicFoods groups={basic.data ?? []} onOpen={openFood} />
+          ) : list === 'custom' ? (
+            mine.data ? (
+              <MyFoods
+                savedMeals={mine.data.savedMeals}
+                recipes={mine.data.recipes}
+                custom={mine.data.custom}
+                onAddSavedMeal={(saved) => void addSavedMeal(saved)}
+                onOpen={openFood}
+              />
+            ) : null
           ) : lists.data && lists.data.length > 0 ? (
             <ListGroup>
               {lists.data.map((food) => (
@@ -230,6 +253,79 @@ export default function AddScreen() {
         </>
       )}
     </ScreenScroll>
+  );
+}
+
+/** Saved meals (logged with one tap), recipes and foods created by hand. */
+function MyFoods({
+  savedMeals,
+  recipes,
+  custom,
+  onAddSavedMeal,
+  onOpen,
+}: {
+  savedMeals: SavedMealSummary[];
+  recipes: Food[];
+  custom: Food[];
+  onAddSavedMeal: (saved: SavedMealSummary) => void;
+  onOpen: (food: Food) => void;
+}) {
+  const theme = useTheme();
+  if (savedMeals.length + recipes.length + custom.length === 0) {
+    return (
+      <AppText tone="textSecondary" align="center" style={styles.empty}>
+        Qui trovi i pasti salvati, le ricette e gli alimenti creati da te. Le ricette si creano da Profilo → Ricette e
+        pasti salvati.
+      </AppText>
+    );
+  }
+  return (
+    <>
+      {savedMeals.length > 0 ? (
+        <>
+          <SectionTitle>Pasti salvati</SectionTitle>
+          <ListGroup>
+            {savedMeals.map((saved) => (
+              <Pressable
+                key={saved.id}
+                onPress={() => onAddSavedMeal(saved)}
+                accessibilityRole="button"
+                accessibilityHint="Aggiunge tutti gli alimenti di questo pasto"
+                style={({ pressed }) => [styles.categoryRow, pressed && { backgroundColor: theme.cardPressed }]}>
+                <Icon name="bookmark.fill" size={18} tone="accent" />
+                <View style={styles.flex}>
+                  <AppText numberOfLines={1}>{saved.name}</AppText>
+                  <AppText variant="footnote" tone="textSecondary" numeric>
+                    {`${saved.itemCount} ${saved.itemCount === 1 ? 'alimento' : 'alimenti'} · ${formatKcal(saved.totals.kcal)} kcal`}
+                  </AppText>
+                </View>
+                <Icon name="plus.circle.fill" size={26} tone="accent" />
+              </Pressable>
+            ))}
+          </ListGroup>
+        </>
+      ) : null}
+      {recipes.length > 0 ? (
+        <>
+          <SectionTitle>Ricette</SectionTitle>
+          <ListGroup>
+            {recipes.map((food) => (
+              <FoodRow key={food.id} food={food} onPress={() => onOpen(food)} />
+            ))}
+          </ListGroup>
+        </>
+      ) : null}
+      {custom.length > 0 ? (
+        <>
+          <SectionTitle>Creati da me</SectionTitle>
+          <ListGroup>
+            {custom.map((food) => (
+              <FoodRow key={food.id} food={food} onPress={() => onOpen(food)} />
+            ))}
+          </ListGroup>
+        </>
+      ) : null}
+    </>
   );
 }
 

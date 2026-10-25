@@ -1,7 +1,8 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
 import { SQLiteProvider } from 'expo-sqlite';
 import { Suspense } from 'react';
-import { ActivityIndicator, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
+import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -30,24 +31,30 @@ export default function RootLayout() {
   };
 
   return (
-    <ThemeProvider value={navigationTheme}>
-      <Suspense fallback={<Loading />}>
-        <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDatabase} useSuspense>
-          <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
-            <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
-            <Stack.Screen name="add" options={{ presentation: 'modal', headerShown: false }} />
-            <Stack.Screen
-              name="entry/[id]"
-              options={{
-                presentation: 'formSheet',
-                sheetAllowedDetents: [0.75, 1],
-                sheetGrabberVisible: true,
-                headerShown: false,
-              }}
-            />
-          </Stack>
-        </SQLiteProvider>
-      </Suspense>
-    </ThemeProvider>
+    <GestureHandlerRootView style={styles.root}>
+      <ThemeProvider value={navigationTheme}>
+        <Suspense fallback={<Loading />}>
+          <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDatabase} useSuspense>
+            <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
+              <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
+              <Stack.Screen name="add" options={{ presentation: 'modal', headerShown: false }} />
+              <Stack.Screen
+                name="entry/[id]"
+                options={{
+                  presentation: 'formSheet',
+                  sheetAllowedDetents: [0.75, 1],
+                  sheetGrabberVisible: true,
+                  headerShown: false,
+                }}
+              />
+            </Stack>
+          </SQLiteProvider>
+        </Suspense>
+      </ThemeProvider>
+    </GestureHandlerRootView>
   );
 }
+
+const styles = StyleSheet.create({
+  root: { flex: 1 },
+});

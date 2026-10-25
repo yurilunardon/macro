@@ -66,3 +66,8 @@ export function formatShortDate(key: DateKey): string {
 export function formatWeekdayInitial(key: DateKey): string {
   return weekdayShort.format(fromDateKey(key)).toUpperCase();
 }
+
+/** Day of the week as in Date.getDay(): 0 is Sunday. */
+export function weekdayOf(key: DateKey): number {
+  return fromDateKey(key).getDay();
+}

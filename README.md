@@ -13,7 +13,11 @@ Conta calorie e macro per uso personale, per iPhone. Scansioni il codice a barre
 - **Quantità veloci**: 1 porzione o 30, 50, 100, 150, 200 g, e l'ultima quantità usata viene riproposta. C'è anche **"Copia da ieri"** per i pasti che si ripetono.
 - **Obiettivi** calcolati con la formula Mifflin-St Jeor a partire da sesso, età, altezza, peso, attività e obiettivo, con proteine in g/kg e grassi in %. Puoi ritoccarli a mano.
 - **Progressi**: grafico del peso (30 giorni, 3 mesi, 1 anno), calorie degli ultimi 7 giorni e medie dei macro.
-- **Acqua**, a bicchieri da 250 ml.
+- **Ricette**: ingredienti crudi, peso del piatto finito e porzioni. La ricetta si registra come un alimento qualsiasi, comoda per il meal prep.
+- **Pasti salvati**: dal menu ••• di un pasto nel Diario. Li ritrovi in Aggiungi → Miei e li registri con un tocco.
+- **Obiettivi diversi nei giorni di allenamento e di riposo**, con un programma settimanale. Nel Diario puoi cambiare il tipo di un singolo giorno.
+- **Avviso di scadenza**: l'app legge quando scade la firma di AltStore e lo segnala nei 3 giorni prima.
+- **Scorri a sinistra per eliminare** voci, alimenti, pesate, ingredienti, ricette e pasti salvati.
 - **Backup e ripristino** in un file JSON, da salvare su iCloud Drive.
 
 ## I tuoi dati e AltStore
@@ -84,7 +88,7 @@ src/
     add/               modale "aggiungi": ricerca, scanner, scheda prodotto, nuovo alimento
     entry/[id].tsx     modifica di una voce del diario
   components/          componenti dell'interfaccia
-  db/                  SQLite: schema e migrazioni, alimenti, diario, peso/acqua, impostazioni, backup
+  db/                  SQLite: schema e migrazioni, alimenti, diario, ricette, pasti salvati, giorni, peso, backup
   lib/                 logica pura e testata: nutrienti, obiettivi, date, Open Food Facts, backup, ricerca
   data/                alimenti base (generati, non modificarli a mano)
 scripts/build-ipa.sh   build dell'IPA non firmato sul Mac

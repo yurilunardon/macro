@@ -16,7 +16,8 @@ import { Radius, Spacing } from '@/constants/theme';
 import { addEntry } from '@/db/entries';
 import { getFood, getFoodByBarcode, getLastQuantity, saveOffFood, setFavorite } from '@/db/foods';
 import { useLiveQuery } from '@/db/live';
-import { useAddFlowParams, useCloseAddFlow } from '@/hooks/use-add-flow';
+import { useAddFlowParams, useCloseAddFlow, type AddFlowMode } from '@/hooks/use-add-flow';
+import { recipeDraft, useRecipeDraft } from '@/hooks/use-recipe-draft';
 import { useTheme } from '@/hooks/use-theme';
 import type { DateKey } from '@/lib/dates';
 import { formatGrams, formatKcal, formatNumber, numberToInput, parseDecimal, servingPresetLabel } from '@/lib/format';
@@ -37,11 +38,12 @@ const SOURCE_NOTES = {
   custom: 'Alimento creato da te.',
   generic:
     'Valori medi da USDA FoodData Central (pubblico dominio). Le porzioni sono indicative: per essere precisi, pesa.',
+  recipe: 'Ricetta: valori per 100 g del piatto finito. La modifichi da Profilo → Ricette e pasti salvati.',
 } as const;
 
 export default function FoodScreen() {
   const db = useSQLiteContext();
-  const { meal, date, foodId, barcode } = useAddFlowParams();
+  const { meal, date, mode, foodId, barcode, forward } = useAddFlowParams();
   const [resolution, setResolution] = useState<Resolution>(
     foodId !== null
       ? { kind: 'food', id: foodId }
@@ -85,7 +87,7 @@ export default function FoodScreen() {
     return () => controller.abort();
   }, [db, foodId, barcode, attempt]);
 
-  if (resolution.kind === 'food') return <FoodDetail id={resolution.id} initialMeal={meal} date={date} />;
+  if (resolution.kind === 'food') return <FoodDetail id={resolution.id} initialMeal={meal} date={date} mode={mode} />;
   if (resolution.kind === 'loading') {
     return (
       <View style={styles.center}>
@@ -97,8 +99,7 @@ export default function FoodScreen() {
   return (
     <Missing
       resolution={resolution}
-      meal={meal}
-      date={date}
+      forward={forward}
       onRetry={() => {
         setResolution({ kind: 'loading' });
         setAttempt((a) => a + 1);
@@ -109,19 +110,17 @@ export default function FoodScreen() {
 
 function Missing({
   resolution,
-  meal,
-  date,
+  forward,
   onRetry,
 }: {
   resolution: Extract<Resolution, { kind: 'missing' | 'error' }>;
-  meal: MealKey;
-  date: DateKey;
+  forward: { meal: MealKey; date: DateKey; mode: AddFlowMode };
   onRetry: () => void;
 }) {
   const router = useRouter();
   const code = resolution.barcode;
   const create = () =>
-    router.replace({ pathname: '/add/custom', params: { meal, date, ...(code ? { barcode: code } : {}) } });
+    router.replace({ pathname: '/add/custom', params: { ...forward, ...(code ? { barcode: code } : {}) } });
 
   const title =
     resolution.kind === 'error'
@@ -151,15 +150,26 @@ function Missing({
         <Button
           title="Scansiona di nuovo"
           variant="plain"
-          onPress={() => router.replace({ pathname: '/add/scan', params: { meal, date } })}
+          onPress={() => router.replace({ pathname: '/add/scan', params: forward })}
         />
       </View>
     </ScrollView>
   );
 }
 
-function FoodDetail({ id, initialMeal, date }: { id: number; initialMeal: MealKey; date: DateKey }) {
+function FoodDetail({
+  id,
+  initialMeal,
+  date,
+  mode,
+}: {
+  id: number;
+  initialMeal: MealKey;
+  date: DateKey;
+  mode: AddFlowMode;
+}) {
   const db = useSQLiteContext();
+  const draft = useRecipeDraft();
   const router = useRouter();
   const theme = useTheme();
   const close = useCloseAddFlow();
@@ -199,8 +209,24 @@ function FoodDetail({ id, initialMeal, date }: { id: number; initialMeal: MealKe
     ...(unit === 'ml' ? [100, 200, 250, 330, 500] : [30, 50, 100, 150, 200]).map((v) => ({ label: `${v} ${unit}`, value: v })),
   ];
 
+  // A recipe cannot contain itself.
+  const isOwnRecipe = mode === 'ingredient' && draft.id === food.id;
+
   const add = async () => {
     if (quantity === null) return;
+    if (mode === 'ingredient') {
+      recipeDraft.addIngredient({
+        foodId: food.id,
+        name: food.name,
+        brand: food.brand,
+        unit: food.unit,
+        quantity,
+        per100: food.per100,
+      });
+      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      close();
+      return;
+    }
     setAdding(true);
     try {
       await addEntry(db, { date, meal, food, quantity });
@@ -292,31 +318,40 @@ function FoodDetail({ id, initialMeal, date }: { id: number; initialMeal: MealKe
         ))}
       </ScrollView>
 
-      <SectionTitle>Pasto</SectionTitle>
-      <Segmented options={MEAL_OPTIONS} value={meal} onChange={setMeal} />
+      {mode === 'diary' ? (
+        <>
+          <SectionTitle>Pasto</SectionTitle>
+          <Segmented options={MEAL_OPTIONS} value={meal} onChange={setMeal} />
+        </>
+      ) : null}
 
       <View style={styles.addButton}>
         <Button
-          title={`Aggiungi a ${mealLabel(meal).toLowerCase()}`}
+          title={mode === 'ingredient' ? 'Aggiungi alla ricetta' : `Aggiungi a ${mealLabel(meal).toLowerCase()}`}
           onPress={() => void add()}
-          disabled={quantity === null}
+          disabled={quantity === null || isOwnRecipe}
           loading={adding}
         />
       </View>
+      {isOwnRecipe ? (
+        <SectionFooter>Una ricetta non può contenere se stessa.</SectionFooter>
+      ) : null}
 
       <SectionTitle>Tabella nutrizionale</SectionTitle>
       <NutrientTable per100={food.per100} quantity={quantity} unit={unit} />
       <SectionFooter>
         {SOURCE_NOTES[food.source]}
       </SectionFooter>
-      <Pressable
-        onPress={() => router.push({ pathname: '/add/custom', params: { foodId: food.id } })}
-        accessibilityRole="button"
-        style={styles.link}>
-        <AppText tone="accent" weight="600">
-          Correggi i valori
-        </AppText>
-      </Pressable>
+      {food.source !== 'recipe' ? (
+        <Pressable
+          onPress={() => router.push({ pathname: '/add/custom', params: { foodId: food.id } })}
+          accessibilityRole="button"
+          style={styles.link}>
+          <AppText tone="accent" weight="600">
+            Correggi i valori
+          </AppText>
+        </Pressable>
+      ) : null}
     </ScreenScroll>
   );
 }

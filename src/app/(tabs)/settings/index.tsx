@@ -7,13 +7,15 @@ import { ActivityIndicator, Alert, Linking } from 'react-native';
 
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
-import { promptNumber } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { pickBackup, restoreBackup, shareBackup } from '@/db/backup';
 import { useLiveQuery } from '@/db/live';
-import { DEFAULT_WATER_GOAL_ML, getSetting, getTargets, setSetting } from '@/db/settings';
+import { getTrainingSettings } from '@/db/days';
+import { getSetting, getTargets } from '@/db/settings';
+import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { BackupFormatError } from '@/lib/backup';
-import { formatKcal, formatNumber, numberToInput } from '@/lib/format';
+import { formatKcal } from '@/lib/format';
+import { formatExpiry } from '@/lib/provisioning';
 
 const BACKUP_REMINDER_DAYS = 7;
 
@@ -29,17 +31,19 @@ export default function SettingsScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const [busy, setBusy] = useState<'export' | 'import' | null>(null);
+  const expiry = useAppExpiry();
 
   const { data } = useLiveQuery('settings', async (database) => {
-    const [goals, waterGoal, lastBackupAt, counts] = await Promise.all([
+    const [goals, training, lastBackupAt, counts] = await Promise.all([
       getTargets(database),
-      getSetting(database, 'waterGoalMl'),
+      getTrainingSettings(database),
       getSetting(database, 'lastBackupAt'),
-      database.getFirstAsync<{ entries: number; foods: number }>(
-        'SELECT (SELECT COUNT(*) FROM entries) AS entries, (SELECT COUNT(*) FROM foods) AS foods',
+      database.getFirstAsync<{ entries: number; foods: number; recipes: number; meals: number }>(
+        `SELECT (SELECT COUNT(*) FROM entries) AS entries, (SELECT COUNT(*) FROM foods) AS foods,
+           (SELECT COUNT(*) FROM recipes) AS recipes, (SELECT COUNT(*) FROM saved_meals) AS meals`,
       ),
     ]);
-    return { ...goals, waterGoal: waterGoal ?? DEFAULT_WATER_GOAL_ML, lastBackupAt, counts };
+    return { ...goals, restTargets: training.restTargets, lastBackupAt, counts };
   });
 
   const status = backupStatus(data?.lastBackupAt ?? null);
@@ -93,16 +97,6 @@ export default function SettingsScreen() {
     }
   };
 
-  const editWaterGoal = () =>
-    promptNumber({
-      title: 'Obiettivo acqua',
-      message: 'Litri al giorno.',
-      defaultValue: numberToInput((data?.waterGoal ?? DEFAULT_WATER_GOAL_ML) / 1000),
-      min: 0.5,
-      max: 8,
-      onSubmit: (liters) => void setSetting(db, 'waterGoalMl', Math.round(liters * 1000)),
-    });
-
   return (
     <ScreenScroll>
       <SectionTitle>Obiettivi</SectionTitle>
@@ -113,18 +107,14 @@ export default function SettingsScreen() {
             data
               ? data.isDefault
                 ? 'Valori di esempio: impostali per te'
-                : `P ${data.targets.protein} g · C ${data.targets.carbs} g · G ${data.targets.fat} g`
+                : data.restTargets
+                  ? `Allenamento ${formatKcal(data.targets.kcal)} · riposo ${formatKcal(data.restTargets.kcal)} kcal`
+                  : `P ${data.targets.protein} g · C ${data.targets.carbs} g · G ${data.targets.fat} g`
               : null
           }
-          detail={data ? `${formatKcal(data.targets.kcal)} kcal` : undefined}
+          detail={data && !data.restTargets ? `${formatKcal(data.targets.kcal)} kcal` : undefined}
           icon={<Icon name="target" size={20} tone="accent" />}
           onPress={() => router.push('/settings/goals')}
-        />
-        <Row
-          title="Acqua"
-          detail={data ? `${formatNumber(data.waterGoal / 1000, 1)} L` : undefined}
-          icon={<Icon name="drop.fill" size={20} tone="water" />}
-          onPress={editWaterGoal}
         />
       </ListGroup>
 
@@ -136,6 +126,13 @@ export default function SettingsScreen() {
           detail={data?.counts ? String(data.counts.foods) : undefined}
           icon={<Icon name="fork.knife" size={20} tone="accent" />}
           onPress={() => router.push('/settings/foods')}
+        />
+        <Row
+          title="Ricette e pasti salvati"
+          subtitle="Meal prep e pasti che ripeti spesso"
+          detail={data?.counts ? String(data.counts.recipes + data.counts.meals) : undefined}
+          icon={<Icon name="frying.pan.fill" size={20} tone="accent" />}
+          onPress={() => router.push('/settings/recipes')}
         />
       </ListGroup>
 
@@ -165,6 +162,20 @@ export default function SettingsScreen() {
 
       <SectionTitle>Informazioni</SectionTitle>
       <ListGroup>
+        {expiry ? (
+          <Row
+            title="Scadenza dell’app"
+            subtitle={expiry.level === 'ok' ? 'Rinnova da AltStore prima di questa data' : 'Rinnova da AltStore: My Apps → Refresh All'}
+            detail={formatExpiry(expiry.expiresAt)}
+            icon={
+              <Icon
+                name="clock.badge.exclamationmark"
+                size={20}
+                tone={expiry.level === 'ok' ? 'accent' : expiry.level === 'soon' ? 'warning' : 'danger'}
+              />
+            }
+          />
+        ) : null}
         <Row
           title="Dati prodotti: Open Food Facts"
           subtitle="Database libero, licenza ODbL"

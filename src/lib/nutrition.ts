@@ -11,8 +11,8 @@ export type Nutrients = {
 };
 
 export type Unit = 'g' | 'ml';
-/** Open Food Facts, made by the user, or one of the basic foods shipped with the app. */
-export type FoodSource = 'off' | 'custom' | 'generic';
+/** Open Food Facts, made by the user, a basic food shipped with the app, or a recipe. */
+export type FoodSource = 'off' | 'custom' | 'generic' | 'recipe';
 
 /** A food as it comes from Open Food Facts or the "new food" form, before it is saved. */
 export type FoodDraft = {

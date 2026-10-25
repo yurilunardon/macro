@@ -133,3 +133,32 @@ export function parseTargets(f: TargetFields) {
   };
   return { targets, invalid };
 }
+
+export type DayType = 'training' | 'rest';
+
+/** Monday first, as on Italian calendars; `day` is Date.getDay() (0 = Sunday). */
+export const WEEKDAYS: readonly { day: number; short: string; label: string }[] = [
+  { day: 1, short: 'L', label: 'Lunedì' },
+  { day: 2, short: 'M', label: 'Martedì' },
+  { day: 3, short: 'M', label: 'Mercoledì' },
+  { day: 4, short: 'G', label: 'Giovedì' },
+  { day: 5, short: 'V', label: 'Venerdì' },
+  { day: 6, short: 'S', label: 'Sabato' },
+  { day: 0, short: 'D', label: 'Domenica' },
+];
+
+/** A day chosen by hand wins; otherwise the weekly schedule decides. */
+export function dayTypeFor(weekday: number, trainingWeekdays: readonly number[], override: DayType | null): DayType {
+  if (override) return override;
+  return trainingWeekdays.includes(weekday) ? 'training' : 'rest';
+}
+
+/**
+ * Rest-day targets from training-day ones: fewer calories, taken from carbs, while protein
+ * and fat stay the same.
+ */
+export function deriveRestTargets(training: Targets, reductionPercent = 15): Targets {
+  const kcal = Math.round(training.kcal * (1 - reductionPercent / 100));
+  const carbs = Math.max(0, Math.round((kcal - training.protein * 4 - training.fat * 9) / 4));
+  return { kcal, protein: training.protein, carbs, fat: training.fat };
+}

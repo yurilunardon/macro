@@ -20,7 +20,6 @@ export const Colors = {
     protein: '#D9480F',
     carbs: '#0B7285',
     fat: '#9C36B5',
-    water: '#1C7ED6',
     scrim: 'rgba(0,0,0,0.55)',
   },
   dark: {
@@ -40,7 +39,6 @@ export const Colors = {
     protein: '#FF9F0A',
     carbs: '#3BC9DB',
     fat: '#DA8FFF',
-    water: '#4DABF7',
     scrim: 'rgba(0,0,0,0.6)',
   },
 } as const;
