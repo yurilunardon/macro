@@ -48,16 +48,20 @@ export async function getDayPlans(db: SQLiteDatabase, dates: readonly DateKey[])
     return plans;
   }
   const overrides = new Map<string, DayType>();
+  const workoutDays = new Set<string>();
   if (dates.length > 0) {
-    const rows = await db.getAllAsync<{ date: string; type: DayType }>(
-      `SELECT date, type FROM day_types WHERE date IN (${dates.map(() => '?').join(', ')})`,
-      ...dates,
-    );
+    const placeholders = dates.map(() => '?').join(', ');
+    const [rows, workouts] = await Promise.all([
+      db.getAllAsync<{ date: string; type: DayType }>(`SELECT date, type FROM day_types WHERE date IN (${placeholders})`, ...dates),
+      db.getAllAsync<{ date: string }>(`SELECT DISTINCT date FROM workouts WHERE date IN (${placeholders})`, ...dates),
+    ]);
     for (const row of rows) overrides.set(row.date, row.type);
+    for (const row of workouts) workoutDays.add(row.date);
   }
   for (const date of dates) {
     const override = overrides.get(date) ?? null;
-    const dayType = dayTypeFor(weekdayOf(date), training.trainingWeekdays, override);
+    // A day with a workout is a training day, unless it was set by hand.
+    const dayType = dayTypeFor(weekdayOf(date), training.trainingWeekdays, override ?? (workoutDays.has(date) ? 'training' : null));
     plans.set(date, {
       targets: dayType === 'rest' ? training.restTargets : targets,
       isDefault,

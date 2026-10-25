@@ -4,6 +4,7 @@ import { useEffect, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Platform, StyleSheet, Switch, View } from 'react-native';
 
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
 import { useLiveQuery } from '@/db/live';
@@ -24,6 +25,7 @@ export default function RemindersScreen() {
   const theme = useTheme();
   const [permission, setPermission] = useState<'granted' | 'denied' | 'unknown'>('unknown');
   const { data } = useLiveQuery('reminders', (database) => getSetting(database, 'reminders'));
+  const { data: restAlert } = useLiveQuery('rest-alert', (database) => getSetting(database, 'restAlert'));
 
   useEffect(() => {
     let cancelled = false;
@@ -144,6 +146,20 @@ export default function RemindersScreen() {
       <SectionFooter>
         Le notifiche sono tutte sul telefono: nessun server. Quando rinnovi l’app con AltStore la data di scadenza si
         aggiorna da sola.
+      </SectionFooter>
+
+      <SectionTitle>Allenamento · fine del recupero</SectionTitle>
+      <Segmented
+        options={[
+          { key: 'silent', label: 'Silenziosa' },
+          { key: 'sound', label: 'Con suono' },
+        ]}
+        value={restAlert ?? 'silent'}
+        onChange={(value) => void setSetting(db, 'restAlert', value)}
+      />
+      <SectionFooter>
+        Con l’app aperta il telefono vibra due volte e la barra del timer lo dice. Con lo schermo spento arriva una
+        notifica: silenziosa, oppure con il suono di sistema, che in modalità silenziosa diventa solo una vibrazione.
       </SectionFooter>
     </ScreenScroll>
   );

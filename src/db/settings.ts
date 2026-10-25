@@ -19,6 +19,10 @@ type SettingsMap = {
   lastBackupAt: string;
   /** Which version of the shipped basic foods has been added to this phone. */
   genericFoodsVersion: number;
+  /** Which version of the shipped exercise library has been added to this phone. */
+  exercisesVersion: number;
+  /** End of a rest: a silent banner, or with the system sound (only a vibration in silent mode). */
+  restAlert: 'silent' | 'sound';
 };
 
 export type SettingKey = keyof SettingsMap;

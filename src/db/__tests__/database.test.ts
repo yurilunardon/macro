@@ -105,16 +105,23 @@ describe('migrations', () => {
       "SELECT name FROM sqlite_master WHERE type = 'table' AND name NOT LIKE 'sqlite_%' ORDER BY name",
     );
     expect(tables.map((t) => t.name)).toEqual([
+      'day_exercises',
       'day_types',
       'entries',
+      'exercises',
       'foods',
       'measurements',
+      'program_days',
+      'programs',
       'recipe_ingredients',
       'recipes',
       'saved_meal_items',
       'saved_meals',
       'settings',
       'weights',
+      'workout_exercises',
+      'workout_sets',
+      'workouts',
     ]);
   });
 

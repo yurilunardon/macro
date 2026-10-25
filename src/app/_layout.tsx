@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { NotificationSync } from '@/components/notification-sync';
 import { ToastHost } from '@/components/toast';
+import { TAB_STACK_OPTIONS } from '@/constants/navigation';
 import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
@@ -40,6 +41,19 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="add" options={{ presentation: 'modal', headerShown: false }} />
+              <Stack.Screen name="workout" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Allenamento' }} />
+              <Stack.Screen
+                name="exercise-picker"
+                options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Esercizi' }}
+              />
+              <Stack.Screen
+                name="exercise-new"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.75, 1], sheetGrabberVisible: true, headerShown: false }}
+              />
+              <Stack.Screen
+                name="plan-exercise"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.75, 1], sheetGrabberVisible: true, headerShown: false }}
+              />
               <Stack.Screen
                 name="nutrients"
                 options={{

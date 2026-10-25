@@ -28,6 +28,15 @@ Conta calorie e macro per uso personale, per iPhone. Scansioni il codice a barre
 - **Esportazione CSV** del diario e di peso e misure, per Excel o Numbers.
 - **Backup e ripristino** in un file JSON, da salvare su iCloud Drive.
 
+## Allenamento
+
+- **Libreria di circa 100 esercizi** in italiano (muscolo principale e secondari, attrezzo), più quelli che crei tu.
+- **Schede** fatte di giorni (Push, Pull, Legs…) con serie × fascia di ripetizioni, recupero e note. Si parte da un modello (Push Pull Legs, Upper Lower, Full body) o da una scheda vuota; i giorni si alternano a rotazione.
+- **Allenamento live**: per ogni serie il risultato dell'ultima volta e i valori proposti già scritti in grigio; spunta, timer di recupero automatico, tipi di serie (riscaldamento, drop, cedimento), blocchi facoltativi per esercizio (RIR, nota fissa, recupero). Si riduce in una barra sopra le tab, come il mini player di Musica.
+- **Doppia progressione**: stesso carico finché tutte le serie arrivano al massimo della fascia, poi il carico successivo (+2,5 kg col bilanciere, il manubrio dopo, ecc.).
+- **Storico e record**: ogni seduta, massimale stimato (Epley) con grafico per esercizio, record a fine allenamento, serie settimanali per muscolo.
+- **Collegato all'alimentazione**: un giorno con un allenamento usa gli obiettivi di allenamento.
+
 ## I tuoi dati e AltStore
 
 Con AltStore e un Apple ID gratuito l'app scade ogni 7 giorni. **Quando scade i dati non si perdono**: restano sul telefono e li ritrovi appena la rinnovi da AltStore, anche dopo settimane.

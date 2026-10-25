@@ -10,18 +10,26 @@ import {
   backupFileName,
   parseBackup,
   type BackupData,
+  type DayExerciseRow,
   type DayTypeRow,
   type EntryRow,
+  type ExerciseRow,
   type FoodRow,
   type MeasurementRow,
+  type ProgramDayRow,
+  type ProgramRow,
   type RecipeIngredientRow,
   type RecipeRow,
   type SavedMealItemRow,
   type SavedMealRow,
   type SettingRow,
   type WeightRow,
+  type WorkoutExerciseRow,
+  type WorkoutRow,
+  type WorkoutSetRow,
 } from '@/lib/backup';
 
+import { refreshExerciseSearchText, seedExercises } from './exercises';
 import { refreshSearchText } from './foods';
 import { seedGenericFoods } from './generic';
 import { notifyChange } from './live';
@@ -52,6 +60,26 @@ const SAVED_MEAL_ITEM_COLUMNS = [
   'id', 'saved_meal_id', 'position', 'food_id', 'name', 'brand', 'unit', 'quantity', ...NUTRIENT_COLUMNS,
 ] as const satisfies readonly (keyof SavedMealItemRow)[];
 
+const EXERCISE_COLUMNS = [
+  'id', 'ref', 'name', 'muscle', 'secondary', 'equipment', 'kind', 'track_rir', 'rest_seconds', 'note', 'archived',
+  'created_at',
+] as const satisfies readonly (keyof ExerciseRow)[];
+const PROGRAM_COLUMNS = ['id', 'name', 'notes', 'active', 'created_at'] as const satisfies readonly (keyof ProgramRow)[];
+const PROGRAM_DAY_COLUMNS = ['id', 'program_id', 'name', 'position'] as const satisfies readonly (keyof ProgramDayRow)[];
+const DAY_EXERCISE_COLUMNS = [
+  'id', 'day_id', 'exercise_id', 'position', 'sets', 'rep_min', 'rep_max', 'rest_seconds', 'note',
+] as const satisfies readonly (keyof DayExerciseRow)[];
+const WORKOUT_COLUMNS = [
+  'id', 'day_id', 'name', 'date', 'started_at', 'ended_at', 'notes',
+] as const satisfies readonly (keyof WorkoutRow)[];
+const WORKOUT_EXERCISE_COLUMNS = [
+  'id', 'workout_id', 'exercise_id', 'position', 'rep_min', 'rep_max', 'rest_seconds', 'note',
+] as const satisfies readonly (keyof WorkoutExerciseRow)[];
+const WORKOUT_SET_COLUMNS = [
+  'id', 'workout_exercise_id', 'position', 'type', 'weight', 'reps', 'seconds', 'rir', 'target_weight', 'target_reps',
+  'done', 'done_at',
+] as const satisfies readonly (keyof WorkoutSetRow)[];
+
 function select(columns: readonly string[], table: string, order: string): string {
   return `SELECT ${columns.join(', ')} FROM ${table} ORDER BY ${order}`;
 }
@@ -66,7 +94,7 @@ export async function readBackup(db: SQLiteDatabase): Promise<BackupData> {
     weights: await db.getAllAsync<WeightRow>('SELECT date, kg FROM weights ORDER BY date'),
     // These describe this phone, not the data.
     settings: await db.getAllAsync<SettingRow>(
-      `SELECT key, value FROM settings WHERE key NOT IN ('lastBackupAt', 'genericFoodsVersion')`,
+      `SELECT key, value FROM settings WHERE key NOT IN ('lastBackupAt', 'genericFoodsVersion', 'exercisesVersion')`,
     ),
     recipes: await db.getAllAsync<RecipeRow>(select(RECIPE_COLUMNS, 'recipes', 'food_id')),
     recipe_ingredients: await db.getAllAsync<RecipeIngredientRow>(
@@ -78,6 +106,13 @@ export async function readBackup(db: SQLiteDatabase): Promise<BackupData> {
     ),
     day_types: await db.getAllAsync<DayTypeRow>('SELECT date, type FROM day_types ORDER BY date'),
     measurements: await db.getAllAsync<MeasurementRow>('SELECT date, kind, value FROM measurements ORDER BY date, kind'),
+    exercises: await db.getAllAsync<ExerciseRow>(select(EXERCISE_COLUMNS, 'exercises', 'id')),
+    programs: await db.getAllAsync<ProgramRow>(select(PROGRAM_COLUMNS, 'programs', 'id')),
+    program_days: await db.getAllAsync<ProgramDayRow>(select(PROGRAM_DAY_COLUMNS, 'program_days', 'id')),
+    day_exercises: await db.getAllAsync<DayExerciseRow>(select(DAY_EXERCISE_COLUMNS, 'day_exercises', 'id')),
+    workouts: await db.getAllAsync<WorkoutRow>(select(WORKOUT_COLUMNS, 'workouts', 'id')),
+    workout_exercises: await db.getAllAsync<WorkoutExerciseRow>(select(WORKOUT_EXERCISE_COLUMNS, 'workout_exercises', 'id')),
+    workout_sets: await db.getAllAsync<WorkoutSetRow>(select(WORKOUT_SET_COLUMNS, 'workout_sets', 'id')),
   };
 }
 
@@ -125,6 +160,8 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
       DELETE FROM recipe_ingredients; DELETE FROM recipes;
       DELETE FROM entries; DELETE FROM foods;
       DELETE FROM weights; DELETE FROM day_types; DELETE FROM measurements;
+      DELETE FROM workout_sets; DELETE FROM workout_exercises; DELETE FROM workouts;
+      DELETE FROM day_exercises; DELETE FROM program_days; DELETE FROM programs; DELETE FROM exercises;
       DELETE FROM settings;
     `);
     await insertRows<FoodRow>(tx, 'foods', FOOD_COLUMNS, backup.foods);
@@ -136,10 +173,19 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
     await insertRows<WeightRow>(tx, 'weights', ['date', 'kg'], backup.weights);
     await insertRows<DayTypeRow>(tx, 'day_types', ['date', 'type'], backup.day_types);
     await insertRows<MeasurementRow>(tx, 'measurements', ['date', 'kind', 'value'], backup.measurements);
+    await insertRows<ExerciseRow>(tx, 'exercises', EXERCISE_COLUMNS, backup.exercises);
+    await insertRows<ProgramRow>(tx, 'programs', PROGRAM_COLUMNS, backup.programs);
+    await insertRows<ProgramDayRow>(tx, 'program_days', PROGRAM_DAY_COLUMNS, backup.program_days);
+    await insertRows<DayExerciseRow>(tx, 'day_exercises', DAY_EXERCISE_COLUMNS, backup.day_exercises);
+    await insertRows<WorkoutRow>(tx, 'workouts', WORKOUT_COLUMNS, backup.workouts);
+    await insertRows<WorkoutExerciseRow>(tx, 'workout_exercises', WORKOUT_EXERCISE_COLUMNS, backup.workout_exercises);
+    await insertRows<WorkoutSetRow>(tx, 'workout_sets', WORKOUT_SET_COLUMNS, backup.workout_sets);
     await insertRows<SettingRow>(tx, 'settings', ['key', 'value'], backup.settings);
     await refreshSearchText(tx);
+    await refreshExerciseSearchText(tx);
   });
   await seedGenericFoods(db, { force: true });
+  await seedExercises(db, { force: true });
   notifyChange();
 }
 

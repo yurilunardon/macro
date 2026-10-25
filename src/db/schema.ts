@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { refreshSearchText } from './foods';
+import { seedExercises } from './exercises';
 import { seedGenericFoods } from './generic';
 
 export const DATABASE_NAME = 'macro.db';
@@ -151,6 +152,92 @@ export const MIGRATIONS: readonly Migration[] = [
   DROP TABLE fasts;
   DELETE FROM settings WHERE key = 'fasting';
   `,
+  // 6: weight training. Exercises (shipped and custom), programs made of days with planned
+  // exercises, and the workouts actually done with every set.
+  `
+  CREATE TABLE exercises (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ref TEXT,
+    name TEXT NOT NULL,
+    muscle TEXT NOT NULL,
+    secondary TEXT NOT NULL DEFAULT '',
+    equipment TEXT NOT NULL,
+    kind TEXT NOT NULL DEFAULT 'weight',
+    track_rir INTEGER NOT NULL DEFAULT 0,
+    rest_seconds INTEGER,
+    note TEXT,
+    archived INTEGER NOT NULL DEFAULT 0,
+    search_text TEXT NOT NULL DEFAULT '',
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX exercises_ref ON exercises (ref);
+
+  CREATE TABLE programs (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    notes TEXT,
+    active INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE program_days (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    program_id INTEGER NOT NULL REFERENCES programs (id) ON DELETE CASCADE,
+    name TEXT NOT NULL,
+    position INTEGER NOT NULL
+  );
+  CREATE INDEX program_days_program ON program_days (program_id, position);
+  CREATE TABLE day_exercises (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    day_id INTEGER NOT NULL REFERENCES program_days (id) ON DELETE CASCADE,
+    exercise_id INTEGER NOT NULL REFERENCES exercises (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    sets INTEGER NOT NULL,
+    rep_min INTEGER NOT NULL,
+    rep_max INTEGER NOT NULL,
+    rest_seconds INTEGER,
+    note TEXT
+  );
+  CREATE INDEX day_exercises_day ON day_exercises (day_id, position);
+
+  CREATE TABLE workouts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    day_id INTEGER REFERENCES program_days (id) ON DELETE SET NULL,
+    name TEXT NOT NULL,
+    date TEXT NOT NULL,
+    started_at TEXT NOT NULL,
+    ended_at TEXT,
+    notes TEXT
+  );
+  CREATE INDEX workouts_started ON workouts (started_at);
+  CREATE INDEX workouts_date ON workouts (date);
+  CREATE TABLE workout_exercises (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workout_id INTEGER NOT NULL REFERENCES workouts (id) ON DELETE CASCADE,
+    exercise_id INTEGER NOT NULL REFERENCES exercises (id),
+    position INTEGER NOT NULL,
+    rep_min INTEGER,
+    rep_max INTEGER,
+    rest_seconds INTEGER,
+    note TEXT
+  );
+  CREATE INDEX workout_exercises_workout ON workout_exercises (workout_id, position);
+  CREATE INDEX workout_exercises_exercise ON workout_exercises (exercise_id);
+  CREATE TABLE workout_sets (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    workout_exercise_id INTEGER NOT NULL REFERENCES workout_exercises (id) ON DELETE CASCADE,
+    position INTEGER NOT NULL,
+    type TEXT NOT NULL DEFAULT 'normal',
+    weight REAL,
+    reps INTEGER,
+    seconds INTEGER,
+    rir REAL,
+    target_weight REAL,
+    target_reps INTEGER,
+    done INTEGER NOT NULL DEFAULT 0,
+    done_at TEXT
+  );
+  CREATE INDEX workout_sets_exercise ON workout_sets (workout_exercise_id, position);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -171,4 +258,5 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
     version = next;
   }
   await seedGenericFoods(db);
+  await seedExercises(db);
 }

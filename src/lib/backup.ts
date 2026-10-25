@@ -7,9 +7,10 @@ import { isDateKey } from './dates';
 export const BACKUP_APP = 'macro';
 /**
  * 2 added `ref` and `category` to foods. 3 added recipes, saved meals and day types, and
- * dropped water. 4 added measurements and fasts, 5 dropped fasts. Older files are still accepted.
+ * dropped water. 4 added measurements and fasts, 5 dropped fasts, 6 added training. Older files
+ * are still accepted.
  */
-export const BACKUP_VERSION = 5;
+export const BACKUP_VERSION = 6;
 
 export type FoodRow = {
   id: number;
@@ -102,6 +103,67 @@ export type SavedMealItemRow = NutrientColumns & {
 export type DayTypeRow = { date: string; type: string };
 export type MeasurementRow = { date: string; kind: string; value: number };
 
+export type ExerciseRow = {
+  id: number;
+  ref: string | null;
+  name: string;
+  muscle: string;
+  secondary: string;
+  equipment: string;
+  kind: string;
+  track_rir: number;
+  rest_seconds: number | null;
+  note: string | null;
+  archived: number;
+  created_at: string;
+};
+export type ProgramRow = { id: number; name: string; notes: string | null; active: number; created_at: string };
+export type ProgramDayRow = { id: number; program_id: number; name: string; position: number };
+export type DayExerciseRow = {
+  id: number;
+  day_id: number;
+  exercise_id: number;
+  position: number;
+  sets: number;
+  rep_min: number;
+  rep_max: number;
+  rest_seconds: number | null;
+  note: string | null;
+};
+export type WorkoutRow = {
+  id: number;
+  day_id: number | null;
+  name: string;
+  date: string;
+  started_at: string;
+  ended_at: string | null;
+  notes: string | null;
+};
+export type WorkoutExerciseRow = {
+  id: number;
+  workout_id: number;
+  exercise_id: number;
+  position: number;
+  rep_min: number | null;
+  rep_max: number | null;
+  rest_seconds: number | null;
+  note: string | null;
+};
+export type WorkoutSetRow = {
+  id: number;
+  workout_exercise_id: number;
+  position: number;
+  type: string;
+  weight: number | null;
+  reps: number | null;
+  seconds: number | null;
+  rir: number | null;
+  target_weight: number | null;
+  target_reps: number | null;
+  done: number;
+  done_at: string | null;
+};
+
 export type BackupData = {
   app: typeof BACKUP_APP;
   version: number;
@@ -116,6 +178,13 @@ export type BackupData = {
   saved_meal_items: SavedMealItemRow[];
   day_types: DayTypeRow[];
   measurements: MeasurementRow[];
+  exercises: ExerciseRow[];
+  programs: ProgramRow[];
+  program_days: ProgramDayRow[];
+  day_exercises: DayExerciseRow[];
+  workouts: WorkoutRow[];
+  workout_exercises: WorkoutExerciseRow[];
+  workout_sets: WorkoutSetRow[];
 };
 
 export class BackupFormatError extends Error {}
@@ -215,6 +284,78 @@ const SAVED_MEAL_ITEM_COLUMNS: Record<keyof SavedMealItemRow, Check> = {
 
 const DAY_TYPE_COLUMNS: Record<keyof DayTypeRow, Check> = { date: 'string', type: 'string' };
 const MEASUREMENT_COLUMNS: Record<keyof MeasurementRow, Check> = { date: 'string', kind: 'string', value: 'number' };
+const EXERCISE_COLUMNS: Record<keyof ExerciseRow, Check> = {
+  id: 'number',
+  ref: 'string?',
+  name: 'string',
+  muscle: 'string',
+  secondary: 'string',
+  equipment: 'string',
+  kind: 'string',
+  track_rir: 'number',
+  rest_seconds: 'number?',
+  note: 'string?',
+  archived: 'number',
+  created_at: 'string',
+};
+const PROGRAM_COLUMNS: Record<keyof ProgramRow, Check> = {
+  id: 'number',
+  name: 'string',
+  notes: 'string?',
+  active: 'number',
+  created_at: 'string',
+};
+const PROGRAM_DAY_COLUMNS: Record<keyof ProgramDayRow, Check> = {
+  id: 'number',
+  program_id: 'number',
+  name: 'string',
+  position: 'number',
+};
+const DAY_EXERCISE_COLUMNS: Record<keyof DayExerciseRow, Check> = {
+  id: 'number',
+  day_id: 'number',
+  exercise_id: 'number',
+  position: 'number',
+  sets: 'number',
+  rep_min: 'number',
+  rep_max: 'number',
+  rest_seconds: 'number?',
+  note: 'string?',
+};
+const WORKOUT_COLUMNS: Record<keyof WorkoutRow, Check> = {
+  id: 'number',
+  day_id: 'number?',
+  name: 'string',
+  date: 'string',
+  started_at: 'string',
+  ended_at: 'string?',
+  notes: 'string?',
+};
+const WORKOUT_EXERCISE_COLUMNS: Record<keyof WorkoutExerciseRow, Check> = {
+  id: 'number',
+  workout_id: 'number',
+  exercise_id: 'number',
+  position: 'number',
+  rep_min: 'number?',
+  rep_max: 'number?',
+  rest_seconds: 'number?',
+  note: 'string?',
+};
+const WORKOUT_SET_COLUMNS: Record<keyof WorkoutSetRow, Check> = {
+  id: 'number',
+  workout_exercise_id: 'number',
+  position: 'number',
+  type: 'string',
+  weight: 'number?',
+  reps: 'number?',
+  seconds: 'number?',
+  rir: 'number?',
+  target_weight: 'number?',
+  target_reps: 'number?',
+  done: 'number',
+  done_at: 'string?',
+};
+
 /** Settings of features that were removed: water (before version 3) and fasting (version 4). */
 const OBSOLETE_SETTINGS = new Set(['waterGoalMl', 'fasting']);
 
@@ -269,6 +410,13 @@ export function parseBackup(json: unknown): BackupData {
     saved_meal_items: readRows<SavedMealItemRow>(data, 'saved_meal_items', SAVED_MEAL_ITEM_COLUMNS, 3),
     day_types: readRows<DayTypeRow>(data, 'day_types', DAY_TYPE_COLUMNS, 3),
     measurements: readRows<MeasurementRow>(data, 'measurements', MEASUREMENT_COLUMNS, 4),
+    exercises: readRows<ExerciseRow>(data, 'exercises', EXERCISE_COLUMNS, 6),
+    programs: readRows<ProgramRow>(data, 'programs', PROGRAM_COLUMNS, 6),
+    program_days: readRows<ProgramDayRow>(data, 'program_days', PROGRAM_DAY_COLUMNS, 6),
+    day_exercises: readRows<DayExerciseRow>(data, 'day_exercises', DAY_EXERCISE_COLUMNS, 6),
+    workouts: readRows<WorkoutRow>(data, 'workouts', WORKOUT_COLUMNS, 6),
+    workout_exercises: readRows<WorkoutExerciseRow>(data, 'workout_exercises', WORKOUT_EXERCISE_COLUMNS, 6),
+    workout_sets: readRows<WorkoutSetRow>(data, 'workout_sets', WORKOUT_SET_COLUMNS, 6),
   };
   for (const row of [...backup.entries, ...backup.weights, ...backup.day_types, ...backup.measurements]) {
     if (!isDateKey(row.date)) throw new BackupFormatError(`Data non valida nel backup: ${row.date}`);
@@ -292,6 +440,23 @@ export function parseBackup(json: unknown): BackupData {
   const mealIds = new Set(backup.saved_meals.map((m) => m.id));
   backup.saved_meal_items = backup.saved_meal_items.filter((i) => mealIds.has(i.saved_meal_id));
   backup.saved_meal_items.forEach(unlink);
+
+  // Training rows hang off one another: drop the ones whose parent is missing.
+  const exerciseIds = new Set(backup.exercises.map((e) => e.id));
+  const programIds = new Set(backup.programs.map((p) => p.id));
+  backup.program_days = backup.program_days.filter((d) => programIds.has(d.program_id));
+  const dayIds = new Set(backup.program_days.map((d) => d.id));
+  backup.day_exercises = backup.day_exercises.filter((x) => dayIds.has(x.day_id) && exerciseIds.has(x.exercise_id));
+  for (const w of backup.workouts) if (w.day_id !== null && !dayIds.has(w.day_id)) w.day_id = null;
+  const workoutIds = new Set(backup.workouts.map((w) => w.id));
+  backup.workout_exercises = backup.workout_exercises.filter(
+    (x) => workoutIds.has(x.workout_id) && exerciseIds.has(x.exercise_id),
+  );
+  const workoutExerciseIds = new Set(backup.workout_exercises.map((x) => x.id));
+  backup.workout_sets = backup.workout_sets.filter((s) => workoutExerciseIds.has(s.workout_exercise_id));
+  for (const w of backup.workouts) {
+    if (!isDateKey(w.date)) throw new BackupFormatError(`Data non valida nel backup: ${w.date}`);
+  }
   return backup;
 }
 

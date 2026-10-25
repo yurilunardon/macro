@@ -6,14 +6,18 @@ import { DEFAULT_REMINDERS, expiryReminderAt, REMINDERS, type ReminderSettings }
 /** Every notification this app schedules starts with this, so it can replace only its own. */
 const PREFIX = 'macro-';
 
-// Show reminders as banners even while the app is open.
+// Show reminders as banners even while the app is open. The end of a rest is shown inside the
+// app instead (the timer bar and a double buzz), so its banner would only be in the way.
 Notifications.setNotificationHandler({
-  handleNotification: async () => ({
-    shouldShowBanner: true,
-    shouldShowList: true,
-    shouldPlaySound: true,
-    shouldSetBadge: false,
-  }),
+  handleNotification: async (notification) => {
+    const inApp = notification.request.identifier === 'workout-rest';
+    return {
+      shouldShowBanner: !inApp,
+      shouldShowList: !inApp,
+      shouldPlaySound: !inApp,
+      shouldSetBadge: false,
+    };
+  },
 });
 
 /** Asks for permission if it was never asked. Returns whether notifications are allowed. */

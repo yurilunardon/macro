@@ -56,6 +56,24 @@ Lista di controlli per la prima prova, da fare prima in **Expo Go** e poi con l'
 - [ ] **Copia**: nel Diario tieni premuta una voce → **Copia in oggi/domani**. Il pulsante **⋯** in alto a sinistra copia o svuota il giorno intero.
 - [ ] **CSV**: Profilo → Diario in CSV → apri il file con Numbers: colonne separate, decimali con la virgola, accenti corretti.
 
+## Novità della versione 1.5: Allenamento
+
+- [ ] **Tab**: in basso ci sono Alimentazione, **Allenamento**, Progressi, Profilo.
+- [ ] **Scheda da modello**: Allenamento → **Nuova scheda** → Push Pull Legs. Si apre la scheda con Push, Pull e Legs; ogni giorno ha i suoi esercizi con serie × ripetizioni e recupero.
+- [ ] **Modifica**: apri Push → tocca un esercizio → cambia serie (− / +), fascia di ripetizioni e recupero → **Salva**. Tieni premuto un esercizio per spostarlo; scorri a sinistra per toglierlo; **Aggiungi esercizio** apre la libreria con ricerca e filtro per muscolo.
+- [ ] **Scheda vuota**: Nuova scheda → Scheda vuota → aggiungi un giorno e qualche esercizio, come per ricopiare quella di un amico.
+- [ ] **Inizia**: nella pagina Allenamento c'è il **prossimo** giorno (il primo, poi a rotazione) con **Inizia**. «Altro giorno» fa scegliere un giorno diverso.
+- [ ] **Serie**: in ogni esercizio i campi KG e RIP mostrano in grigio il valore proposto. Tocca la spunta senza scrivere niente: usa quei valori, la riga diventa verde, senti un colpetto e parte il **recupero** in basso (−15, +15, Salta). La prima volta l'app chiede il permesso per le notifiche.
+- [ ] **Fine recupero**: con l'app aperta il telefono vibra due volte e la barra dice «Vai!». Bloccalo durante un recupero: alla fine arriva una notifica silenziosa (in Profilo → Promemoria puoi scegliere «Con suono»).
+- [ ] **Tipo di serie**: tocca il numero della serie → Riscaldamento, Drop set o A cedimento (R, D, C). Scorri a sinistra su una serie per eliminarla; **Aggiungi serie** ne aggiunge una uguale all'ultima.
+- [ ] **Blocchi**: ⋯ su un esercizio → **Registra il RIR** (compare la colonna RIR), **Nota fissa** (resta sull'esercizio, es. «sedile 4»), recupero, sposta, sostituisci, rimuovi.
+- [ ] **Riduci**: scorri giù la schermata dell'allenamento (o tocca ⌄): sopra le tab compare la barra con il tempo, o il recupero. Toccala per tornare all'allenamento.
+- [ ] **Fine**: tocca **Fine** → conferma → si apre il riepilogo con durata, serie, volume ed eventuali record.
+- [ ] **Progressione**: rifai lo stesso giorno. Sotto il nome dell'esercizio c'è il suggerimento («Stesso carico… punta a 9 ripetizioni», oppure «Oggi prova 82,5 kg × 6» se l'ultima volta avevi chiuso tutte le serie al massimo). La colonna PRECEDENTE mostra l'ultima volta.
+- [ ] **Storico ed esercizio**: Allenamento → Tutto lo storico; Libreria esercizi → un esercizio fatto → massimale stimato, grafico, storico delle sedute, blocchi.
+- [ ] **Settimana**: nella pagina Allenamento ci sono le serie della settimana per muscolo (arancione se sotto le 10).
+- [ ] **Alimentazione**: nel giorno di un allenamento, con obiettivi diversi per allenamento e riposo attivi, il giorno diventa da solo «Allenamento».
+
 ## Novità della versione 1.4
 
 - [ ] **Nome**: la prima tab si chiama **Alimentazione**, con l'icona di forchetta e coltello.
