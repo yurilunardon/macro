@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
@@ -15,6 +14,7 @@ import { useToday } from '@/hooks/use-today';
 import { formatDayTitle } from '@/lib/dates';
 import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
 import { MEASUREMENTS, type Measurement, type MeasurementKind } from '@/lib/measurements';
+import { haptics } from '@/services/haptics';
 
 type Fields = Record<MeasurementKind, string>;
 
@@ -55,7 +55,7 @@ function MeasurementsForm({ rows, today }: { rows: Measurement[]; today: string 
     setSaving(true);
     try {
       await setMeasurements(db, today, Object.fromEntries(parsed.map((p) => [p.kind, p.value])));
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
     } finally {
       setSaving(false);
     }

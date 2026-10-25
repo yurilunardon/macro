@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
@@ -19,6 +18,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { formatKcal, formatNumber, numberToInput, parseDecimal } from '@/lib/format';
 import { scaleNutrients, type Nutrients } from '@/lib/nutrition';
 import { computeRecipe, parseRecipeFields } from '@/lib/recipes';
+import { haptics } from '@/services/haptics';
 
 /**
  * Create or edit a recipe. Open it after `recipeDraft.start()` for a new recipe, or with an `id`
@@ -96,7 +96,7 @@ function RecipeEditor() {
     setSaving(true);
     try {
       await saveRecipe(db, { id: draft.id, ...values, ingredients: draft.ingredients });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       router.back();
     } catch {
       Alert.alert('Salvataggio non riuscito', 'Riprova tra un momento.');

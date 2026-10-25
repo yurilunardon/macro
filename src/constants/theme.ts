@@ -1,6 +1,7 @@
 /**
  * Design tokens. Surfaces follow iOS grouped lists; macro colours are fixed across the app so
- * protein, carbs and fat are always recognisable at a glance.
+ * protein, carbs and fat are always recognisable at a glance. The ring colours are the iOS
+ * system red, orange and green, as in the Activity rings.
  */
 export const Colors = {
   light: {
@@ -20,6 +21,9 @@ export const Colors = {
     protein: '#D9480F',
     carbs: '#0B7285',
     fat: '#9C36B5',
+    ringFar: '#FF3B30',
+    ringCloser: '#FF9500',
+    ringOnTarget: '#34C759',
     scrim: 'rgba(0,0,0,0.55)',
   },
   dark: {
@@ -39,6 +43,9 @@ export const Colors = {
     protein: '#FF9F0A',
     carbs: '#3BC9DB',
     fat: '#DA8FFF',
+    ringFar: '#FF453A',
+    ringCloser: '#FF9F0A',
+    ringOnTarget: '#30D158',
     scrim: 'rgba(0,0,0,0.6)',
   },
 } as const;

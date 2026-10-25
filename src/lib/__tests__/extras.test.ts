@@ -1,7 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
 import { toCsv } from '../csv';
-import { fastStatus, formatHours } from '../fasting';
 import { measurementChanges } from '../measurements';
 import { expiryReminderAt, formatTime, parseTime } from '../reminders';
 
@@ -12,21 +11,6 @@ describe('toCsv', () => {
       ['2026-10-31', 'Caffè', null],
     ]);
     expect(csv).toBe('﻿Data;Alimento;kcal\r\n2026-10-31;"Pasta; al ""pomodoro""";287,23\r\n2026-10-31;Caffè;\r\n');
-  });
-});
-
-describe('fasting', () => {
-  it('measures a running fast against its goal', () => {
-    const status = fastStatus({ start: '2026-10-30T20:00:00.000Z', end: null, goalHours: 16 }, new Date('2026-10-31T08:00:00.000Z'));
-    expect(status).toMatchObject({ elapsedHours: 12, progress: 0.75, goalReached: false });
-    expect(status.goalAt.toISOString()).toBe('2026-10-31T12:00:00.000Z');
-  });
-
-  it('measures a finished fast up to its end', () => {
-    const status = fastStatus({ start: '2026-10-30T20:00:00.000Z', end: '2026-10-31T13:30:00.000Z', goalHours: 16 });
-    expect(status.goalReached).toBe(true);
-    expect(formatHours(status.elapsedHours)).toBe('17 h 30 min');
-    expect(formatHours(0.7)).toBe('42 min');
   });
 });
 

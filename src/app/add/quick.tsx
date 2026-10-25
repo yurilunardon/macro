@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -7,12 +6,14 @@ import { Button } from '@/components/button';
 import { ListGroup, SectionFooter, SectionTitle } from '@/components/card';
 import { FieldRow, Segmented } from '@/components/form';
 import { ScreenScroll } from '@/components/screen';
+import { toast } from '@/components/toast';
 import { Spacing } from '@/constants/theme';
 import { addQuickEntry } from '@/db/entries';
 import { useAddFlowParams, useCloseAddFlow } from '@/hooks/use-add-flow';
 import { formatKcal } from '@/lib/format';
 import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
 import { EMPTY_QUICK_FIELDS, parseQuickAdd, QUICK_ADD_NAME, type QuickFields } from '@/lib/quick-add';
+import { haptics } from '@/services/haptics';
 
 const MEAL_OPTIONS = MEALS.map((m) => ({ key: m.key, label: m.label }));
 
@@ -36,7 +37,8 @@ export default function QuickAddScreen() {
     setSaving(true);
     try {
       await addQuickEntry(db, { date, meal, ...result });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
+      toast.show(`${formatKcal(result.totals.kcal)} kcal in ${mealLabel(meal)}`, 'plus.circle.fill');
       close();
     } finally {
       setSaving(false);

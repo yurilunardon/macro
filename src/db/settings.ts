@@ -16,7 +16,6 @@ type SettingsMap = {
   /** Weight to reach, in kg, for the forecast in Progressi. */
   goalWeight: number;
   reminders: ReminderSettings;
-  fasting: { enabled: boolean; goalHours: number };
   lastBackupAt: string;
   /** Which version of the shipped basic foods has been added to this phone. */
   genericFoodsVersion: number;

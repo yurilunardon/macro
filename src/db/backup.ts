@@ -12,7 +12,6 @@ import {
   type BackupData,
   type DayTypeRow,
   type EntryRow,
-  type FastRow,
   type FoodRow,
   type MeasurementRow,
   type RecipeIngredientRow,
@@ -79,7 +78,6 @@ export async function readBackup(db: SQLiteDatabase): Promise<BackupData> {
     ),
     day_types: await db.getAllAsync<DayTypeRow>('SELECT date, type FROM day_types ORDER BY date'),
     measurements: await db.getAllAsync<MeasurementRow>('SELECT date, kind, value FROM measurements ORDER BY date, kind'),
-    fasts: await db.getAllAsync<FastRow>('SELECT id, start, end, goal_hours FROM fasts ORDER BY id'),
   };
 }
 
@@ -126,7 +124,7 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
       DELETE FROM saved_meal_items; DELETE FROM saved_meals;
       DELETE FROM recipe_ingredients; DELETE FROM recipes;
       DELETE FROM entries; DELETE FROM foods;
-      DELETE FROM weights; DELETE FROM day_types; DELETE FROM measurements; DELETE FROM fasts;
+      DELETE FROM weights; DELETE FROM day_types; DELETE FROM measurements;
       DELETE FROM settings;
     `);
     await insertRows<FoodRow>(tx, 'foods', FOOD_COLUMNS, backup.foods);
@@ -138,7 +136,6 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
     await insertRows<WeightRow>(tx, 'weights', ['date', 'kg'], backup.weights);
     await insertRows<DayTypeRow>(tx, 'day_types', ['date', 'type'], backup.day_types);
     await insertRows<MeasurementRow>(tx, 'measurements', ['date', 'kind', 'value'], backup.measurements);
-    await insertRows<FastRow>(tx, 'fasts', ['id', 'start', 'end', 'goal_hours'], backup.fasts);
     await insertRows<SettingRow>(tx, 'settings', ['key', 'value'], backup.settings);
     await refreshSearchText(tx);
   });

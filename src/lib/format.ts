@@ -47,3 +47,8 @@ export function servingPresetLabel(size: number, label: string | null, unit: str
   if (name === '' || /^[\d.,\s]+(g|gr|ml|cl|l)?\.?$/i.test(name)) return `1 porzione · ${amount}`;
   return `${name.length > 28 ? `${name.slice(0, 27)}…` : name} · ${amount}`;
 }
+
+/** "1 alimento", "3 alimenti". */
+export function countLabel(count: number, one: string, many: string): string {
+  return `${count} ${count === 1 ? one : many}`;
+}

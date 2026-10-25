@@ -1,8 +1,19 @@
+import { useEffect } from 'react';
 import { StyleSheet, View } from 'react-native';
+import Animated, {
+  css,
+  cubicBezier,
+  Easing,
+  interpolateColor,
+  useAnimatedProps,
+  useSharedValue,
+  withTiming,
+} from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
 import { Radius } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { remainingKcal, RING_STOPS, RING_TONES } from '@/lib/calories';
 import { formatKcal } from '@/lib/format';
 
 import { AppText } from './app-text';
@@ -12,6 +23,9 @@ export function ratio(value: number, target: number): number {
   return target > 0 ? Math.max(0, value / target) : 0;
 }
 
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const FILL_EASING = cubicBezier(0.23, 1, 0.32, 1);
+
 type ProgressBarProps = { value: number; target: number; color: string; height?: number };
 
 export function ProgressBar({ value, target, color, height = 6 }: ProgressBarProps) {
@@ -20,9 +34,10 @@ export function ProgressBar({ value, target, color, height = 6 }: ProgressBarPro
   const over = r > 1.05;
   return (
     <View style={[styles.track, { height, backgroundColor: theme.track }]}>
-      <View
+      <Animated.View
         style={[
           styles.fill,
+          transitions.fill,
           { width: `${Math.min(1, r) * 100}%`, backgroundColor: over ? theme.danger : color },
         ]}
       />
@@ -32,55 +47,75 @@ export function ProgressBar({ value, target, color, height = 6 }: ProgressBarPro
 
 type CalorieRingProps = { eaten: number; target: number; size?: number };
 
-/** Ring filled by eaten / target, with the remaining kcal in the middle. */
-export function CalorieRing({ eaten, target, size = 148 }: CalorieRingProps) {
+/**
+ * Ring filled by eaten / target, with "eaten / goal" in the middle. Its colour says how close
+ * the day is to the goal; it fills and changes colour smoothly when food is added or the day
+ * changes.
+ */
+export function CalorieRing({ eaten, target, size = 156 }: CalorieRingProps) {
   const theme = useTheme();
-  const stroke = 12;
+  const stroke = 14;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const r = ratio(eaten, target);
-  const remaining = target - eaten;
-  const over = remaining < 0;
-  const color = over ? theme.danger : theme.accent;
+  const { kcal: left, over } = remainingKcal(eaten, target);
+  const tones = RING_TONES.map((tone) => theme[tone]);
+
+  const progress = useSharedValue(0);
+  useEffect(() => {
+    progress.set(withTiming(r, { duration: 700, easing: Easing.bezier(0.23, 1, 0.32, 1) }));
+  }, [progress, r]);
+
+  const ringProps = useAnimatedProps(() => {
+    const p = progress.get();
+    return {
+      strokeDashoffset: circumference * (1 - Math.min(1, p)),
+      stroke: interpolateColor(p, RING_STOPS, tones, 'HSV'),
+      // A ring with nothing in it would still draw the round cap as a dot.
+      strokeOpacity: p > 0.002 ? 1 : 0,
+    };
+  });
 
   return (
     <View
       style={{ width: size, height: size }}
       accessible
-      accessibilityLabel={
-        over
-          ? `${formatKcal(-remaining)} chilocalorie oltre l'obiettivo`
-          : `${formatKcal(remaining)} chilocalorie rimanenti su ${formatKcal(target)}`
-      }>
+      accessibilityLabel={`${formatKcal(eaten)} chilocalorie su ${formatKcal(target)}: ${
+        over ? `${formatKcal(left)} oltre l'obiettivo` : `ne mancano ${formatKcal(left)}`
+      }`}>
       <Svg width={size} height={size}>
         <Circle cx={size / 2} cy={size / 2} r={radius} stroke={theme.track} strokeWidth={stroke} fill="none" />
-        <Circle
+        <AnimatedCircle
           cx={size / 2}
           cy={size / 2}
           r={radius}
-          stroke={color}
           strokeWidth={stroke}
           fill="none"
           strokeLinecap="round"
           strokeDasharray={`${circumference} ${circumference}`}
-          strokeDashoffset={circumference * (1 - Math.min(1, r))}
           transform={`rotate(-90 ${size / 2} ${size / 2})`}
+          animatedProps={ringProps}
         />
       </Svg>
       <View style={styles.ringCenter} pointerEvents="none">
-        <AppText variant="title" numeric tone={over ? 'danger' : 'text'}>
-          {formatKcal(Math.abs(remaining))}
+        <AppText variant="title" numeric>
+          {formatKcal(eaten)}
         </AppText>
-        <AppText variant="footnote" tone="textSecondary">
-          {over ? 'kcal in più' : 'kcal rimaste'}
+        <AppText variant="subhead" tone="textSecondary" numeric>
+          {`/ ${formatKcal(target)} kcal`}
         </AppText>
       </View>
     </View>
   );
 }
 
+// The bars grow to their new length instead of jumping, e.g. after adding food.
+const transitions = css.create({
+  fill: { transitionProperty: 'width', transitionDuration: 500, transitionTimingFunction: FILL_EASING },
+});
+
 const styles = StyleSheet.create({
   track: { width: '100%', borderRadius: Radius.pill, overflow: 'hidden' },
   fill: { height: '100%', borderRadius: Radius.pill },
-  ringCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
+  ringCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', gap: 2 },
 });

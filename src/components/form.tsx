@@ -2,6 +2,7 @@ import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'rea
 
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { haptics } from '@/services/haptics';
 
 import { AppText } from './app-text';
 
@@ -69,7 +70,11 @@ export function Segmented<T extends string>({ options, value, onChange }: Segmen
         return (
           <Pressable
             key={option.key}
-            onPress={() => onChange(option.key)}
+            onPress={() => {
+              if (selected) return;
+              haptics.selection();
+              onChange(option.key);
+            }}
             accessibilityRole="tab"
             accessibilityState={{ selected }}
             style={[styles.segment, selected && { backgroundColor: theme.card }]}>
@@ -89,7 +94,10 @@ export function Chip({ label, selected = false, onPress }: ChipProps) {
   const theme = useTheme();
   return (
     <Pressable
-      onPress={onPress}
+      onPress={() => {
+        haptics.selection();
+        onPress();
+      }}
       accessibilityRole="button"
       accessibilityState={{ selected }}
       style={({ pressed }) => [

@@ -1,9 +1,9 @@
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { Alert } from 'react-native';
 
 import { ActionRow, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
+import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { useLiveQuery } from '@/db/live';
@@ -26,26 +26,28 @@ export default function RecipesScreen() {
     router.push('/settings/recipe');
   };
 
-  const confirmDelete = (title: string, onConfirm: () => void) =>
-    Alert.alert(title, 'Le voci già nel diario restano invariate.', [
-      { text: 'Annulla', style: 'cancel' },
-      { text: 'Elimina', style: 'destructive', onPress: onConfirm },
-    ]);
+  const confirmDelete = (name: string) => () =>
+    confirmDestructive({
+      title: `Eliminare «${name}»?`,
+      message: 'Le voci già nel diario restano invariate.',
+      action: 'Elimina',
+    });
+  const askDelete = async (name: string, remove: () => Promise<void>) => {
+    if (await confirmDelete(name)()) await remove();
+  };
 
   return (
     <ScreenScroll>
       <SectionTitle>Ricette</SectionTitle>
       <ListGroup>
         {(data?.recipes ?? []).map(({ food, ingredientCount }) => (
-          <SwipeToDelete
-            key={food.id}
-            onDelete={() => confirmDelete(`Eliminare «${food.name}»?`, () => void deleteRecipe(db, food.id))}>
+          <SwipeToDelete key={food.id} confirm={confirmDelete(food.name)} onDelete={() => void deleteRecipe(db, food.id)}>
             <Row
               title={food.name}
               subtitle={`${ingredientCount} ${ingredientCount === 1 ? 'ingrediente' : 'ingredienti'} · ${formatKcal(food.per100.kcal)} kcal / 100 g`}
               icon={<Icon name="frying.pan.fill" size={18} tone="accent" />}
               onPress={() => router.push({ pathname: '/settings/recipe', params: { id: food.id } })}
-              onLongPress={() => confirmDelete(`Eliminare «${food.name}»?`, () => void deleteRecipe(db, food.id))}
+              onLongPress={() => void askDelete(food.name, () => deleteRecipe(db, food.id))}
             />
           </SwipeToDelete>
         ))}
@@ -60,22 +62,20 @@ export default function RecipesScreen() {
       {data && data.savedMeals.length > 0 ? (
         <ListGroup>
           {data.savedMeals.map((meal) => (
-            <SwipeToDelete
-              key={meal.id}
-              onDelete={() => confirmDelete(`Eliminare «${meal.name}»?`, () => void deleteSavedMeal(db, meal.id))}>
+            <SwipeToDelete key={meal.id} confirm={confirmDelete(meal.name)} onDelete={() => void deleteSavedMeal(db, meal.id)}>
               <Row
                 title={meal.name}
                 subtitle={`${meal.itemCount} ${meal.itemCount === 1 ? 'alimento' : 'alimenti'} · ${formatKcal(meal.totals.kcal)} kcal`}
                 icon={<Icon name="bookmark.fill" size={18} tone="accent" />}
                 onPress={() => router.push({ pathname: '/settings/saved-meal', params: { id: meal.id } })}
-                onLongPress={() => confirmDelete(`Eliminare «${meal.name}»?`, () => void deleteSavedMeal(db, meal.id))}
+                onLongPress={() => void askDelete(meal.name, () => deleteSavedMeal(db, meal.id))}
               />
             </SwipeToDelete>
           ))}
         </ListGroup>
       ) : null}
       <SectionFooter>
-        Per salvare un pasto, nel Diario tocca ••• accanto al suo nome. Poi lo ritrovi in Aggiungi → Miei e lo
+        Per salvare un pasto, nel Diario tocca ⋯ accanto al suo nome e scegli «Salva come pasto». Poi lo ritrovi in Aggiungi → Miei e lo
         registri con un tocco.
       </SectionFooter>
     </ScreenScroll>

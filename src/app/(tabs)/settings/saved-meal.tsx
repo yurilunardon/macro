@@ -67,18 +67,10 @@ export default function SavedMealScreen() {
 
   return (
     <ScreenScroll>
-      <Stack.Screen
-        options={{
-          title: meal.name,
-          headerRight: () => (
-            <Pressable onPress={rename} hitSlop={10} accessibilityRole="button">
-              <AppText tone="accent" weight="600">
-                Rinomina
-              </AppText>
-            </Pressable>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ title: meal.name }} />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button onPress={rename}>Rinomina</Stack.Toolbar.Button>
+      </Stack.Toolbar>
 
       <Card style={styles.summary}>
         <AppText variant="title2" numeric>

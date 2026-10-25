@@ -59,6 +59,16 @@ export function formatDayTitle(key: DateKey, today: DateKey = todayKey()): strin
   return capitalize(weekdayDayMonth.format(fromDateKey(key)));
 }
 
+/**
+ * The line under the day's title: the full date under "Oggi", "Ieri" and "Domani", and how far
+ * from today any other day is.
+ */
+export function formatDaySubtitle(key: DateKey, today: DateKey = todayKey()): string {
+  const diff = daysBetween(today, key);
+  if (Math.abs(diff) <= 1) return capitalize(weekdayDayMonth.format(fromDateKey(key)));
+  return diff < 0 ? `${-diff} giorni fa` : `Tra ${diff} giorni`;
+}
+
 export function formatShortDate(key: DateKey): string {
   return dayMonth.format(fromDateKey(key));
 }

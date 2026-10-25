@@ -159,3 +159,24 @@ describe('parseBackup version 3', () => {
     expect(() => parseBackup({ ...v3(), day_types: [{ date: '2026-10-25', type: 'gym' }] })).toThrow(/Tipo di giorno/);
   });
 });
+
+describe('parseBackup version 4', () => {
+  it('ignores the fasts and the fasting setting of the removed timer', () => {
+    const { water: _water, ...base } = sampleBackup();
+    const backup = parseBackup({
+      ...base,
+      version: 4,
+      settings: [...base.settings, { key: 'fasting', value: '{"enabled":true,"goalHours":16}' }],
+      recipes: [],
+      recipe_ingredients: [],
+      saved_meals: [],
+      saved_meal_items: [],
+      day_types: [],
+      measurements: [{ date: '2026-10-25', kind: 'waist', value: 86 }],
+      fasts: [{ id: 1, start: '2026-10-25T20:00:00.000Z', end: null, goal_hours: 16 }],
+    });
+    expect(backup).not.toHaveProperty('fasts');
+    expect(backup.settings.map((s) => s.key)).not.toContain('fasting');
+    expect(backup.measurements).toHaveLength(1);
+  });
+});

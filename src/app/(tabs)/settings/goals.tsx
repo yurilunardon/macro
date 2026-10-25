@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
@@ -34,6 +33,7 @@ import {
   WEEKDAYS,
 } from '@/lib/goals';
 import { kcalFromMacros } from '@/lib/nutrition';
+import { haptics } from '@/services/haptics';
 
 export default function GoalsScreen() {
   const { data } = useLiveQuery('goals-form', async (database) => {
@@ -132,7 +132,7 @@ function GoalsForm({
   const calculate = () => {
     setShowProfileErrors(true);
     if (!parsedProfile.profile) return;
-    void Haptics.selectionAsync();
+    haptics.selection();
     const computed = computeTargets(parsedProfile.profile, year);
     setTf(targetFields(computed));
     setRf(targetFields(deriveRestTargets(computed)));
@@ -145,7 +145,7 @@ function GoalsForm({
   };
 
   const toggleWeekday = (day: number) => {
-    void Haptics.selectionAsync();
+    haptics.selection();
     setWeekdays((days) => (days.includes(day) ? days.filter((d) => d !== day) : [...days, day].sort()));
   };
 
@@ -161,7 +161,7 @@ function GoalsForm({
         trainingWeekdays: weekdays,
       });
       if (parsedProfile.profile) await setSetting(db, 'profile', parsedProfile.profile);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       router.back();
     } finally {
       setSaving(false);

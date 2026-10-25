@@ -1,6 +1,8 @@
+import type { SFSymbol } from 'expo-symbols';
+
 export type MealKey = 'breakfast' | 'lunch' | 'dinner' | 'snack';
 
-export const MEALS: readonly { key: MealKey; label: string; symbol: string }[] = [
+export const MEALS: readonly { key: MealKey; label: string; symbol: SFSymbol }[] = [
   { key: 'breakfast', label: 'Colazione', symbol: 'sunrise.fill' },
   { key: 'lunch', label: 'Pranzo', symbol: 'sun.max.fill' },
   { key: 'dinner', label: 'Cena', symbol: 'moon.stars.fill' },

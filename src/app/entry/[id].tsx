@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState, type ReactNode } from 'react';
@@ -18,6 +17,7 @@ import { formatGrams, formatKcal, formatNumber, numberToInput, parseDecimal } fr
 import { MEALS, type MealKey } from '@/lib/meals';
 import { rescaleNutrients, type Nutrients } from '@/lib/nutrition';
 import { parseQuickAdd, QUICK_ADD_NAME, type QuickFields } from '@/lib/quick-add';
+import { haptics } from '@/services/haptics';
 
 const MEAL_OPTIONS = MEALS.map((m) => ({ key: m.key, label: m.label }));
 
@@ -67,7 +67,7 @@ function QuantityEditor({ entry, servingSize }: { entry: Entry; servingSize: num
     setSaving(true);
     try {
       await updateEntry(db, entry, { quantity, meal });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       router.back();
     } finally {
       setSaving(false);
@@ -128,7 +128,7 @@ function QuickEditor({ entry }: { entry: Entry }) {
     setSaving(true);
     try {
       await updateQuickEntry(db, entry.id, { meal, ...result });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       router.back();
     } finally {
       setSaving(false);

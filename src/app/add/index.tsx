@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import type { SFSymbol } from 'expo-symbols';
@@ -11,6 +10,7 @@ import { FoodRow } from '@/components/food-row';
 import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
+import { toast } from '@/components/toast';
 import { Radius, Spacing } from '@/constants/theme';
 import {
   getCustomFoods,
@@ -30,6 +30,7 @@ import { formatKcal } from '@/lib/format';
 import { mealLabel } from '@/lib/meals';
 import type { Food, FoodDraft } from '@/lib/nutrition';
 import { OffNetworkError, searchProducts } from '@/lib/off';
+import { haptics } from '@/services/haptics';
 
 type ListKey = 'recent' | 'favorites' | 'basic' | 'custom';
 
@@ -107,7 +108,8 @@ export default function AddScreen() {
   };
   const addSavedMeal = async (saved: SavedMealSummary) => {
     await addSavedMealToDiary(db, saved.id, { date, meal });
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
+    toast.show(`«${saved.name}» in ${mealLabel(meal)}`, 'bookmark.fill');
     close();
   };
 
@@ -118,13 +120,11 @@ export default function AddScreen() {
       <Stack.Screen
         options={{
           title: forDiary ? `${mealLabel(meal)} · ${formatDayTitle(date)}` : 'Aggiungi ingrediente',
-          headerLeft: () => (
-            <Pressable onPress={close} hitSlop={10} accessibilityRole="button" accessibilityLabel="Chiudi">
-              <Icon name="xmark" size={18} tone="textSecondary" weight="semibold" />
-            </Pressable>
-          ),
         }}
       />
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi" onPress={close} />
+      </Stack.Toolbar>
 
       <View style={[styles.search, { backgroundColor: theme.track }]}>
         <Icon name="magnifyingglass" size={17} tone="textSecondary" />

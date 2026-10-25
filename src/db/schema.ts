@@ -146,6 +146,11 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX fasts_start ON fasts (start);
   `,
+  // 5: intermittent fasting removed.
+  `
+  DROP TABLE fasts;
+  DELETE FROM settings WHERE key = 'fasting';
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

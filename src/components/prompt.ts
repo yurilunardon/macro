@@ -49,3 +49,25 @@ export function promptNumber(options: PromptNumberOptions): void {
     'decimal-pad',
   );
 }
+
+type ConfirmOptions = {
+  title: string;
+  message?: string;
+  /** The destructive button, e.g. "Elimina" or "Svuota". */
+  action: string;
+};
+
+/** Native confirmation before something that cannot be undone. Resolves to whether to go ahead. */
+export function confirmDestructive({ title, message, action }: ConfirmOptions): Promise<boolean> {
+  return new Promise((resolve) => {
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: 'Annulla', style: 'cancel', onPress: () => resolve(false) },
+        { text: action, style: 'destructive', onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}

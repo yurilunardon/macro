@@ -4,7 +4,7 @@ Conta calorie e macro per uso personale, per iPhone. Scansioni il codice a barre
 
 ## Cosa fa
 
-- **Diario** diviso in colazione, pranzo, cena e spuntini, con anello delle calorie rimaste e barre dei macro. Si scorre giorno per giorno.
+- **Diario** diviso in colazione, pranzo, cena e spuntini. L'anello mostra assunte / obiettivo e cambia colore man mano che ti avvicini (rosso, arancione, verde entro il 10%). Si cambia giorno scorrendo col dito sulla data o sull'anello, oppure con le frecce.
 - **Scanner** dei codici a barre EAN e UPC. I prodotti arrivano da [Open Food Facts](https://it.openfoodfacts.org) e restano salvati sul telefono, così la volta dopo li trovi anche senza connessione.
 - **Alimenti base senza codice a barre**: 286 voci tra frutta, verdura, carne, pesce, uova, legumi, pasta, riso, formaggi, frutta secca e bevande. I valori medi vengono da USDA FoodData Central e i nomi sono in italiano, distinti tra crudo e cotto quando serve. Hanno porzioni tipiche ("1 mela media · 180 g") e funzionano anche offline.
 - **Ricerca** per nome che ignora maiuscole e accenti ("caffe" trova "Caffè"), tra gli alimenti sul telefono e tra i prodotti venduti in Italia su Open Food Facts.
@@ -12,18 +12,18 @@ Conta calorie e macro per uso personale, per iPhone. Scansioni il codice a barre
 - **Recenti, preferiti e alimenti creati da te**. Se un prodotto manca o ha valori sbagliati, lo crei o lo correggi copiando l'etichetta.
 - **Quantità veloci**: 1 porzione o 30, 50, 100, 150, 200 g, e l'ultima quantità usata viene riproposta. C'è anche **"Copia da ieri"** per i pasti che si ripetono.
 - **Obiettivi** calcolati con la formula Mifflin-St Jeor a partire da sesso, età, altezza, peso, attività e obiettivo, con proteine in g/kg e grassi in %. Puoi ritoccarli a mano.
-- **Progressi**: grafico del peso (30 giorni, 3 mesi, 1 anno), calorie degli ultimi 7 giorni e medie dei macro.
+- **Progressi**: grafico del peso (30 giorni, 3 mesi, 1 anno) con le ultime pesate subito sotto e lo storico completo per mese, calorie e medie dei macro.
 - **Ricette**: ingredienti crudi, peso del piatto finito e porzioni. La ricetta si registra come un alimento qualsiasi, comoda per il meal prep.
-- **Pasti salvati**: dal menu ••• di un pasto nel Diario. Li ritrovi in Aggiungi → Miei e li registri con un tocco.
+- **Pasti salvati**: dal menu ⋯ di un pasto nel Diario. Li ritrovi in Aggiungi → Miei e li registri con un tocco.
 - **Obiettivi diversi nei giorni di allenamento e di riposo**, con un programma settimanale. Nel Diario puoi cambiare il tipo di un singolo giorno.
 - **Avviso di scadenza**: l'app legge quando scade la firma di AltStore e lo segnala nei 3 giorni prima.
-- **Scorri a sinistra per eliminare** voci, alimenti, pesate, ingredienti, ricette e pasti salvati.
+- **Scorri a sinistra per eliminare**, come in Mail e Sveglia: poco mostra il pulsante Elimina, fino in fondo elimina subito, con un colpetto aptico. Vale per voci, alimenti, pesate, misure, ingredienti, ricette e pasti salvati.
+- **Menu nativi iOS**: tieni premuta una voce del diario per modificarla, spostarla in un altro pasto, copiarla o eliminarla; il ⋯ di ogni pasto e del giorno apre il menu con le azioni.
 - **Fabbisogno reale**: dalle calorie registrate e dall'andamento del peso nelle ultime 4 settimane l'app stima quanto consumi davvero e può aggiornare gli obiettivi.
 - **Statistiche** su 7, 30 e 90 giorni: medie, ripartizione dei macro, giorni nell'obiettivo. Con il **peso obiettivo** stima anche la data in cui lo raggiungi.
 - **Lettura dell'etichetta**: fotografi la tabella nutrizionale e i valori si compilano da soli. Funziona sul telefono, senza internet, ma non in Expo Go.
 - **Promemoria**: pesata, colazione, pranzo, cena, e la sera prima che l'app scada.
 - **Misure corporee**: vita, fianchi, petto, braccio, coscia, collo e massa grassa.
-- **Digiuno intermittente**: timer nel Diario, con notifica a fine digiuno e storico.
 - **Copia** un giorno intero o una singola voce in oggi o domani.
 - **Esportazione CSV** del diario e di peso e misure, per Excel o Numbers.
 - **Backup e ripristino** in un file JSON, da salvare su iCloud Drive.

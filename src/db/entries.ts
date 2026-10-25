@@ -148,6 +148,12 @@ export async function deleteEntry(db: SQLiteDatabase, id: number): Promise<void>
   notifyChange();
 }
 
+/** Moves an entry to another meal of the same day. */
+export async function moveEntry(db: SQLiteDatabase, id: number, meal: MealKey): Promise<void> {
+  await db.runAsync('UPDATE entries SET meal = ? WHERE id = ?', meal, id);
+  notifyChange();
+}
+
 /** Empties one meal of one day. */
 export async function deleteMealEntries(db: SQLiteDatabase, date: DateKey, meal: MealKey): Promise<void> {
   await db.runAsync('DELETE FROM entries WHERE date = ? AND meal = ?', date, meal);

@@ -1,6 +1,5 @@
 import * as Notifications from 'expo-notifications';
 
-import { fastStatus, formatHours, type Fast } from '@/lib/fasting';
 import { formatExpiry } from '@/lib/provisioning';
 import { DEFAULT_REMINDERS, expiryReminderAt, REMINDERS, type ReminderSettings } from '@/lib/reminders';
 
@@ -26,13 +25,12 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 }
 
 /**
- * Replaces the scheduled notifications with what the settings ask for: daily reminders, the
- * evening before the app expires, and the end of a running fast. Never asks for permission.
+ * Replaces the scheduled notifications with what the settings ask for: daily reminders and the
+ * evening before the app expires. Never asks for permission.
  */
 export async function syncNotifications(input: {
   settings: ReminderSettings | null;
   expiresAt: Date | null;
-  fast: Fast | null;
 }): Promise<void> {
   const settings = input.settings ?? DEFAULT_REMINDERS;
   if (!(await Notifications.getPermissionsAsync()).granted) return;
@@ -64,19 +62,5 @@ export async function syncNotifications(input: {
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: expiryAt },
     });
-  }
-
-  if (input.fast) {
-    const status = fastStatus(input.fast);
-    if (!status.goalReached) {
-      await Notifications.scheduleNotificationAsync({
-        identifier: `${PREFIX}fast`,
-        content: {
-          title: 'Digiuno completato',
-          body: `Hai raggiunto ${formatHours(input.fast.goalHours)} di digiuno.`,
-        },
-        trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: status.goalAt },
-      });
-    }
   }
 }

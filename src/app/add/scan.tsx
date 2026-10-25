@@ -1,5 +1,4 @@
 import { CameraView, useCameraPermissions, type BarcodeScanningResult } from 'expo-camera';
-import * as Haptics from 'expo-haptics';
 import type { SFSymbol } from 'expo-symbols';
 import { Stack, useIsFocused, useRouter } from 'expo-router';
 import { useRef, useState } from 'react';
@@ -12,6 +11,7 @@ import { Icon } from '@/components/icon';
 import { Radius, Spacing } from '@/constants/theme';
 import { useAddFlowParams } from '@/hooks/use-add-flow';
 import { useTheme } from '@/hooks/use-theme';
+import { haptics } from '@/services/haptics';
 
 const BARCODE_TYPES = ['ean13', 'ean8', 'upc_a', 'upc_e'] as const;
 
@@ -34,7 +34,7 @@ export default function ScanScreen() {
     const code = data.replace(/\D/g, '');
     if (handled.current || code.length < 6) return;
     handled.current = true;
-    void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+    haptics.success();
     openBarcode(code);
   };
 

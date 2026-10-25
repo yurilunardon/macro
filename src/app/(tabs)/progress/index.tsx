@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
@@ -6,7 +5,7 @@ import { Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { ActionRow, Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { CaloriesChart, WeightChart } from '@/components/charts';
 import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
@@ -29,6 +28,8 @@ import { formatKcal, formatNumber, numberToInput } from '@/lib/format';
 import { deriveRestTargets, targetsFromExpenditure } from '@/lib/goals';
 import { measurementChanges } from '@/lib/measurements';
 import { summarizePeriod } from '@/lib/stats';
+import { formatChange, withChanges } from '@/lib/weights';
+import { haptics } from '@/services/haptics';
 
 type WeightRange = '30' | '90' | '365';
 type StatsRange = '7' | '30' | '90';
@@ -118,7 +119,7 @@ export default function ProgressScreen() {
       max: 400,
       onSubmit: (kg) => {
         void setWeight(db, today, kg);
-        void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        haptics.success();
       },
     });
 
@@ -151,14 +152,15 @@ export default function ProgressScreen() {
             if (data.training.restTargets) {
               await setTrainingSettings(db, { ...data.training, restTargets: deriveRestTargets(targets) });
             }
-            void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+            haptics.success();
           },
         },
       ],
     );
   };
 
-  const recent = [...weights].reverse().slice(0, 8);
+  // The weigh-ins right under the chart; the full history has its own page.
+  const recent = withChanges(weights).slice(0, 3);
   const changes = data ? measurementChanges(data.measurements, addDays(today, -89)) : [];
 
   return (
@@ -176,7 +178,7 @@ export default function ProgressScreen() {
           </AppText>
           {change !== null ? (
             <AppText variant="subhead" tone="textSecondary" numeric>
-              {`${change > 0 ? '+' : change < 0 ? '−' : '±'}${formatNumber(Math.abs(change), 1)} kg nel periodo`}
+              {`${formatChange(change, 'kg', (n) => formatNumber(n, 1))} nel periodo`}
             </AppText>
           ) : null}
         </View>
@@ -191,8 +193,30 @@ export default function ProgressScreen() {
           </AppText>
           <Icon name="chevron.right" size={13} tone="textTertiary" weight="semibold" />
         </Pressable>
-        <Button title="Registra il peso" variant="tinted" onPress={logWeight} compact />
       </Card>
+
+      <View style={styles.gap} />
+      <ListGroup>
+        <ActionRow label="Registra il peso di oggi" onPress={logWeight} />
+        {recent.map((w) => (
+          <SwipeToDelete key={w.date} onDelete={() => void deleteWeight(db, w.date)}>
+            <Row
+              title={formatDayTitle(w.date, today)}
+              subtitle={w.change !== null ? formatChange(w.change, 'kg', (n) => formatNumber(n, 1)) : null}
+              detail={`${formatNumber(w.kg, 1)} kg`}
+              chevron={false}
+            />
+          </SwipeToDelete>
+        ))}
+        {data?.latest ? (
+          <Row
+            title="Tutte le pesate"
+            icon={<Icon name="list.bullet" size={18} tone="accent" />}
+            onPress={() => router.push('/progress/weights')}
+          />
+        ) : null}
+      </ListGroup>
+      <SectionFooter>Una pesata al giorno: se ti pesi di nuovo, la nuova sostituisce quella vecchia.</SectionFooter>
 
       <SectionTitle>Fabbisogno reale</SectionTitle>
       <Card style={styles.card}>
@@ -260,7 +284,7 @@ export default function ProgressScreen() {
             title={m.label}
             subtitle={
               m.change !== null
-                ? `${m.change > 0 ? '+' : m.change < 0 ? '−' : '±'}${formatNumber(Math.abs(m.change), 1)} ${m.unit} in 3 mesi`
+                ? `${formatChange(m.change, m.unit, (n) => formatNumber(n, 1))} in 3 mesi`
                 : formatShortDate(m.latest.date)
             }
             detail={`${formatNumber(m.latest.value, 1)} ${m.unit}`}
@@ -273,32 +297,6 @@ export default function ProgressScreen() {
           onPress={() => router.push('/progress/measurements')}
         />
       </ListGroup>
-
-      {recent.length > 0 ? (
-        <>
-          <SectionTitle>Pesate</SectionTitle>
-          <ListGroup>
-            {recent.map((w) => (
-              <SwipeToDelete key={w.date} onDelete={() => void deleteWeight(db, w.date)}>
-                <Row
-                  title={formatDayTitle(w.date, today)}
-                  detail={`${formatNumber(w.kg, 1)} kg`}
-                  chevron={false}
-                  onLongPress={() =>
-                    Alert.alert('Eliminare questa pesata?', `${formatDayTitle(w.date, today)} · ${formatNumber(w.kg, 1)} kg`, [
-                      { text: 'Annulla', style: 'cancel' },
-                      { text: 'Elimina', style: 'destructive', onPress: () => void deleteWeight(db, w.date) },
-                    ])
-                  }
-                />
-              </SwipeToDelete>
-            ))}
-          </ListGroup>
-          <SectionFooter>
-            Scorri a sinistra su una pesata per eliminarla. Una pesata al giorno: la nuova sostituisce quella vecchia.
-          </SectionFooter>
-        </>
-      ) : null}
     </ScreenScroll>
   );
 }

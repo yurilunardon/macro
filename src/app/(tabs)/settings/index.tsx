@@ -1,5 +1,4 @@
 import Constants from 'expo-constants';
-import * as Haptics from 'expo-haptics';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
@@ -8,6 +7,7 @@ import { ActivityIndicator, Alert, Linking } from 'react-native';
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
+import { toast } from '@/components/toast';
 import { pickBackup, restoreBackup, shareBackup } from '@/db/backup';
 import { exportBodyCsv, exportDiaryCsv } from '@/db/export';
 import { useLiveQuery } from '@/db/live';
@@ -17,6 +17,7 @@ import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { BackupFormatError } from '@/lib/backup';
 import { formatKcal } from '@/lib/format';
 import { formatExpiry } from '@/lib/provisioning';
+import { haptics } from '@/services/haptics';
 
 const BACKUP_REMINDER_DAYS = 7;
 
@@ -91,8 +92,8 @@ export default function SettingsScreen() {
             onPress: async () => {
               try {
                 await restoreBackup(db, backup);
-                void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
-                Alert.alert('Backup ripristinato');
+                haptics.success();
+                toast.show('Backup ripristinato');
               } catch {
                 Alert.alert('Ripristino non riuscito', 'I dati del telefono non sono stati modificati.');
               }
@@ -149,19 +150,13 @@ export default function SettingsScreen() {
         />
       </ListGroup>
 
-      <SectionTitle>Abitudini</SectionTitle>
+      <SectionTitle>Notifiche</SectionTitle>
       <ListGroup>
         <Row
           title="Promemoria"
           subtitle="Pesata, pasti e scadenza dell’app"
           icon={<Icon name="bell.fill" size={20} tone="accent" />}
           onPress={() => router.push('/settings/reminders')}
-        />
-        <Row
-          title="Digiuno intermittente"
-          subtitle="Timer nel Diario e storico"
-          icon={<Icon name="timer" size={20} tone="accent" />}
-          onPress={() => router.push('/settings/fasting')}
         />
       </ListGroup>
 

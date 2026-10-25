@@ -7,7 +7,6 @@ import type { FoodDraft } from '@/lib/nutrition';
 import { readBackup, restoreBackup } from '../backup';
 import { getLatestWeight, getWeightsSince, setWeight } from '../body';
 import { getDayPlan, getDayPlans, setDayType, setTrainingSettings } from '../days';
-import { deleteFast, endFast, getActiveFast, getFastHistory, setFastStart, startFast } from '../fasts';
 import { deleteMeasurementsOn, getMeasurements, setMeasurements } from '../measurements';
 import { deleteRecipe, getRecipe, getRecipes, saveRecipe } from '../recipes';
 import {
@@ -31,6 +30,7 @@ import {
   getEntriesBetween,
   getEntriesForDate,
   getEntry,
+  moveEntry,
   updateEntry,
   updateQuickEntry,
 } from '../entries';
@@ -107,7 +107,6 @@ describe('migrations', () => {
     expect(tables.map((t) => t.name)).toEqual([
       'day_types',
       'entries',
-      'fasts',
       'foods',
       'measurements',
       'recipe_ingredients',
@@ -157,6 +156,25 @@ describe('migrations', () => {
     expect(await old.getFirstAsync(`SELECT * FROM settings WHERE key = 'waterGoalMl'`)).toBeNull();
     expect((await getTargets(old)).targets.kcal).toBe(2500);
     expect(await getLatestWeight(old)).toEqual({ date: '2026-10-24', kg: 80 });
+  });
+
+  it('upgrades a version 4 diary, dropping the fasting timer', async () => {
+    const old = createTestDatabase();
+    await old.execAsync(MIGRATIONS[0] as string);
+    await (MIGRATIONS[1] as (db: SQLiteDatabase) => Promise<void>)(old);
+    await old.execAsync(MIGRATIONS[2] as string);
+    await old.execAsync(MIGRATIONS[3] as string);
+    await old.execAsync('PRAGMA user_version = 4');
+    await old.runAsync(`INSERT INTO fasts (start, end, goal_hours) VALUES ('2026-10-25T20:00:00.000Z', NULL, 16)`);
+    await old.runAsync(`INSERT INTO settings (key, value) VALUES ('fasting', '{"enabled":true,"goalHours":16}')`);
+    await old.runAsync(`INSERT INTO measurements (date, kind, value) VALUES ('2026-10-25', 'waist', 86)`);
+
+    await migrateDatabase(old);
+
+    const tables = await old.getAllAsync<{ name: string }>("SELECT name FROM sqlite_master WHERE type = 'table'");
+    expect(tables.map((t) => t.name)).not.toContain('fasts');
+    expect(await old.getFirstAsync(`SELECT * FROM settings WHERE key = 'fasting'`)).toBeNull();
+    expect(await getMeasurements(old)).toEqual([{ date: '2026-10-25', kind: 'waist', value: 86 }]);
   });
 
   it('is safe to run again on an existing database', async () => {
@@ -516,6 +534,13 @@ describe('copying days and entries', () => {
       '2026-10-25',
     ]);
   });
+
+  it('moves an entry to another meal of the same day', async () => {
+    const yog = (await getFood(db, await insertFood(db, skyr)))!;
+    const id = await addEntry(db, { date: '2026-10-24', meal: 'breakfast', food: yog, quantity: 150 });
+    await moveEntry(db, id, 'snack');
+    expect(await getEntry(db, id)).toMatchObject({ date: '2026-10-24', meal: 'snack', quantity: 150 });
+  });
 });
 
 describe('measurements', () => {
@@ -530,28 +555,6 @@ describe('measurements', () => {
     ]);
     await deleteMeasurementsOn(db, '2026-10-24');
     expect((await getMeasurements(db)).map((m) => m.date)).toEqual(['2026-10-25']);
-  });
-});
-
-describe('fasting', () => {
-  it('starts, adjusts and ends a fast', async () => {
-    const id = await startFast(db, 16, new Date('2026-10-30T20:00:00.000Z'));
-    expect(await getActiveFast(db)).toEqual({ id, start: '2026-10-30T20:00:00.000Z', end: null, goalHours: 16 });
-    await setFastStart(db, id, new Date('2026-10-30T19:30:00.000Z'));
-    await endFast(db, id, new Date('2026-10-31T12:00:00.000Z'));
-    expect(await getActiveFast(db)).toBeNull();
-    expect(await getFastHistory(db)).toEqual([
-      { id, start: '2026-10-30T19:30:00.000Z', end: '2026-10-31T12:00:00.000Z', goalHours: 16 },
-    ]);
-    await deleteFast(db, id);
-    expect(await getFastHistory(db)).toEqual([]);
-  });
-
-  it('ends a forgotten fast when a new one starts', async () => {
-    const old = await startFast(db, 16, new Date('2026-10-29T20:00:00.000Z'));
-    const fresh = await startFast(db, 14, new Date('2026-10-30T20:00:00.000Z'));
-    expect((await getActiveFast(db))?.id).toBe(fresh);
-    expect((await getFastHistory(db)).map((f) => [f.id, f.end])).toEqual([[old, '2026-10-30T20:00:00.000Z']]);
   });
 });
 
@@ -573,7 +576,6 @@ describe('backup', () => {
     const savedId = await saveMealFromDiary(db, { date: '2026-10-25', meal: 'snack', name: 'Spuntino' });
     await setDayType(db, '2026-10-25', 'rest');
     await setMeasurements(db, '2026-10-25', { waist: 86 });
-    const fastId = await startFast(db, 16, new Date('2026-10-25T20:00:00.000Z'));
     await setSetting(db, 'targets', { kcal: 2600, protein: 170, carbs: 300, fat: 75 });
     await setSetting(db, 'lastBackupAt', '2026-10-25T10:00:00.000Z');
 
@@ -596,7 +598,6 @@ describe('backup', () => {
     expect((await searchLocalFoods(phone, 'pasta pomodoro')).map((f) => f.name)).toEqual(['Pasta al pomodoro']);
     expect((await searchLocalFoods(phone, 'ricetta')).map((f) => f.name)).toEqual(['Pasta al pomodoro']);
     expect(await getMeasurements(phone)).toEqual([{ date: '2026-10-25', kind: 'waist', value: 86 }]);
-    expect((await getActiveFast(phone))?.id).toBe(fastId);
     // New rows keep counting after the restored ids.
     const nextId = await insertFood(phone, { ...skyr, name: 'Nuovo' });
     expect(nextId).toBeGreaterThan(Math.max(...restored.foods.map((f) => f.id)));

@@ -1,13 +1,12 @@
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
-import { Alert, Pressable, StyleSheet, View } from 'react-native';
+import { Alert, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { ListGroup, SectionFooter } from '@/components/card';
 import { FoodRow } from '@/components/food-row';
 import { Segmented } from '@/components/form';
-import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
@@ -47,19 +46,9 @@ export default function FoodsScreen() {
 
   return (
     <ScreenScroll>
-      <Stack.Screen
-        options={{
-          headerRight: () => (
-            <Pressable
-              onPress={() => router.push('/settings/food-edit')}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel="Nuovo alimento">
-              <Icon name="plus" size={20} tone="accent" weight="semibold" />
-            </Pressable>
-          ),
-        }}
-      />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button icon="plus" accessibilityLabel="Nuovo alimento" onPress={() => router.push('/settings/food-edit')} />
+      </Stack.Toolbar>
       <Segmented options={LISTS} value={list} onChange={setList} />
       <View style={styles.gap} />
       {data && data.length > 0 ? (

@@ -1,4 +1,3 @@
-import * as Haptics from 'expo-haptics';
 import { Image } from 'expo-image';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
@@ -12,6 +11,7 @@ import { Chip, FieldRow, Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { MACROS, NutrientTable } from '@/components/nutrition';
 import { ScreenScroll } from '@/components/screen';
+import { toast } from '@/components/toast';
 import { Radius, Spacing } from '@/constants/theme';
 import { addEntry } from '@/db/entries';
 import { getFood, getFoodByBarcode, getLastQuantity, saveOffFood, setFavorite } from '@/db/foods';
@@ -24,6 +24,7 @@ import { formatGrams, formatKcal, formatNumber, numberToInput, parseDecimal, ser
 import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
 import { scaleNutrients } from '@/lib/nutrition';
 import { barcodeCandidates, fetchProductByBarcode, OffNetworkError } from '@/lib/off';
+import { haptics } from '@/services/haptics';
 
 type Resolution =
   | { kind: 'loading' }
@@ -223,14 +224,16 @@ function FoodDetail({
         quantity,
         per100: food.per100,
       });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
+      toast.show('Ingrediente aggiunto', 'frying.pan.fill');
       close();
       return;
     }
     setAdding(true);
     try {
       await addEntry(db, { date, meal, food, quantity });
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
+      toast.show(`${formatKcal(portion.kcal)} kcal in ${mealLabel(meal)}`, 'plus.circle.fill');
       close();
     } finally {
       setAdding(false);
@@ -239,24 +242,18 @@ function FoodDetail({
 
   return (
     <ScreenScroll>
-      <Stack.Screen
-        options={{
-          title: '',
-          headerRight: () => (
-            <Pressable
-              onPress={() => {
-                void Haptics.selectionAsync();
-                void setFavorite(db, food.id, !food.favorite);
-              }}
-              hitSlop={10}
-              accessibilityRole="button"
-              accessibilityLabel={food.favorite ? 'Togli dai preferiti' : 'Aggiungi ai preferiti'}
-              accessibilityState={{ selected: food.favorite }}>
-              <Icon name={food.favorite ? 'star.fill' : 'star'} size={22} tone={food.favorite ? 'warning' : 'accent'} />
-            </Pressable>
-          ),
-        }}
-      />
+      <Stack.Screen options={{ title: '' }} />
+      <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button
+          icon={food.favorite ? 'star.fill' : 'star'}
+          tintColor={food.favorite ? theme.warning : undefined}
+          accessibilityLabel={food.favorite ? 'Togli dai preferiti' : 'Aggiungi ai preferiti'}
+          onPress={() => {
+            haptics.selection();
+            void setFavorite(db, food.id, !food.favorite);
+          }}
+        />
+      </Stack.Toolbar>
 
       <View style={styles.header}>
         {food.imageUrl ? (

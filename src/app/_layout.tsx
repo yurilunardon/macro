@@ -5,6 +5,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { NotificationSync } from '@/components/notification-sync';
+import { ToastHost } from '@/components/toast';
 import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
@@ -50,6 +51,7 @@ export default function RootLayout() {
               />
             </Stack>
             <NotificationSync />
+            <ToastHost />
           </SQLiteProvider>
         </Suspense>
       </ThemeProvider>

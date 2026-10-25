@@ -1,5 +1,4 @@
 import { CameraView, useCameraPermissions } from 'expo-camera';
-import * as Haptics from 'expo-haptics';
 import { Stack, useIsFocused } from 'expo-router';
 import { useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
@@ -10,6 +9,7 @@ import { Radius, Spacing } from '@/constants/theme';
 import { labelScan } from '@/hooks/use-label-scan';
 import { useTheme } from '@/hooks/use-theme';
 import { countFound, parseNutritionLabel } from '@/lib/label-parser';
+import { haptics } from '@/services/haptics';
 
 import { AppText } from './app-text';
 import { Button } from './button';
@@ -94,7 +94,7 @@ export function LabelScanner({ onDone }: { onDone: () => void }) {
         return;
       }
       labelScan.set(values);
-      void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+      haptics.success();
       onDone();
     } catch {
       Alert.alert('Lettura non riuscita', 'Riprova la foto.');

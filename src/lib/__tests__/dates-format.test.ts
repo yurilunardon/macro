@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addDays, daysBetween, formatDayTitle, fromDateKey, isDateKey, lastDays, toDateKey, weekdayOf } from '../dates';
+import { addDays, daysBetween, formatDaySubtitle, formatDayTitle, fromDateKey, isDateKey, lastDays, toDateKey, weekdayOf } from '../dates';
 import { formatGrams, formatNumber, numberToInput, parseDecimal, servingPresetLabel } from '../format';
 
 describe('date keys', () => {
@@ -40,6 +40,13 @@ describe('date keys', () => {
     expect(formatDayTitle('2026-10-24', '2026-10-25')).toBe('Ieri');
     expect(formatDayTitle('2026-10-26', '2026-10-25')).toBe('Domani');
     expect(formatDayTitle('2026-10-20', '2026-10-25')).toBe('Martedì 20 ottobre');
+  });
+
+  it('puts the date under nearby days and the distance under the others', () => {
+    expect(formatDaySubtitle('2026-10-25', '2026-10-25')).toBe('Domenica 25 ottobre');
+    expect(formatDaySubtitle('2026-10-26', '2026-10-25')).toBe('Lunedì 26 ottobre');
+    expect(formatDaySubtitle('2026-10-20', '2026-10-25')).toBe('5 giorni fa');
+    expect(formatDaySubtitle('2026-10-28', '2026-10-25')).toBe('Tra 3 giorni');
   });
 });
 
