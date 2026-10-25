@@ -1,3 +1,4 @@
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
@@ -6,7 +7,7 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, Card, ListGroup } from '@/components/card';
+import { ActionRow, ListGroup } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { ProgressBar } from '@/components/progress';
@@ -31,18 +32,38 @@ import {
   updateSet,
   updateWorkoutNotes,
   type SetFields,
+  type Workout,
   type WorkoutExercise,
   type WorkoutSet,
 } from '@/db/workouts';
 import { useClock } from '@/hooks/use-clock';
+import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
 import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
-import { formatDuration, formatSet, tonnage, type LoggedSet, type Suggestion } from '@/lib/training';
+import { formatDuration, formatSet, tonnage, type LoggedSet } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 import { restTimer, useRestTimer } from '@/services/rest-timer';
 
 const REST_PRESETS = [60, 90, 120, 150, 180, 240];
+const glass = isLiquidGlassAvailable();
+
+/** "Lat pulldown · serie 3": the first set still to do after `setId`, for the rest timer. */
+function nextSetLabel(workout: Workout, setId: number, title: (e: WorkoutExercise) => string): string | null {
+  let passed = false;
+  for (const ex of workout.exercises) {
+    let ordinal = 0;
+    for (const set of ex.sets) {
+      if (set.type !== 'warmup') ordinal += 1;
+      if (set.id === setId) {
+        passed = true;
+        continue;
+      }
+      if (passed && !set.done) return `${title(ex)} · ${set.type === 'warmup' ? 'riscaldamento' : `serie ${ordinal}`}`;
+    }
+  }
+  return null;
+}
 
 /** The workout in progress. Swiping the sheet down keeps it running; it comes back from the bar above the tabs. */
 export default function WorkoutScreen() {
@@ -50,6 +71,7 @@ export default function WorkoutScreen() {
   const router = useRouter();
   const theme = useTheme();
   const now = useClock(1000);
+  const { names } = useExerciseNames();
   const { data } = useLiveQuery('workout:active', async (database) => {
     const active = await getActiveWorkout(database);
     const [workout, restAlert] = await Promise.all([
@@ -80,6 +102,12 @@ export default function WorkoutScreen() {
   const allSets = workout.exercises.flatMap((e) => e.sets);
   const doneCount = allSets.filter((s) => s.done).length;
   const elapsed = (now - new Date(workout.startedAt).getTime()) / 1000;
+  const title = (e: WorkoutExercise) => names(e.exercise).title;
+
+  const onSetDone = (setId: number, rest: number) => {
+    const next = nextSetLabel(workout, setId, title);
+    restTimer.start(rest, next ? `Poi: ${next}` : 'Ultima serie fatta: puoi terminare', { sound: data.sound });
+  };
 
   const finish = async () => {
     if (doneCount === 0) {
@@ -135,7 +163,7 @@ export default function WorkoutScreen() {
     );
 
   return (
-    <View style={styles.flex}>
+    <View style={[styles.flex, { backgroundColor: theme.background }]}>
       <ScreenScroll>
         <Stack.Screen options={{ title: workout.name }} />
         <Stack.Toolbar placement="left">
@@ -155,14 +183,16 @@ export default function WorkoutScreen() {
           </Stack.Toolbar.Button>
         </Stack.Toolbar>
 
-        <Card style={styles.summary}>
-          <View style={styles.summaryRow}>
-            <Stat label="Durata" value={formatDuration(elapsed)} />
-            <Stat label="Serie" value={`${doneCount} / ${allSets.length}`} />
-            <Stat label="Volume" value={`${formatNumber(tonnage(allSets), 0)} kg`} />
-          </View>
-          <ProgressBar value={doneCount} target={Math.max(1, allSets.length)} color={theme.accent} />
-        </Card>
+        <View style={styles.stats}>
+          <Stat label="Tempo" value={formatDuration(elapsed)} />
+          <Stat label="Serie fatte" value={`${doneCount} di ${allSets.length}`} />
+          <Stat label="Volume" value={`${formatNumber(tonnage(allSets), 0)} kg`} />
+        </View>
+        {doneCount === 0 ? (
+          <AppText variant="footnote" tone="textSecondary" align="center" style={styles.howTo}>
+            Ogni riga è una serie: controlla chili e ripetizioni, poi tocca ✓ quando l’hai finita. Parte il recupero.
+          </AppText>
+        ) : null}
 
         {workout.notes ? (
           <Pressable onPress={editNotes} accessibilityRole="button" style={styles.notes}>
@@ -177,19 +207,21 @@ export default function WorkoutScreen() {
           <ExerciseBlock
             key={ex.id}
             item={ex}
+            names={names(ex.exercise)}
             first={index === 0}
             last={index === workout.exercises.length - 1}
-            sound={data.sound}
+            onSetDone={onSetDone}
           />
         ))}
 
-        <View style={styles.addExercise}>
-          <ListGroup>
-            <ActionRow
-              label="Aggiungi esercizio"
-              onPress={() => router.push({ pathname: '/exercise-picker', params: { target: 'workout', id: workout.id } })}
-            />
-          </ListGroup>
+        <View style={styles.footer}>
+          <Button
+            title="Aggiungi esercizio"
+            variant="tinted"
+            icon={<Icon name="plus" size={16} tone="accent" weight="semibold" />}
+            onPress={() => router.push({ pathname: '/exercise-picker', params: { target: 'workout', id: workout.id } })}
+          />
+          <Button title="Termina allenamento" onPress={() => void finish()} />
         </View>
         <View style={styles.bottomSpace} />
       </ScreenScroll>
@@ -200,46 +232,34 @@ export default function WorkoutScreen() {
 
 function Stat({ label, value }: { label: string; value: string }) {
   return (
-    <View style={styles.flex}>
+    <View style={styles.stat}>
+      <AppText variant="title2" numeric>
+        {value}
+      </AppText>
       <AppText variant="caption" tone="textSecondary">
         {label}
-      </AppText>
-      <AppText variant="headline" numeric>
-        {value}
       </AppText>
     </View>
   );
 }
 
-function suggestionText(suggestion: Suggestion, kind: WorkoutExercise['exercise']['kind']): string {
-  switch (suggestion.kind) {
-    case 'first':
-      return 'Prima volta: scegli un carico che ti lasci 2–3 ripetizioni di riserva.';
-    case 'increase':
-      return `Oggi prova ${formatNumber(suggestion.weight, 2)} kg × ${suggestion.reps}: l’ultima volta hai chiuso tutte le serie al massimo.`;
-    case 'repeat':
-      return suggestion.weight !== null && kind === 'weight'
-        ? `Stesso carico, ${formatNumber(suggestion.weight, 2)} kg: punta a ${suggestion.reps} ripetizioni per serie.`
-        : `Punta a ${suggestion.reps} ripetizioni per serie.`;
-    case 'hold':
-      return `Punta a ${suggestion.seconds} s.`;
-  }
-}
+type ExerciseBlockProps = {
+  item: WorkoutExercise;
+  names: { title: string; subtitle: string | null };
+  first: boolean;
+  last: boolean;
+  onSetDone: (setId: number, rest: number) => void;
+};
 
-function ExerciseBlock({ item, first, last, sound }: { item: WorkoutExercise; first: boolean; last: boolean; sound: boolean }) {
+function ExerciseBlock({ item, names, first, last, onSetDone }: ExerciseBlockProps) {
   const db = useSQLiteContext();
   const router = useRouter();
-  const theme = useTheme();
   const { exercise } = item;
   const rest = item.restSeconds ?? restFor(exercise);
-  const range = item.repMin !== null && item.repMax !== null ? `${item.repMin}–${item.repMax}${exercise.kind === 'time' ? ' s' : ''}` : null;
-  let number = 0;
-
-  const complete = async (set: WorkoutSet, position: number, fields: SetFields) => {
-    await updateSet(db, set.id, { ...fields, done: true });
-    haptics.light();
-    restTimer.start(rest, `${exercise.name} · serie ${position}`, { sound });
-  };
+  const range =
+    item.repMin !== null && item.repMax !== null ? `${item.repMin}–${item.repMax}${exercise.kind === 'time' ? ' s' : ''}` : null;
+  const timed = exercise.kind === 'time';
+  let ordinal = 0;
 
   const editNote = () =>
     Alert.prompt(
@@ -258,17 +278,37 @@ function ExerciseBlock({ item, first, last, sound }: { item: WorkoutExercise; fi
       <ListGroup>
         <View style={styles.exerciseHeader}>
           <View style={styles.flex}>
-            <AppText variant="headline">{exercise.name}</AppText>
-            <AppText variant="footnote" tone="textSecondary">
-              {[muscleLabel(exercise.muscle), range ? `${item.sets.length} × ${range}` : null, `recupero ${formatDuration(rest)}`]
-                .filter(Boolean)
-                .join(' · ')}
+            <AppText variant="headline" tone="accent">
+              {names.title}
+            </AppText>
+            <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+              {[names.subtitle, range ? `${item.sets.length} × ${range}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
             </AppText>
           </View>
           <MenuButton
             icon="ellipsis.circle"
-            accessibilityLabel={`Opzioni per ${exercise.name}`}
+            accessibilityLabel={`Opzioni per ${names.title}`}
             groups={[
+              {
+                title: `Recupero dopo ogni serie: ${formatDuration(rest)}`,
+                actions: REST_PRESETS.map((seconds) => ({
+                  label: formatDuration(seconds),
+                  icon: 'timer' as const,
+                  checked: seconds === rest,
+                  onPress: () => void setWorkoutExerciseRest(db, item.id, seconds),
+                })),
+              },
+              {
+                title: 'Blocchi',
+                actions: [
+                  {
+                    label: exercise.trackRir ? 'Togli la colonna RIR' : 'Aggiungi la colonna RIR',
+                    icon: 'gauge.with.dots.needle.33percent',
+                    onPress: () => void updateExerciseOptions(db, exercise.id, { trackRir: !exercise.trackRir }),
+                  },
+                  { label: exercise.note ? 'Modifica la nota fissa' : 'Aggiungi una nota fissa', icon: 'pin', onPress: editNote },
+                ],
+              },
               {
                 actions: [
                   ...(first ? [] : [{ label: 'Sposta su', icon: 'arrow.up' as const, onPress: () => void moveWorkoutExercise(db, item.id, -1) }]),
@@ -278,66 +318,30 @@ function ExerciseBlock({ item, first, last, sound }: { item: WorkoutExercise; fi
                     icon: 'arrow.triangle.2.circlepath',
                     onPress: () => router.push({ pathname: '/exercise-picker', params: { target: 'replace', id: item.id } }),
                   },
-                ],
-              },
-              {
-                title: 'Blocchi',
-                actions: [
-                  {
-                    label: 'Registra il RIR',
-                    icon: 'gauge.with.dots.needle.33percent',
-                    checked: exercise.trackRir,
-                    onPress: () => void updateExerciseOptions(db, exercise.id, { trackRir: !exercise.trackRir }),
-                  },
-                  { label: exercise.note ? 'Modifica nota fissa' : 'Nota fissa', icon: 'pin', onPress: editNote },
-                ],
-              },
-              {
-                title: 'Recupero',
-                actions: REST_PRESETS.map((seconds) => ({
-                  label: formatDuration(seconds),
-                  icon: 'timer' as const,
-                  checked: seconds === rest,
-                  onPress: () => void setWorkoutExerciseRest(db, item.id, seconds),
-                })),
-              },
-              {
-                actions: [
-                  {
-                    label: 'Rimuovi esercizio',
-                    icon: 'trash',
-                    destructive: true,
-                    onPress: () => void removeWorkoutExercise(db, item.id),
-                  },
+                  { label: 'Rimuovi esercizio', icon: 'trash', destructive: true, onPress: () => void removeWorkoutExercise(db, item.id) },
                 ],
               },
             ]}
           />
         </View>
         {exercise.note ? (
-          <View style={styles.infoRow}>
-            <Icon name="pin.fill" size={13} tone="warning" />
+          <View style={styles.noteRow}>
+            <Icon name="pin.fill" size={12} tone="warning" />
             <AppText variant="footnote" style={styles.flex}>
               {exercise.note}
             </AppText>
           </View>
         ) : null}
-        <View style={[styles.infoRow, { backgroundColor: theme.accentSoft }]}>
-          <Icon name={item.suggestion.kind === 'increase' ? 'arrow.up.circle.fill' : 'lightbulb'} size={15} tone="accent" />
-          <AppText variant="footnote" style={styles.flex}>
-            {suggestionText(item.suggestion, exercise.kind)}
-          </AppText>
-        </View>
         <View style={styles.tableHead}>
           <AppText variant="caption" tone="textSecondary" weight="600" style={styles.colSet}>
             SERIE
           </AppText>
           <AppText variant="caption" tone="textSecondary" weight="600" style={styles.colPrev}>
-            PRECEDENTE
+            ULTIMA VOLTA
           </AppText>
-          {exercise.kind === 'time' ? (
+          {timed ? (
             <AppText variant="caption" tone="textSecondary" weight="600" style={styles.colInput}>
-              SEC
+              SECONDI
             </AppText>
           ) : (
             <>
@@ -357,8 +361,7 @@ function ExerciseBlock({ item, first, last, sound }: { item: WorkoutExercise; fi
           <View style={styles.colCheck} />
         </View>
         {item.sets.map((set, index) => {
-          const badge = set.type === 'warmup' ? 'R' : set.type === 'drop' ? 'D' : set.type === 'failure' ? 'C' : String(++number);
-          const position = set.type === 'warmup' ? 0 : number;
+          const badge = set.type === 'warmup' ? 'R' : set.type === 'drop' ? 'D' : set.type === 'failure' ? 'C' : String(++ordinal);
           return (
             <SwipeToDelete key={set.id} onDelete={() => void deleteSet(db, set.id)}>
               <SetRow
@@ -368,7 +371,11 @@ function ExerciseBlock({ item, first, last, sound }: { item: WorkoutExercise; fi
                 kind={exercise.kind}
                 trackRir={exercise.trackRir}
                 onUpdate={(fields) => void updateSet(db, set.id, fields)}
-                onComplete={(fields) => void complete(set, position, fields)}
+                onComplete={async (fields) => {
+                  await updateSet(db, set.id, { ...fields, done: true });
+                  haptics.light();
+                  onSetDone(set.id, rest);
+                }}
                 onDelete={() => void deleteSet(db, set.id)}
               />
             </SwipeToDelete>
@@ -380,8 +387,8 @@ function ExerciseBlock({ item, first, last, sound }: { item: WorkoutExercise; fi
   );
 }
 
-function toText(value: number | null, decimals = 2): string {
-  return value === null ? '' : numberToInput(value, decimals);
+function toText(value: number | null | undefined, decimals = 2): string {
+  return value === null || value === undefined ? '' : numberToInput(value, decimals);
 }
 
 type SetRowProps = {
@@ -396,27 +403,24 @@ type SetRowProps = {
 };
 
 /**
- * One set: number (tap for warm-up, drop or failure), last time's result, the fields and the
- * tick. Empty fields show the suggestion in grey, and ticking with them empty uses it.
+ * One set: its number (tap for warm-up, drop or failure), what was done last time, the values
+ * (already filled in with last time's, to change if needed) and the tick that closes the set.
  */
 function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, onDelete }: SetRowProps) {
   const theme = useTheme();
-  const [weight, setWeight] = useState(toText(set.weight));
-  const [reps, setReps] = useState(toText(set.reps, 0));
-  const [seconds, setSeconds] = useState(toText(set.seconds, 0));
+  // A set not touched yet starts from what was done last time, so most sets are just a tick.
+  const start = set.done || set.weight !== null || set.reps !== null || set.seconds !== null ? set : previous;
+  const [weight, setWeight] = useState(toText(start?.weight));
+  const [reps, setReps] = useState(toText(start?.reps, 0));
+  const [seconds, setSeconds] = useState(toText(start?.seconds, 0));
   const [rir, setRir] = useState(toText(set.rir, 1));
   const [missing, setMissing] = useState(false);
 
-  const weightHint = set.targetWeight ?? previous?.weight ?? null;
-  const repsHint = set.targetReps ?? previous?.reps ?? null;
-  const secondsHint = previous?.seconds ?? null;
-
-  const values = (): SetFields => ({
-    weight: parseDecimal(weight),
-    reps: parseDecimal(reps) === null ? null : Math.round(parseDecimal(reps) ?? 0),
-    seconds: parseDecimal(seconds) === null ? null : Math.round(parseDecimal(seconds) ?? 0),
-    rir: parseDecimal(rir),
-  });
+  const values = (): SetFields => {
+    const r = parseDecimal(reps);
+    const s = parseDecimal(seconds);
+    return { weight: parseDecimal(weight), reps: r === null ? null : Math.round(r), seconds: s === null ? null : Math.round(s), rir: parseDecimal(rir) };
+  };
 
   const tick = () => {
     if (set.done) {
@@ -424,13 +428,7 @@ function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, on
       onUpdate({ done: false });
       return;
     }
-    const typed = values();
-    const filled: SetFields = {
-      ...typed,
-      weight: typed.weight ?? weightHint,
-      reps: typed.reps ?? repsHint,
-      seconds: typed.seconds ?? secondsHint,
-    };
+    const filled = values();
     const ok = kind === 'time' ? filled.seconds !== null : filled.reps !== null;
     if (!ok) {
       haptics.error();
@@ -438,13 +436,10 @@ function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, on
       return;
     }
     setMissing(false);
-    setWeight(toText(filled.weight ?? null));
-    setReps(toText(filled.reps ?? null, 0));
-    setSeconds(toText(filled.seconds ?? null, 0));
     onComplete(filled);
   };
 
-  const field = (value: string, onChange: (text: string) => void, hint: number | null, label: string, decimals: number) => (
+  const field = (value: string, onChange: (text: string) => void, placeholder: string, label: string) => (
     <TextInput
       value={value}
       onChangeText={(text) => {
@@ -452,57 +447,67 @@ function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, on
         onChange(text);
       }}
       onEndEditing={() => onUpdate(values())}
-      placeholder={hint === null ? '—' : numberToInput(hint, decimals)}
+      placeholder={placeholder}
       placeholderTextColor={theme.textTertiary}
       keyboardType="decimal-pad"
       inputAccessoryViewButtonLabel="Fine"
       selectTextOnFocus
+      editable={!set.done}
       accessibilityLabel={label}
       style={[
         styles.input,
-        { backgroundColor: set.done ? 'transparent' : theme.track, color: theme.text },
-        missing && { borderColor: theme.danger, borderWidth: 1 },
+        { backgroundColor: set.done ? 'transparent' : theme.fill, color: theme.text },
+        missing && { borderColor: theme.danger, borderWidth: 1.5 },
       ]}
     />
   );
 
   return (
-    <View style={[styles.setRow, set.done && { backgroundColor: theme.accentSoft }]}>
+    <View style={[styles.setRow, set.done && { backgroundColor: `${theme.accent}1F` }]}>
       <View style={styles.colSet}>
         <SetTypeMenu badge={badge} type={set.type} done={set.done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
       </View>
-      <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
-        {previous ? formatSet(previous, kind) : '—'}
+      <AppText variant="subhead" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
+        {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
       </AppText>
       {kind === 'time' ? (
-        <View style={styles.colInput}>{field(seconds, setSeconds, secondsHint, 'Secondi', 0)}</View>
+        <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi')}</View>
       ) : (
         <>
-          <View style={styles.colInput}>{field(weight, setWeight, weightHint, 'Chili', 2)}</View>
-          <View style={styles.colInput}>{field(reps, setReps, repsHint, 'Ripetizioni', 0)}</View>
+          <View style={styles.colInput}>{field(weight, setWeight, 'kg', 'Chili')}</View>
+          <View style={styles.colInput}>{field(reps, setReps, 'rip', 'Ripetizioni')}</View>
         </>
       )}
-      {trackRir ? <View style={styles.colRir}>{field(rir, setRir, null, 'Ripetizioni in riserva', 1)}</View> : null}
+      {trackRir ? <View style={styles.colRir}>{field(rir, setRir, '–', 'Ripetizioni in riserva')}</View> : null}
       <Pressable
         onPress={tick}
-        hitSlop={8}
+        hitSlop={6}
         accessibilityRole="checkbox"
         accessibilityState={{ checked: set.done }}
-        accessibilityLabel={set.done ? 'Serie fatta, tocca per annullare' : 'Segna la serie come fatta'}
-        style={[styles.colCheck, styles.check, { backgroundColor: set.done ? theme.accent : theme.track }]}>
-        <Icon name="checkmark" size={16} weight="bold" color={set.done ? theme.onAccent : theme.textTertiary} />
+        accessibilityLabel={set.done ? 'Serie fatta, tocca per riaprirla' : 'Segna la serie come fatta'}
+        style={({ pressed }) => [
+          styles.colCheck,
+          styles.check,
+          set.done
+            ? { backgroundColor: theme.accent }
+            : { borderWidth: 2, borderColor: theme.separator, backgroundColor: theme.card },
+          pressed && { opacity: 0.6 },
+        ]}>
+        <Icon name="checkmark" size={15} weight="bold" color={set.done ? theme.onAccent : theme.textTertiary} />
       </Pressable>
     </View>
   );
 }
 
-/** The rest countdown at the bottom: −15 s, +15 s, skip; it says when it is over. */
+/**
+ * The rest, big at the bottom of the screen: countdown, what comes next, −15 / +15 and skip.
+ * When it is over it says so for a few seconds and goes away.
+ */
 function RestBar() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const rest = useRestTimer();
   const now = useClock(250, rest !== null);
-  // A few seconds after the end the bar goes away by itself.
   const expired = rest !== null && now - rest.endsAt > 5000;
   useEffect(() => {
     if (expired) restTimer.stop();
@@ -510,31 +515,55 @@ function RestBar() {
   if (!rest || expired) return null;
   const left = (rest.endsAt - now) / 1000;
   const over = left <= 0;
-  return (
-    <View style={[styles.restBar, { bottom: insets.bottom + Spacing.sm, backgroundColor: theme.card, borderColor: theme.separator }]}>
+
+  const content = (
+    <>
       <View style={styles.restTop}>
         <View style={styles.flex}>
-          <AppText variant="caption" tone="textSecondary" numberOfLines={1}>
-            {over ? 'Recupero finito' : rest.label}
+          <AppText variant="footnote" weight="600" tone={over ? 'accent' : 'textSecondary'}>
+            {over ? 'RECUPERO FINITO' : 'RECUPERO'}
           </AppText>
-          <AppText variant="title2" numeric tone={over ? 'accent' : 'text'}>
+          <AppText numeric style={[styles.restTime, { color: over ? theme.accent : theme.text }]}>
             {over ? 'Vai!' : formatDuration(left)}
           </AppText>
         </View>
         {over ? null : (
           <>
-            <RestButton label="−15" onPress={() => restTimer.adjust(-15)} />
-            <RestButton label="+15" onPress={() => restTimer.adjust(15)} />
+            <RestButton label="−15" accessibilityLabel="Togli 15 secondi" onPress={() => restTimer.adjust(-15)} />
+            <RestButton label="+15" accessibilityLabel="Aggiungi 15 secondi" onPress={() => restTimer.adjust(15)} />
           </>
         )}
-        <RestButton label={over ? 'Ok' : 'Salta'} onPress={() => restTimer.stop()} />
+        <RestButton label={over ? 'Ok' : 'Salta'} accessibilityLabel={over ? 'Chiudi' : 'Salta il recupero'} onPress={() => restTimer.stop()} prominent />
       </View>
-      <ProgressBar value={Math.max(0, left)} target={rest.total} color={over ? theme.accent : theme.warning} height={4} />
+      <ProgressBar value={Math.max(0, left)} target={rest.total} color={over ? theme.accent : theme.warning} height={6} />
+      <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+        {rest.label}
+      </AppText>
+    </>
+  );
+
+  return glass ? (
+    <GlassView style={[styles.restBar, { bottom: insets.bottom + Spacing.sm }]} glassEffectStyle="regular">
+      {content}
+    </GlassView>
+  ) : (
+    <View style={[styles.restBar, styles.restSolid, { bottom: insets.bottom + Spacing.sm, backgroundColor: theme.card, borderColor: theme.separator }]}>
+      {content}
     </View>
   );
 }
 
-function RestButton({ label, onPress }: { label: string; onPress: () => void }) {
+function RestButton({
+  label,
+  accessibilityLabel,
+  onPress,
+  prominent = false,
+}: {
+  label: string;
+  accessibilityLabel: string;
+  onPress: () => void;
+  prominent?: boolean;
+}) {
   const theme = useTheme();
   return (
     <Pressable
@@ -543,8 +572,13 @@ function RestButton({ label, onPress }: { label: string; onPress: () => void }) 
         onPress();
       }}
       accessibilityRole="button"
-      style={({ pressed }) => [styles.restButton, { backgroundColor: theme.track }, pressed && { opacity: 0.6 }]}>
-      <AppText variant="subhead" weight="600" numeric>
+      accessibilityLabel={accessibilityLabel}
+      style={({ pressed }) => [
+        styles.restButton,
+        { backgroundColor: prominent ? theme.accent : theme.fill },
+        pressed && { opacity: 0.6 },
+      ]}>
+      <AppText variant="headline" numeric style={{ color: prominent ? theme.onAccent : theme.text }}>
         {label}
       </AppText>
     </Pressable>
@@ -554,8 +588,9 @@ function RestButton({ label, onPress }: { label: string; onPress: () => void }) 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
-  summary: { gap: Spacing.md },
-  summaryRow: { flexDirection: 'row', gap: Spacing.md },
+  stats: { flexDirection: 'row', gap: Spacing.md, paddingHorizontal: Spacing.xs },
+  stat: { flex: 1, alignItems: 'center', gap: 2 },
+  howTo: { paddingTop: Spacing.md, paddingHorizontal: Spacing.lg },
   notes: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   exercise: { marginTop: Spacing.lg },
   exerciseHeader: {
@@ -565,36 +600,18 @@ const styles = StyleSheet.create({
     paddingLeft: Spacing.lg,
     paddingRight: Spacing.xs,
     paddingVertical: Spacing.sm,
-    minHeight: 56,
+    minHeight: 60,
   },
-  infoRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm,
-  },
-  tableHead: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs + 2,
-  },
-  setRow: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    paddingHorizontal: Spacing.md,
-    paddingVertical: Spacing.xs + 2,
-  },
-  colSet: { width: 36, alignItems: 'center', textAlign: 'center' },
+  noteRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
+  tableHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+  setRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+  colSet: { width: 44, alignItems: 'center', textAlign: 'center' },
   colPrev: { flex: 1 },
-  colInput: { width: 64, textAlign: 'center' },
+  colInput: { width: 62, textAlign: 'center' },
   colRir: { width: 44, textAlign: 'center' },
-  colCheck: { width: 36 },
+  colCheck: { width: 40 },
   input: {
-    height: 36,
+    height: 40,
     borderRadius: Radius.sm,
     borderCurve: 'continuous',
     textAlign: 'center',
@@ -602,26 +619,28 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
-  check: { height: 36, borderRadius: Radius.sm, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
-  addExercise: { marginTop: Spacing.lg },
-  bottomSpace: { height: 120 },
+  check: { height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  footer: { paddingTop: Spacing.xl, gap: Spacing.md },
+  bottomSpace: { height: 170 },
   restBar: {
     position: 'absolute',
-    left: Spacing.lg,
-    right: Spacing.lg,
-    padding: Spacing.md,
+    left: Spacing.md,
+    right: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.md,
     gap: Spacing.sm,
-    borderRadius: Radius.lg,
+    borderRadius: 28,
     borderCurve: 'continuous',
-    borderWidth: StyleSheet.hairlineWidth,
-    boxShadow: '0 8px 24px rgba(0, 0, 0, 0.18)',
+    overflow: 'hidden',
   },
+  restSolid: { borderWidth: StyleSheet.hairlineWidth, boxShadow: '0 10px 30px rgba(0, 0, 0, 0.22)' },
   restTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  restTime: { fontSize: 44, lineHeight: 50, fontWeight: '700', fontVariant: ['tabular-nums'] },
   restButton: {
-    minWidth: 52,
-    height: 40,
+    minWidth: 56,
+    height: 48,
     paddingHorizontal: Spacing.md,
-    borderRadius: Radius.pill,
+    borderRadius: 24,
     alignItems: 'center',
     justifyContent: 'center',
   },

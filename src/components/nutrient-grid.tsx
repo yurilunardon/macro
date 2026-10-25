@@ -1,6 +1,6 @@
 import { Pressable, StyleSheet, View } from 'react-native';
 
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import type { BreakdownKey } from '@/lib/breakdown';
 import { fiberTarget } from '@/lib/calories';
@@ -46,7 +46,7 @@ export function NutrientGrid({ totals, targets, onPress }: NutrientGridProps) {
             accessibilityRole="button"
             accessibilityLabel={`${NUTRIENT_LABELS[key]}: ${Math.round(value)} su ${target} grammi`}
             accessibilityHint="Mostra da quali alimenti arrivano"
-            style={({ pressed }) => [styles.tile, { backgroundColor: pressed ? theme.cardPressed : theme.background }]}>
+            style={({ pressed }) => [styles.tile, { backgroundColor: theme.fill }, pressed && styles.pressed]}>
             <View style={styles.tileTop}>
               <AppText variant="footnote" weight="600" style={[styles.flex, { color: theme[key] }]} numberOfLines={1}>
                 {NUTRIENT_LABELS[key]}
@@ -77,8 +77,9 @@ const styles = StyleSheet.create({
     flexGrow: 1,
     gap: Spacing.xs + 2,
     padding: Spacing.md,
-    borderRadius: 12,
+    borderRadius: Radius.md,
     borderCurve: 'continuous',
   },
+  pressed: { opacity: 0.6 },
   tileTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
 });

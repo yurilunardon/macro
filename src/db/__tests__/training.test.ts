@@ -71,6 +71,10 @@ describe('exercise library', () => {
     );
     expect((await searchExercises(db, { muscle: 'calves' })).every((e) => e.muscle === 'calves')).toBe(true);
     expect((await searchExercises(db, { query: 'petto bilanciere' })).length).toBeGreaterThan(0);
+    expect((await searchExercises(db, { query: 'bench press' }))[0]).toMatchObject({
+      name: 'Panca piana con bilanciere',
+      nameEn: 'Bench press',
+    });
   });
 
   it('keeps custom exercises, options and hides deleted ones', async () => {
@@ -143,7 +147,7 @@ describe('workouts', () => {
 
     await updateSet(db, bench.sets[0].id, { weight: 85, reps: 8, done: true });
     await finishWorkout(db, secondId, new Date('2026-10-29T18:00:00Z'));
-    expect(await getRecords(db, secondId)).toEqual([{ name: 'Panca piana con bilanciere', oneRepMax: expect.closeTo(107.67, 1) }]);
+    expect((await getRecords(db, secondId)).map((r) => [r.exercise.name, r.oneRepMax])).toEqual([['Panca piana con bilanciere', expect.closeTo(107.67, 1)]]);
 
     const history = await getWorkoutHistory(db);
     expect(history.map((w) => [w.name, w.workSets])).toEqual([

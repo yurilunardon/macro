@@ -61,7 +61,7 @@ const SAVED_MEAL_ITEM_COLUMNS = [
 ] as const satisfies readonly (keyof SavedMealItemRow)[];
 
 const EXERCISE_COLUMNS = [
-  'id', 'ref', 'name', 'muscle', 'secondary', 'equipment', 'kind', 'track_rir', 'rest_seconds', 'note', 'archived',
+  'id', 'ref', 'name', 'name_en', 'muscle', 'secondary', 'equipment', 'kind', 'track_rir', 'rest_seconds', 'note', 'archived',
   'created_at',
 ] as const satisfies readonly (keyof ExerciseRow)[];
 const PROGRAM_COLUMNS = ['id', 'name', 'notes', 'active', 'created_at'] as const satisfies readonly (keyof ProgramRow)[];

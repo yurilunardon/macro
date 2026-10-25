@@ -11,6 +11,7 @@ import { Spacing } from '@/constants/theme';
 import { applyPick, isPickerTarget, type PickerTarget } from '@/db/exercise-picks';
 import { searchExercises, type Exercise } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
+import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { equipmentLabel, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
 import { haptics } from '@/services/haptics';
 
@@ -23,6 +24,7 @@ export default function ExercisePickerScreen() {
   const id = Number(params.id);
   const [query, setQuery] = useState('');
   const [muscle, setMuscle] = useState<Muscle | null>(null);
+  const { names } = useExerciseNames();
   const { data } = useLiveQuery(`exercise-picker:${query}:${muscle ?? ''}`, (database) =>
     searchExercises(database, { query, muscle }),
   );
@@ -64,8 +66,8 @@ export default function ExercisePickerScreen() {
         {(data ?? []).map((exercise) => (
           <Row
             key={exercise.id}
-            title={exercise.name}
-            subtitle={`${muscleLabel(exercise.muscle)} · ${equipmentLabel(exercise.equipment)}`}
+            title={names(exercise).title}
+            subtitle={names(exercise).subtitle ?? `${muscleLabel(exercise.muscle)} · ${equipmentLabel(exercise.equipment)}`}
             onPress={() => void pick(exercise)}
             chevron={false}
           />

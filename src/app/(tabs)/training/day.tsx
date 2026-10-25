@@ -14,6 +14,7 @@ import { restFor } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
 import { deleteDay, getDay, moveDayExercise, removeDayExercise, renameDay } from '@/db/programs';
 import { getActiveWorkout, startWorkout } from '@/db/workouts';
+import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
 import { formatDuration } from '@/lib/training';
@@ -24,6 +25,7 @@ export default function DayScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
+  const { names } = useExerciseNames();
   const params = useLocalSearchParams<{ id?: string }>();
   const id = Number(params.id);
   const { data } = useLiveQuery(`day:${id}`, async (database) => {
@@ -104,7 +106,7 @@ export default function DayScreen() {
                   {({ pressed }) => (
                     <View style={[styles.row, pressed && { backgroundColor: theme.cardPressed }]}>
                       <View style={styles.flex}>
-                        <AppText>{planned.exercise.name}</AppText>
+                        <AppText>{names(planned.exercise).title}</AppText>
                         <AppText variant="footnote" tone="textSecondary" numeric>
                           {`${planned.sets} × ${planned.repMin}–${planned.repMax}${planned.exercise.kind === 'time' ? ' s' : ''} · recupero ${formatDuration(
                             planned.restSeconds ?? restFor(planned.exercise),

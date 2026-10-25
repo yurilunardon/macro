@@ -165,7 +165,7 @@ export default function TrainingScreen() {
         )}
       </Card>
       <SectionFooter>
-        {`Serie allenanti, esclusi i riscaldamenti: una serie conta intera per il muscolo principale e mezza per quelli secondari. Per crescere ne servono indicativamente ${VOLUME_LOW}–${VOLUME_HIGH} a settimana per muscolo: in arancione quelli sotto ${VOLUME_LOW}.`}
+        {`Serie per muscolo, riscaldamenti esclusi. Per crescere ne servono indicativamente ${VOLUME_LOW}–${VOLUME_HIGH} a settimana: in arancione i muscoli sotto ${VOLUME_LOW}.`}
       </SectionFooter>
 
       <SectionTitle>Schede</SectionTitle>

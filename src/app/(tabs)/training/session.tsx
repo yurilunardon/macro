@@ -10,6 +10,7 @@ import { ScreenScroll } from '@/components/screen';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
 import { deleteWorkout, getRecords, getWorkout } from '@/db/workouts';
+import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { formatLongDate } from '@/lib/dates';
 import { countLabel, formatNumber } from '@/lib/format';
@@ -20,6 +21,7 @@ export default function SessionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
+  const { names } = useExerciseNames();
   const params = useLocalSearchParams<{ id?: string; done?: string }>();
   const id = Number(params.id);
   const justDone = params.done === '1';
@@ -99,9 +101,9 @@ export default function SessionScreen() {
           <SectionTitle>{countLabel(records.length, 'nuovo record', 'nuovi record')}</SectionTitle>
           <ListGroup>
             {records.map((r) => (
-              <View key={r.name} style={styles.record}>
+              <View key={r.exercise.id} style={styles.record}>
                 <Icon name="trophy.fill" size={18} tone="warning" />
-                <AppText style={styles.flex}>{r.name}</AppText>
+                <AppText style={styles.flex}>{names(r.exercise).title}</AppText>
                 <AppText tone="textSecondary" numeric>{`1RM stimato ${formatNumber(r.oneRepMax, 1)} kg`}</AppText>
               </View>
             ))}
@@ -111,7 +113,7 @@ export default function SessionScreen() {
 
       {workout.exercises.map((ex) => (
         <View key={ex.id}>
-          <SectionTitle>{ex.exercise.name}</SectionTitle>
+          <SectionTitle>{names(ex.exercise).title}</SectionTitle>
           <ListGroup>
             {ex.sets.map((set) => (
               <View key={set.id} style={styles.set}>

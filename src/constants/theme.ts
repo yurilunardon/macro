@@ -8,6 +8,8 @@ export const Colors = {
     background: '#F2F2F7',
     card: '#FFFFFF',
     cardPressed: '#E5E5EA',
+    /** Elements inside a card, such as the nutrient tiles: a shade off the card, never a hole. */
+    fill: '#F2F2F7',
     text: '#000000',
     textSecondary: '#6C6C70',
     textTertiary: '#AEAEB2',
@@ -31,6 +33,7 @@ export const Colors = {
     background: '#000000',
     card: '#1C1C1E',
     cardPressed: '#2C2C2E',
+    fill: '#2C2C2E',
     text: '#FFFFFF',
     textSecondary: '#AEAEB2',
     textTertiary: '#636366',
@@ -64,10 +67,11 @@ export const Spacing = {
   xxl: 32,
 } as const;
 
+/** iOS 26 rounds grouped sections and cards more than before. */
 export const Radius = {
-  sm: 8,
-  md: 12,
-  lg: 16,
+  sm: 10,
+  md: 14,
+  lg: 22,
   pill: 999,
 } as const;
 

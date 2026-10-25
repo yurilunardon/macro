@@ -14,7 +14,7 @@ import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { toast } from '@/components/toast';
 import { WeekStrip } from '@/components/week-strip';
-import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
+import { MaxContentWidth, Spacing } from '@/constants/theme';
 import { copyDay, deleteMealEntries, getEntriesForDate } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
@@ -41,7 +41,6 @@ const PAGE_SPRING = { duration: 450, dampingRatio: 1 };
 export default function NutritionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const theme = useTheme();
   const today = useToday();
   const expiry = useAppExpiry();
   const { width: screenWidth } = useWindowDimensions();
@@ -170,6 +169,9 @@ export default function NutritionScreen() {
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button hidden={date === today} accessibilityLabel="Torna a oggi" onPress={() => goTo(today)}>
+          Oggi
+        </Stack.Toolbar.Button>
         <Stack.Toolbar.Button
           icon="barcode.viewfinder"
           accessibilityLabel="Scansiona un codice a barre"
@@ -179,25 +181,12 @@ export default function NutritionScreen() {
 
       {expiry && expiry.level !== 'ok' ? <ExpiryBanner status={expiry} /> : null}
 
-      <View style={styles.dateRow}>
-        <View style={styles.flex}>
-          <AppText variant="headline">{formatLongDate(date)}</AppText>
-          <AppText variant="footnote" tone="textSecondary">
-            {relative}
-          </AppText>
-        </View>
-        {date !== today ? (
-          <Pressable
-            onPress={() => goTo(today)}
-            accessibilityRole="button"
-            accessibilityLabel="Torna a oggi"
-            style={({ pressed }) => [styles.todayButton, { backgroundColor: theme.accentSoft }, pressed && styles.pressed]}>
-            <AppText variant="subhead" weight="600" tone="accent">
-              Oggi
-            </AppText>
-          </Pressable>
-        ) : null}
-      </View>
+      <AppText variant="subhead" tone="textSecondary" style={styles.date}>
+        <AppText variant="subhead" weight="600">
+          {formatLongDate(date)}
+        </AppText>
+        {` · ${relative}`}
+      </AppText>
 
       <WeekStrip selected={date} today={today} onSelect={goTo} onChangeWeek={(direction) => goTo(addDays(date, direction * 7))} />
 
@@ -243,9 +232,7 @@ function ExpiryBanner({ status }: { status: ExpiryStatus }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  dateRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
-  todayButton: { paddingHorizontal: Spacing.md, paddingVertical: Spacing.xs + 2, borderRadius: Radius.pill },
-  pressed: { opacity: 0.7 },
+  date: { textAlign: 'center', marginBottom: Spacing.md },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md, borderWidth: 1.5 },
   // The day on screen sets the height of the row; the others overlay it on either side.
   current: { position: 'relative' },

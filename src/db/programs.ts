@@ -32,7 +32,7 @@ export type PlanFields = Pick<PlannedExercise, 'sets' | 'repMin' | 'repMax' | 'r
 export const DEFAULT_PLAN: PlanFields = { sets: 3, repMin: 8, repMax: 12, restSeconds: null, note: null };
 
 const EXERCISE_COLUMNS =
-  'e.id, e.ref, e.name, e.muscle, e.secondary, e.equipment, e.kind, e.track_rir, e.rest_seconds, e.note';
+  'e.id, e.ref, e.name, e.name_en, e.muscle, e.secondary, e.equipment, e.kind, e.track_rir, e.rest_seconds, e.note';
 
 /** Every program, the active one first, with a summary of its days. */
 export async function getPrograms(db: SQLiteDatabase): Promise<Program[]> {

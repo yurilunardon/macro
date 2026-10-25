@@ -93,7 +93,24 @@ export function defaultRestSeconds(muscle: Muscle, equipment: Equipment): number
   return equipment === 'barbell' || equipment === 'smith' ? 180 : 120;
 }
 
-/** Normalised like foods, so an exercise is found by name, muscle or equipment. */
-export function exerciseSearchText(name: string, muscle: Muscle, equipment: Equipment): string {
-  return normalizeSearch(`${name} ${muscleLabel(muscle)} ${equipmentLabel(equipment)}`);
+/** Normalised like foods, so an exercise is found by either name, muscle or equipment. */
+export function exerciseSearchText(name: string, nameEn: string | null, muscle: Muscle, equipment: Equipment): string {
+  return normalizeSearch(`${name} ${nameEn ?? ''} ${muscleLabel(muscle)} ${equipmentLabel(equipment)}`);
+}
+
+/** Which name of an exercise comes first: most are called in English in the gym. */
+export type NameLanguage = 'en' | 'it';
+
+/**
+ * The name to show and, when the exercise has both, the other one underneath. Custom exercises
+ * have only the name they were given.
+ */
+export function exerciseNames(
+  exercise: { name: string; nameEn: string | null },
+  language: NameLanguage,
+): { title: string; subtitle: string | null } {
+  if (!exercise.nameEn || exercise.nameEn === exercise.name) return { title: exercise.name, subtitle: null };
+  return language === 'en'
+    ? { title: exercise.nameEn, subtitle: exercise.name }
+    : { title: exercise.name, subtitle: exercise.nameEn };
 }

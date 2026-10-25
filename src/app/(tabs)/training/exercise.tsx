@@ -12,6 +12,7 @@ import { Spacing } from '@/constants/theme';
 import { deleteExercise, getExercise, restFor, updateExerciseOptions } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
 import { getExerciseHistory } from '@/db/workouts';
+import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { formatDayTitle } from '@/lib/dates';
@@ -27,6 +28,7 @@ export default function ExerciseScreen() {
   const router = useRouter();
   const theme = useTheme();
   const today = useToday();
+  const { names } = useExerciseNames();
   const params = useLocalSearchParams<{ id?: string }>();
   const id = Number(params.id);
   const { data } = useLiveQuery(`exercise:${id}`, async (database) => {
@@ -77,7 +79,7 @@ export default function ExerciseScreen() {
 
   const remove = async () => {
     const ok = await confirmDestructive({
-      title: `Eliminare «${exercise.name}»?`,
+      title: `Eliminare «${names(exercise).title}»?`,
       message: 'Sparisce dalla libreria e dalle schede; gli allenamenti già fatti restano nello storico.',
       action: 'Elimina',
     });
@@ -88,7 +90,7 @@ export default function ExerciseScreen() {
 
   return (
     <ScreenScroll>
-      <Stack.Screen options={{ title: exercise.name }} />
+      <Stack.Screen options={{ title: names(exercise).title }} />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon="ellipsis.circle" accessibilityLabel="Azioni sull’esercizio">
           <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
@@ -98,7 +100,7 @@ export default function ExerciseScreen() {
       </Stack.Toolbar>
 
       <AppText variant="subhead" tone="textSecondary" style={styles.subtitle}>
-        {`${muscleLabel(exercise.muscle)}${exercise.secondary.length ? ` (e ${exercise.secondary.map(muscleLabel).join(', ').toLowerCase()})` : ''} · ${equipmentLabel(exercise.equipment)}`}
+        {`${names(exercise).subtitle ? `${names(exercise).subtitle}\n` : ''}${muscleLabel(exercise.muscle)}${exercise.secondary.length ? ` (e ${exercise.secondary.map(muscleLabel).join(', ').toLowerCase()})` : ''} · ${equipmentLabel(exercise.equipment)}`}
       </AppText>
 
       {exercise.kind !== 'time' ? (

@@ -23,6 +23,8 @@ type SettingsMap = {
   exercisesVersion: number;
   /** End of a rest: a silent banner, or with the system sound (only a vibration in silent mode). */
   restAlert: 'silent' | 'sound';
+  /** Which name of the exercises comes first. */
+  exerciseNames: 'en' | 'it';
 };
 
 export type SettingKey = keyof SettingsMap;

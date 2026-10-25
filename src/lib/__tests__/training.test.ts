@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { defaultRestSeconds, exerciseSearchText, loadIncrement } from '../exercises';
+import { defaultRestSeconds, exerciseNames, exerciseSearchText, loadIncrement } from '../exercises';
 import {
   bestOneRepMax,
   estimateOneRepMax,
@@ -114,7 +114,14 @@ describe('rotation and exercises', () => {
     expect(loadIncrement('dumbbell')).toBe(2);
     expect(defaultRestSeconds('chest', 'barbell')).toBe(180);
     expect(defaultRestSeconds('biceps', 'cable')).toBe(90);
-    expect(exerciseSearchText('Panca piana con bilanciere', 'chest', 'barbell')).toContain('petto');
+    expect(exerciseSearchText('Panca piana con bilanciere', 'Bench press', 'chest', 'barbell')).toContain('bench press');
+  });
+
+  it('shows the chosen name first and the other one under it', () => {
+    const bench = { name: 'Panca piana con bilanciere', nameEn: 'Bench press' };
+    expect(exerciseNames(bench, 'en')).toEqual({ title: 'Bench press', subtitle: 'Panca piana con bilanciere' });
+    expect(exerciseNames(bench, 'it')).toEqual({ title: 'Panca piana con bilanciere', subtitle: 'Bench press' });
+    expect(exerciseNames({ name: 'Panca Technogym', nameEn: null }, 'en')).toEqual({ title: 'Panca Technogym', subtitle: null });
   });
 });
 

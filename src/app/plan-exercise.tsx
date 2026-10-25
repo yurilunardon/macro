@@ -11,6 +11,7 @@ import { Icon } from '@/components/icon';
 import { Radius, Spacing } from '@/constants/theme';
 import { restFor } from '@/db/exercises';
 import { getPlannedExercise, removeDayExercise, updateDayExercise, type PlannedExercise } from '@/db/programs';
+import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
 import { parseDecimal } from '@/lib/format';
@@ -50,6 +51,7 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
+  const { names } = useExerciseNames();
   const timed = planned.exercise.kind === 'time';
   const [sets, setSets] = useState(planned.sets);
   const [repMin, setRepMin] = useState(String(planned.repMin));
@@ -87,9 +89,9 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
   return (
     <ScrollView style={{ backgroundColor: theme.background }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled">
       <View>
-        <AppText variant="title2">{planned.exercise.name}</AppText>
+        <AppText variant="title2">{names(planned.exercise).title}</AppText>
         <AppText variant="subhead" tone="textSecondary">
-          {muscleLabel(planned.exercise.muscle)}
+          {[names(planned.exercise).subtitle, muscleLabel(planned.exercise.muscle)].filter(Boolean).join(' · ')}
         </AppText>
       </View>
 

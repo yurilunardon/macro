@@ -19,7 +19,9 @@ export type Exercise = {
   id: number;
   /** Set for the exercises shipped with the app, null for the ones created by the user. */
   ref: string | null;
+  /** Italian name; for custom exercises, the name they were given. */
   name: string;
+  nameEn: string | null;
   muscle: Muscle;
   secondary: Muscle[];
   equipment: Equipment;
@@ -35,6 +37,7 @@ export type ExerciseRow = {
   id: number;
   ref: string | null;
   name: string;
+  name_en: string | null;
   muscle: string;
   secondary: string;
   equipment: string;
@@ -49,6 +52,7 @@ export function exerciseFromRow(row: ExerciseRow): Exercise {
     id: row.id,
     ref: row.ref,
     name: row.name,
+    nameEn: row.name_en,
     muscle: isMuscle(row.muscle) ? row.muscle : 'chest',
     secondary: row.secondary.split(',').filter(isMuscle),
     equipment: isEquipment(row.equipment) ? row.equipment : 'other',
@@ -64,7 +68,7 @@ export function restFor(exercise: Pick<Exercise, 'restSeconds' | 'muscle' | 'equ
   return exercise.restSeconds ?? defaultRestSeconds(exercise.muscle, exercise.equipment);
 }
 
-const COLUMNS = 'id, ref, name, muscle, secondary, equipment, kind, track_rir, rest_seconds, note';
+const COLUMNS = 'id, ref, name, name_en, muscle, secondary, equipment, kind, track_rir, rest_seconds, note';
 
 /**
  * Adds the shipped exercises that are missing. Existing ones are left alone, so the user's
@@ -77,20 +81,23 @@ export async function seedExercises(db: SQLiteDatabase, { force = false } = {}):
   }
   const now = new Date().toISOString();
   await db.withExclusiveTransactionAsync(async (tx) => {
+    // Existing rows only get the names and search text: the user's options on them stay.
     const statement = await tx.prepareAsync(
-      `INSERT INTO exercises (ref, name, muscle, secondary, equipment, kind, search_text, created_at)
-       VALUES (?, ?, ?, ?, ?, ?, ?, ?) ON CONFLICT (ref) DO NOTHING`,
+      `INSERT INTO exercises (ref, name, name_en, muscle, secondary, equipment, kind, search_text, created_at)
+       VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+       ON CONFLICT (ref) DO UPDATE SET name_en = excluded.name_en, search_text = excluded.search_text`,
     );
     try {
       for (const e of BUILT_IN_EXERCISES) {
         await statement.executeAsync([
           e.ref,
           e.name,
+          e.nameEn,
           e.muscle,
           e.secondary.join(','),
           e.equipment,
           e.kind,
-          exerciseSearchText(e.name, e.muscle, e.equipment),
+          exerciseSearchText(e.name, e.nameEn, e.muscle, e.equipment),
           now,
         ]);
       }
@@ -125,7 +132,7 @@ export async function searchExercises(
     `SELECT ${COLUMNS.split(', ').map((c) => `e.${c}`).join(', ')},
        (SELECT COUNT(*) FROM workout_exercises we WHERE we.exercise_id = e.id) AS uses
      FROM exercises e WHERE ${conditions.join(' AND ')}
-     ORDER BY uses DESC, e.name COLLATE NOCASE`,
+     ORDER BY uses DESC, COALESCE(e.name_en, e.name) COLLATE NOCASE`,
     ...params,
   );
   return rows.map(exerciseFromRow);
@@ -148,7 +155,7 @@ export async function insertExercise(db: SQLiteDatabase, draft: ExerciseDraft): 
     draft.secondary.join(','),
     draft.equipment,
     draft.kind,
-    exerciseSearchText(draft.name.trim(), draft.muscle, draft.equipment),
+    exerciseSearchText(draft.name.trim(), null, draft.muscle, draft.equipment),
     new Date().toISOString(),
   );
   notifyChange();
@@ -195,6 +202,10 @@ export async function refreshExerciseSearchText(db: SQLiteDatabase): Promise<voi
   const rows = await db.getAllAsync<ExerciseRow>(`SELECT ${COLUMNS} FROM exercises`);
   for (const row of rows) {
     const e = exerciseFromRow(row);
-    await db.runAsync('UPDATE exercises SET search_text = ? WHERE id = ?', exerciseSearchText(e.name, e.muscle, e.equipment), e.id);
+    await db.runAsync(
+      'UPDATE exercises SET search_text = ? WHERE id = ?',
+      exerciseSearchText(e.name, e.nameEn, e.muscle, e.equipment),
+      e.id,
+    );
   }
 }

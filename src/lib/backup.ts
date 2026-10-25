@@ -107,6 +107,7 @@ export type ExerciseRow = {
   id: number;
   ref: string | null;
   name: string;
+  name_en: string | null;
   muscle: string;
   secondary: string;
   equipment: string;
@@ -288,6 +289,7 @@ const EXERCISE_COLUMNS: Record<keyof ExerciseRow, Check> = {
   id: 'number',
   ref: 'string?',
   name: 'string',
+  name_en: 'string?',
   muscle: 'string',
   secondary: 'string',
   equipment: 'string',

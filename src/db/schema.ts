@@ -238,12 +238,20 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX workout_sets_exercise ON workout_sets (workout_exercise_id, position);
   `,
+  // 7: English names of the exercises, filled in by the exercise seeding.
+  `
+  ALTER TABLE exercises ADD COLUMN name_en TEXT;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
 
 /** Brings the database up to date and adds any missing basic foods. Runs every time the app opens it. */
 export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
+  if (process.env.EXPO_PUBLIC_SAMPLE_DATA === '1') {
+    // The web preview's SQLite has no exclusive transactions; plain ones are enough there.
+    db.withExclusiveTransactionAsync = (task) => db.withTransactionAsync(() => task(db as never));
+  }
   await db.execAsync('PRAGMA journal_mode = WAL; PRAGMA foreign_keys = ON;');
   const row = await db.getFirstAsync<{ user_version: number }>('PRAGMA user_version');
   let version = row?.user_version ?? 0;
@@ -259,4 +267,8 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
   }
   await seedGenericFoods(db);
   await seedExercises(db);
+  if (process.env.EXPO_PUBLIC_SAMPLE_DATA === '1') {
+    const { seedSampleData } = await import('./sample-data');
+    await seedSampleData(db);
+  }
 }

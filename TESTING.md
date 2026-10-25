@@ -56,6 +56,16 @@ Lista di controlli per la prima prova, da fare prima in **Expo Go** e poi con l'
 - [ ] **Copia**: nel Diario tieni premuta una voce → **Copia in oggi/domani**. Il pulsante **⋯** in alto a sinistra copia o svuota il giorno intero.
 - [ ] **CSV**: Profilo → Diario in CSV → apri il file con Numbers: colonne separate, decimali con la virgola, accenti corretti.
 
+## Novità della versione 1.6
+
+- [ ] **Settimana**: niente più anelli attorno ai numeri. Il giorno scelto è un cerchio pieno (verde se è oggi), sotto i giorni con dei pasti c'è un puntino colorato. Toccando un altro giorno il cerchio compare lì, senza scorrere nel vuoto.
+- [ ] **Oggi**: su un altro giorno il pulsante **Oggi** è in alto a destra, nella barra di vetro accanto allo scanner.
+- [ ] **Modalità scura**: le caselle dei nutrienti sono grigio scuro, non più nere come dei buchi; card e liste hanno gli angoli più arrotondati di iOS 26.
+- [ ] **Nomi degli esercizi**: in grande il nome inglese (Bench press, Lat pulldown…), sotto quello italiano. La ricerca trova tutti e due. In Libreria esercizi, con il pulsante **Aa** in alto puoi mettere prima l'italiano.
+- [ ] **Allenamento più semplice**: niente consigli. Ogni riga è una serie con chili e ripetizioni **già scritti** dall'ultima volta: se va bene tocchi solo il cerchio ✓. La prima volta i campi sono vuoti (kg, rip).
+- [ ] **Timer**: dopo la spunta compare in basso un riquadro grande con il conto alla rovescia, −15 / +15 / Salta e la serie successiva («Poi: Dumbbell row · serie 1»).
+- [ ] **Fine**: oltre a «Fine» in alto, in fondo alla pagina c'è **Termina allenamento**.
+
 ## Novità della versione 1.5: Allenamento
 
 - [ ] **Tab**: in basso ci sono Alimentazione, **Allenamento**, Progressi, Profilo.

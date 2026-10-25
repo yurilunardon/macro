@@ -78,7 +78,7 @@ function setFromRow(row: SetRow): WorkoutSet {
 }
 
 const EXERCISE_COLUMNS =
-  'e.id, e.ref, e.name, e.muscle, e.secondary, e.equipment, e.kind, e.track_rir, e.rest_seconds, e.note';
+  'e.id, e.ref, e.name, e.name_en, e.muscle, e.secondary, e.equipment, e.kind, e.track_rir, e.rest_seconds, e.note';
 
 /** The sets of the last finished workout with this exercise, started before `before`. */
 export async function getLastSets(db: SQLiteDatabase, exerciseId: number, before: string): Promise<LoggedSet[]> {
@@ -431,16 +431,16 @@ export async function getExerciseHistory(db: SQLiteDatabase, exerciseId: number)
  * Exercises of this workout whose best estimated 1RM beats every earlier session: the records
  * to celebrate at the end.
  */
-export async function getRecords(db: SQLiteDatabase, workoutId: number): Promise<{ name: string; oneRepMax: number }[]> {
+export async function getRecords(db: SQLiteDatabase, workoutId: number): Promise<{ exercise: Exercise; oneRepMax: number }[]> {
   const workout = await getWorkout(db, workoutId);
   if (!workout) return [];
-  const records: { name: string; oneRepMax: number }[] = [];
+  const records: { exercise: Exercise; oneRepMax: number }[] = [];
   for (const ex of workout.exercises) {
     const now = bestOneRepMax(ex.sets);
     if (now === null) continue;
     const earlier = (await getExerciseHistory(db, ex.exercise.id)).filter((s) => s.startedAt < workout.startedAt);
     const before = Math.max(0, ...earlier.map((s) => s.oneRepMax ?? 0));
-    if (earlier.length > 0 && now > before) records.push({ name: ex.exercise.name, oneRepMax: now });
+    if (earlier.length > 0 && now > before) records.push({ exercise: ex.exercise, oneRepMax: now });
   }
   return records;
 }
