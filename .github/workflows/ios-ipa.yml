@@ -1,0 +1,38 @@
+# Builds the unsigned IPA on a GitHub macOS runner, as an alternative to building on your Mac.
+# Run it from the Actions tab ("Run workflow"), then download the "Macro-ipa" artifact.
+name: Build IPA
+
+on:
+  workflow_dispatch:
+
+jobs:
+  build:
+    runs-on: macos-latest
+    timeout-minutes: 60
+    steps:
+      - uses: actions/checkout@v4
+
+      # Recent Expo SDKs need a recent Xcode; the runner's default can lag behind.
+      - uses: maxim-lobanov/setup-xcode@v1
+        with:
+          xcode-version: latest-stable
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version-file: .nvmrc
+          cache: npm
+
+      - name: Test
+        run: |
+          npm ci
+          npm test
+          npm run typecheck
+
+      - name: Build IPA
+        run: bash scripts/build-ipa.sh
+
+      - uses: actions/upload-artifact@v4
+        with:
+          name: Macro-ipa
+          path: build/Macro.ipa
+          retention-days: 14

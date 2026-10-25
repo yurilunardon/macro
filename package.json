@@ -1,18 +1,24 @@
 {
-  "name": "app",
+  "name": "macro",
   "version": "1.0.0",
   "main": "expo-router/entry",
   "dependencies": {
     "@expo/ui": "~58.0.23",
     "expo": "~58.0.19",
+    "expo-camera": "~58.0.12",
     "expo-constants": "~58.0.13",
     "expo-device": "~58.0.5",
+    "expo-document-picker": "~58.0.4",
+    "expo-file-system": "~58.0.11",
     "expo-font": "~58.0.10",
     "expo-glass-effect": "~58.0.5",
+    "expo-haptics": "~58.0.7",
     "expo-image": "~58.0.17",
     "expo-linking": "~58.0.14",
     "expo-router": "~58.0.26",
+    "expo-sharing": "~58.0.20",
     "expo-splash-screen": "~58.0.11",
+    "expo-sqlite": "~58.0.14",
     "expo-status-bar": "~58.0.4",
     "expo-symbols": "~58.0.4",
     "expo-system-ui": "~58.0.6",
@@ -24,19 +30,25 @@
     "react-native-reanimated": "4.7.1",
     "react-native-safe-area-context": "~5.10.1",
     "react-native-screens": "~4.30.0",
+    "react-native-svg": "15.16.0",
     "react-native-web": "~0.21.4",
     "react-native-worklets": "0.13.0"
   },
   "devDependencies": {
+    "@types/node": "^24.19.2",
     "@types/react": "~19.3.0",
-    "typescript": "~6.0.3"
+    "eslint": "^9.39.5",
+    "eslint-config-expo": "~58.0.4",
+    "typescript": "~6.0.3",
+    "vitest": "^5.0.5"
   },
   "scripts": {
     "start": "expo start",
-    "reset-project": "node ./scripts/reset-project.js",
-    "android": "expo start --android",
-    "ios": "expo start --ios",
-    "web": "expo start --web",
+    "ios": "expo run:ios",
+    "android": "expo run:android",
+    "build:ipa": "bash scripts/build-ipa.sh",
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
     "lint": "expo lint"
   },
   "private": true

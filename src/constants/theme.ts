@@ -1,65 +1,67 @@
 /**
- * Below are the colors that are used in the app. The colors are defined in the light and dark mode.
- * There are many other ways to style your app. For example, [Nativewind](https://www.nativewind.dev/), [Tamagui](https://tamagui.dev/), [unistyles](https://unistyl.es/), etc.
+ * Design tokens. Surfaces follow iOS grouped lists; macro colours are fixed across the app so
+ * protein, carbs and fat are always recognisable at a glance.
  */
-
-import '@/global.css';
-
-import { Platform } from 'react-native';
-
 export const Colors = {
   light: {
+    background: '#F2F2F7',
+    card: '#FFFFFF',
+    cardPressed: '#E5E5EA',
     text: '#000000',
-    background: '#ffffff',
-    backgroundElement: '#F0F0F3',
-    backgroundSelected: '#E0E1E6',
-    textSecondary: '#60646C',
+    textSecondary: '#6C6C70',
+    textTertiary: '#AEAEB2',
+    separator: '#D1D1D6',
+    track: '#E5E5EA',
+    accent: '#15803D',
+    onAccent: '#FFFFFF',
+    accentSoft: '#DCF5E3',
+    danger: '#D70015',
+    warning: '#B25000',
+    protein: '#D9480F',
+    carbs: '#0B7285',
+    fat: '#9C36B5',
+    water: '#1C7ED6',
+    scrim: 'rgba(0,0,0,0.55)',
   },
   dark: {
-    text: '#ffffff',
     background: '#000000',
-    backgroundElement: '#212225',
-    backgroundSelected: '#2E3135',
-    textSecondary: '#B0B4BA',
+    card: '#1C1C1E',
+    cardPressed: '#2C2C2E',
+    text: '#FFFFFF',
+    textSecondary: '#AEAEB2',
+    textTertiary: '#636366',
+    separator: '#38383A',
+    track: '#2C2C2E',
+    accent: '#30D158',
+    onAccent: '#00210B',
+    accentSoft: '#0E2E18',
+    danger: '#FF6961',
+    warning: '#FFB340',
+    protein: '#FF9F0A',
+    carbs: '#3BC9DB',
+    fat: '#DA8FFF',
+    water: '#4DABF7',
+    scrim: 'rgba(0,0,0,0.6)',
   },
 } as const;
 
-export type ThemeColor = keyof typeof Colors.light & keyof typeof Colors.dark;
-
-export const Fonts = Platform.select({
-  ios: {
-    /** iOS `UIFontDescriptorSystemDesignDefault` */
-    sans: 'system-ui',
-    /** iOS `UIFontDescriptorSystemDesignSerif` */
-    serif: 'ui-serif',
-    /** iOS `UIFontDescriptorSystemDesignRounded` */
-    rounded: 'ui-rounded',
-    /** iOS `UIFontDescriptorSystemDesignMonospaced` */
-    mono: 'ui-monospace',
-  },
-  default: {
-    sans: 'normal',
-    serif: 'serif',
-    rounded: 'normal',
-    mono: 'monospace',
-  },
-  web: {
-    sans: 'var(--font-display)',
-    serif: 'var(--font-serif)',
-    rounded: 'var(--font-rounded)',
-    mono: 'var(--font-mono)',
-  },
-});
+export type Palette = { [K in keyof typeof Colors.light]: string };
+export type ColorName = keyof Palette;
 
 export const Spacing = {
-  half: 2,
-  one: 4,
-  two: 8,
-  three: 16,
-  four: 24,
-  five: 32,
-  six: 64,
+  xs: 4,
+  sm: 8,
+  md: 12,
+  lg: 16,
+  xl: 24,
+  xxl: 32,
 } as const;
 
-export const BottomTabInset = Platform.select({ ios: 50, android: 80 }) ?? 0;
-export const MaxContentWidth = 800;
+export const Radius = {
+  sm: 8,
+  md: 12,
+  lg: 16,
+  pill: 999,
+} as const;
+
+export const MaxContentWidth = 640;

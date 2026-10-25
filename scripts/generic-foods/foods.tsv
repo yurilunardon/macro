@@ -1,0 +1,291 @@
+# Basic foods without a barcode. Values come from USDA FoodData Central, SR Legacy (public domain, CC0).
+# Columns (tab-separated): fdc_id, Italian name, category, unit (g|ml), serving size, serving label.
+# Serving sizes are typical Italian portions chosen for this app, not USDA data.
+# Drinks use ml: USDA values are per 100 g, which for these liquids is within a few percent of 100 ml.
+# Rebuild src/data/generic-foods.json with: python3 scripts/generic-foods/build.py <USDA SR Legacy CSV folder>
+171688	Mela	Frutta	g	180	1 mela media
+169118	Pera	Frutta	g	170	1 pera media
+173944	Banana	Frutta	g	120	1 banana media, sbucciata
+169097	Arancia	Frutta	g	150	1 arancia, sbucciata
+169105	Mandarino / clementina	Frutta	g	70	1 mandarino, sbucciato
+167746	Limone	Frutta	g
+168153	Kiwi	Frutta	g	75	1 kiwi, sbucciato
+167762	Fragole	Frutta	g	150	1 coppetta
+171719	Ciliegie	Frutta	g	150	1 coppetta
+174683	Uva	Frutta	g	150	1 grappolo piccolo
+169928	Pesca	Frutta	g	150	1 pesca media
+171697	Albicocca	Frutta	g	35	1 albicocca
+169949	Prugna / susina	Frutta	g	60	1 prugna
+167765	Anguria	Frutta	g	300	1 fetta
+169092	Melone	Frutta	g	200	1 fetta
+169124	Ananas	Frutta	g	150	1 fetta spessa
+169910	Mango	Frutta	g
+171711	Mirtilli	Frutta	g	125	1 vaschetta
+167755	Lamponi	Frutta	g	125	1 vaschetta
+173946	More	Frutta	g	125	1 vaschetta
+173021	Fichi	Frutta	g	50	1 fico
+169941	Cachi	Frutta	g	200	1 cachi
+169134	Melograno, chicchi	Frutta	g
+173033	Pompelmo	Frutta	g	200	1/2 pompelmo
+171705	Avocado	Frutta	g	70	1/2 avocado
+171726	Datteri secchi	Frutta	g	8	1 dattero
+168191	Datteri Medjool	Frutta	g	24	1 dattero
+168165	Uvetta	Frutta	g	15	1 cucchiaio
+168162	Prugne secche	Frutta	g	10	1 prugna
+173941	Albicocche secche	Frutta	g	8	1 albicocca
+174665	Fichi secchi	Frutta	g	20	1 fico
+170457	Pomodoro	Verdura	g	120	1 pomodoro medio
+169249	Insalata verde (lattuga)	Verdura	g	80	1 porzione
+169247	Lattuga romana	Verdura	g	80	1 porzione
+169248	Lattuga iceberg	Verdura	g	80	1 porzione
+169387	Rucola	Verdura	g	50	1 porzione
+168462	Spinaci, crudi	Verdura	g	80	1 porzione
+168463	Spinaci, bolliti	Verdura	g	200	1 porzione
+169291	Zucchine, crude	Verdura	g	200	1 porzione
+169292	Zucchine, bollite	Verdura	g	200	1 porzione
+169228	Melanzane, crude	Verdura	g	200	1 porzione
+169229	Melanzane, bollite	Verdura	g	200	1 porzione
+170108	Peperoni rossi	Verdura	g	150	1 peperone medio
+170427	Peperoni verdi	Verdura	g	150	1 peperone medio
+169383	Peperoni gialli	Verdura	g	150	1 peperone medio
+170393	Carote, crude	Verdura	g	80	1 carota media
+168409	Cetriolo	Verdura	g	200	1 cetriolo
+170000	Cipolla	Verdura	g	100	1 cipolla media
+169230	Aglio	Verdura	g	3	1 spicchio
+170379	Broccoli, crudi	Verdura	g	200	1 porzione
+169967	Broccoli, bolliti	Verdura	g	200	1 porzione
+169986	Cavolfiore, crudo	Verdura	g	200	1 porzione
+170397	Cavolfiore, bollito	Verdura	g	200	1 porzione
+169975	Cavolo cappuccio	Verdura	g	150	1 porzione
+170383	Cavoletti di Bruxelles, crudi	Verdura	g	150	1 porzione
+169971	Cavoletti di Bruxelles, bolliti	Verdura	g	150	1 porzione
+168421	Cavolo nero / cavolo riccio	Verdura	g	150	1 porzione
+169385	Finocchio	Verdura	g	200	1 finocchio medio
+169988	Sedano	Verdura	g	40	1 costa
+168389	Asparagi, crudi	Verdura	g	150	1 porzione
+168390	Asparagi, bolliti	Verdura	g	150	1 porzione
+169205	Carciofi, crudi	Verdura	g	120	1 carciofo
+168386	Carciofi, bolliti	Verdura	g	120	1 carciofo
+169961	Fagiolini, crudi	Verdura	g	150	1 porzione
+169141	Fagiolini, bolliti	Verdura	g	150	1 porzione
+170419	Piselli freschi	Verdura	g	150	1 porzione
+170017	Piselli surgelati, bolliti	Verdura	g	150	1 porzione
+169998	Mais dolce	Verdura	g
+169214	Mais in scatola, sgocciolato	Verdura	g	70	1 scatoletta piccola
+169251	Funghi champignon, crudi	Verdura	g	150	1 porzione
+169252	Funghi champignon, cotti	Verdura	g	150	1 porzione
+168448	Zucca	Verdura	g	200	1 porzione
+169145	Barbabietola, cruda	Verdura	g
+169146	Barbabietola, cotta	Verdura	g	100	1 barbabietola
+168564	Radicchio	Verdura	g	80	1 porzione
+169246	Porro	Verdura	g	100	1 porro
+169991	Bietola, cruda	Verdura	g	150	1 porzione
+170401	Bietola, bollita	Verdura	g	200	1 porzione
+169276	Ravanelli	Verdura	g	50	1 porzione
+170026	Patate, crude	Verdura	g	200	1 patata media
+170440	Patate, bollite (senza buccia)	Verdura	g	200	1 porzione
+170093	Patate al forno, con buccia (senza grassi)	Verdura	g	200	1 porzione
+168482	Patate dolci (americane), crude	Verdura	g	200	1 patata media
+168483	Patate dolci (americane), al forno	Verdura	g	200	1 porzione
+169096	Olive verdi in salamoia	Verdura	g	4	1 oliva
+169094	Olive nere	Verdura	g	4	1 oliva
+173756	Ceci secchi	Legumi	g	50	1 porzione
+173757	Ceci, lessati	Legumi	g	150	1 porzione
+173800	Ceci in scatola, sgocciolati	Legumi	g	240	1 barattolo
+175202	Fagioli cannellini secchi	Legumi	g	50	1 porzione
+175203	Fagioli cannellini, lessati	Legumi	g	150	1 porzione
+175204	Fagioli cannellini in scatola	Legumi	g	240	1 barattolo
+175189	Fagioli borlotti secchi	Legumi	g	50	1 porzione
+173736	Fagioli borlotti, lessati	Legumi	g	150	1 porzione
+173737	Fagioli borlotti in scatola	Legumi	g	240	1 barattolo
+173744	Fagioli rossi secchi	Legumi	g	50	1 porzione
+175194	Fagioli rossi, lessati	Legumi	g	150	1 porzione
+174285	Fagioli rossi in scatola, sgocciolati	Legumi	g	240	1 barattolo
+173734	Fagioli neri secchi	Legumi	g	50	1 porzione
+173735	Fagioli neri, lessati	Legumi	g	150	1 porzione
+172420	Lenticchie secche	Legumi	g	50	1 porzione
+172421	Lenticchie, lessate	Legumi	g	150	1 porzione
+172429	Piselli secchi spezzati, lessati	Legumi	g	150	1 porzione
+175205	Fave secche	Legumi	g	50	1 porzione
+173753	Fave, lessate	Legumi	g	150	1 porzione
+168411	Edamame, cotti	Legumi	g	100	1 porzione
+174270	Soia gialla secca	Legumi	g	50	1 porzione
+172475	Tofu compatto	Legumi	g	100	1 porzione
+174289	Hummus di ceci	Legumi	g	30	1 cucchiaio abbondante
+168927	Pasta di semola, cruda	Cereali e pasta	g	80	1 porzione
+168928	Pasta di semola, cotta	Cereali e pasta	g	200	1 porzione
+169738	Pasta integrale, cruda	Cereali e pasta	g	80	1 porzione
+168910	Pasta integrale, cotta	Cereali e pasta	g	200	1 porzione
+169755	Pasta all'uovo secca, cruda	Cereali e pasta	g	80	1 porzione
+169756	Riso bianco, crudo	Cereali e pasta	g	80	1 porzione
+168878	Riso bianco, cotto	Cereali e pasta	g	200	1 porzione
+169758	Riso parboiled, crudo	Cereali e pasta	g	80	1 porzione
+169759	Riso parboiled, cotto	Cereali e pasta	g	200	1 porzione
+169703	Riso integrale, crudo	Cereali e pasta	g	80	1 porzione
+169704	Riso integrale, cotto	Cereali e pasta	g	200	1 porzione
+169745	Farro, crudo	Cereali e pasta	g	80	1 porzione
+169746	Farro, cotto	Cereali e pasta	g	200	1 porzione
+170284	Orzo perlato, crudo	Cereali e pasta	g	80	1 porzione
+170285	Orzo perlato, cotto	Cereali e pasta	g	200	1 porzione
+168874	Quinoa, cruda	Cereali e pasta	g	80	1 porzione
+168917	Quinoa, cotta	Cereali e pasta	g	200	1 porzione
+169699	Couscous, crudo	Cereali e pasta	g	80	1 porzione
+169700	Couscous, cotto	Cereali e pasta	g	200	1 porzione
+173904	Fiocchi d'avena	Cereali e pasta	g	40	1 porzione
+168929	Farina di mais (polenta), cruda	Cereali e pasta	g	80	1 porzione
+169761	Farina di frumento tipo 00	Cereali e pasta	g
+168893	Farina integrale di frumento	Cereali e pasta	g
+168933	Semola di grano duro	Cereali e pasta	g
+170682	Amaranto, crudo	Cereali e pasta	g	80	1 porzione
+170286	Grano saraceno	Cereali e pasta	g	80	1 porzione
+174913	Pane comune	Pane e prodotti da forno	g	50	1 fetta
+172688	Pane integrale	Pane e prodotti da forno	g	50	1 fetta
+172684	Pane di segale	Pane e prodotti da forno	g	40	1 fetta
+174924	Pane in cassetta	Pane e prodotti da forno	g	25	1 fetta
+172675	Baguette	Pane e prodotti da forno	g	50	1 pezzo
+171372	Fette biscottate	Pane e prodotti da forno	g	8	1 fetta biscottata
+172746	Cracker salati	Pane e prodotti da forno	g	25	1 pacchetto
+170250	Gallette di riso integrale	Pane e prodotti da forno	g	8	1 galletta
+174648	Corn flakes	Pane e prodotti da forno	g	30	1 porzione
+167535	Piadina / tortilla di frumento	Pane e prodotti da forno	g	100	1 piadina
+174987	Cornetto / croissant al burro	Pane e prodotti da forno	g	60	1 cornetto
+171077	Petto di pollo, crudo	Carne	g	150	1 porzione
+171477	Petto di pollo, cotto	Carne	g	120	1 porzione
+173627	Sovracosce di pollo senza pelle, crude	Carne	g	150	1 porzione
+172388	Sovracosce di pollo senza pelle, cotte	Carne	g	120	1 porzione
+171098	Petto di tacchino, crudo	Carne	g	150	1 porzione
+171496	Petto di tacchino, cotto	Carne	g	120	1 porzione
+171790	Macinato di manzo 5% di grassi, crudo	Carne	g	150	1 porzione
+174030	Macinato di manzo 10% di grassi, crudo	Carne	g	150	1 porzione
+171796	Macinato di manzo 15% di grassi, crudo	Carne	g	150	1 porzione
+174036	Macinato di manzo 20% di grassi, crudo	Carne	g	150	1 porzione
+174028	Macinato di manzo 5% di grassi, cotto	Carne	g	120	1 porzione
+171794	Macinato di manzo 10% di grassi, cotto	Carne	g	120	1 porzione
+174055	Bistecca di manzo magra, cruda	Carne	g	200	1 bistecca
+168634	Bistecca di manzo magra, alla griglia	Carne	g	160	1 bistecca
+171767	Filetto di manzo, crudo	Carne	g	150	1 porzione
+175269	Fesa di vitello, cruda	Carne	g	150	1 porzione
+173822	Fesa di vitello, arrosto	Carne	g	120	1 porzione
+168249	Filetto di maiale, crudo	Carne	g	150	1 porzione
+168250	Filetto di maiale, arrosto	Carne	g	120	1 porzione
+168263	Lonza di maiale (braciola senza osso), cruda	Carne	g	150	1 braciola
+167902	Macinato di maiale, crudo	Carne	g	150	1 porzione
+171631	Salsiccia di maiale, cruda	Carne	g	100	1 salsiccia
+172491	Agnello (lombata magra), crudo	Carne	g	150	1 porzione
+174320	Agnello (lombata magra), arrosto	Carne	g	120	1 porzione
+172521	Coniglio, crudo	Carne	g	150	1 porzione
+172522	Coniglio, arrosto	Carne	g	120	1 porzione
+168296	Prosciutto cotto	Salumi	g	15	1 fetta
+170604	Bresaola	Salumi	g	10	1 fetta
+174603	Salame	Salumi	g	8	1 fetta
+174573	Mortadella	Salumi	g	15	1 fetta
+172964	Würstel di maiale	Salumi	g	50	1 würstel
+171624	Würstel di pollo	Salumi	g	50	1 würstel
+168277	Pancetta, cruda	Salumi	g	10	1 fetta
+171287	Uovo intero	Uova	g	55	1 uovo medio
+173424	Uovo sodo	Uova	g	55	1 uovo medio
+173423	Uovo al tegamino	Uova	g	55	1 uovo medio
+172187	Uova strapazzate	Uova	g	110	2 uova
+172183	Albume	Uova	g	33	1 albume
+172184	Tuorlo	Uova	g	17	1 tuorlo
+175167	Salmone fresco, crudo	Pesce	g	150	1 trancio
+175168	Salmone, cotto	Pesce	g	120	1 trancio
+173709	Tonno al naturale, sgocciolato	Pesce	g	56	1 scatoletta
+173708	Tonno sott'olio, sgocciolato	Pesce	g	52	1 scatoletta
+175159	Tonno fresco, crudo	Pesce	g	150	1 trancio
+171955	Merluzzo, crudo	Pesce	g	150	1 filetto
+171956	Merluzzo, cotto	Pesce	g	120	1 filetto
+174190	Baccalà secco (prima dell'ammollo)	Pesce	g
+175142	Branzino, crudo	Pesce	g	150	1 filetto
+173694	Branzino, cotto	Pesce	g	120	1 filetto
+175141	Orata, cruda	Pesce	g	150	1 filetto
+174196	Sogliola / platessa, cruda	Pesce	g	150	1 filetto
+174197	Sogliola / platessa, cotta	Pesce	g	120	1 filetto
+173717	Trota, cruda	Pesce	g	150	1 filetto
+173703	Pesce spada, crudo	Pesce	g	150	1 trancio
+175119	Sgombro, crudo	Pesce	g	150	1 filetto
+175139	Sardine sott'olio, sgocciolate	Pesce	g
+174182	Alici fresche, crude	Pesce	g	100	1 porzione
+174183	Alici sott'olio, sgocciolate	Pesce	g	4	1 filetto
+175179	Gamberi, crudi	Pesce	g	150	1 porzione
+175180	Gamberi, cotti	Pesce	g	120	1 porzione
+174223	Calamari, crudi	Pesce	g	150	1 porzione
+174216	Cozze sgusciate, crude	Pesce	g
+174217	Cozze sgusciate, cotte	Pesce	g
+174214	Vongole sgusciate, crude	Pesce	g
+171975	Vongole sgusciate, cotte	Pesce	g
+174218	Polpo, crudo	Pesce	g	200	1 porzione
+174249	Polpo, cotto	Pesce	g	150	1 porzione
+171265	Latte intero	Latte e yogurt	ml	200	1 tazza
+171267	Latte parzialmente scremato	Latte e yogurt	ml	200	1 tazza
+171269	Latte scremato	Latte e yogurt	ml	200	1 tazza
+171284	Yogurt bianco intero	Latte e yogurt	g	125	1 vasetto
+170886	Yogurt bianco magro	Latte e yogurt	g	125	1 vasetto
+170894	Yogurt greco 0%	Latte e yogurt	g	170	1 vasetto
+171304	Yogurt greco intero	Latte e yogurt	g	170	1 vasetto
+175215	Bevanda di soia senza zuccheri	Latte e yogurt	ml	200	1 tazza
+174832	Bevanda di mandorla senza zuccheri	Latte e yogurt	ml	200	1 tazza
+170859	Panna fresca	Latte e yogurt	g	50	1 porzione
+170857	Panna da cucina	Latte e yogurt	g	50	1 porzione
+173430	Burro	Latte e yogurt	g	10	1 noce
+170848	Parmigiano / grana	Formaggi	g	5	1 cucchiaio grattugiato
+171249	Pecorino	Formaggi	g	5	1 cucchiaio grattugiato
+170851	Ricotta vaccina	Formaggi	g	100	1 porzione
+171248	Ricotta light	Formaggi	g	100	1 porzione
+172179	Fiocchi di latte	Formaggi	g	150	1 vasetto
+173420	Feta	Formaggi	g	50	1 porzione
+172175	Gorgonzola / erborinato	Formaggi	g	50	1 porzione
+170850	Provolone	Formaggi	g	50	1 porzione
+171251	Emmental	Formaggi	g	30	1 fetta
+170843	Fontina	Formaggi	g	50	1 porzione
+172177	Brie	Formaggi	g	50	1 porzione
+172178	Camembert	Formaggi	g	50	1 porzione
+171413	Olio extravergine di oliva	Grassi e condimenti	g	10	1 cucchiaio
+171025	Olio di semi di girasole	Grassi e condimenti	g	10	1 cucchiaio
+172470	Burro di arachidi	Grassi e condimenti	g	15	1 cucchiaio
+171009	Maionese	Grassi e condimenti	g	15	1 cucchiaio
+168556	Ketchup	Grassi e condimenti	g	15	1 cucchiaio
+172234	Senape	Grassi e condimenti	g	5	1 cucchiaino
+172241	Aceto balsamico	Grassi e condimenti	g	10	1 cucchiaio
+169655	Zucchero	Grassi e condimenti	g	5	1 cucchiaino
+169640	Miele	Grassi e condimenti	g	7	1 cucchiaino
+169641	Marmellata / confettura	Grassi e condimenti	g	20	1 cucchiaio
+170567	Mandorle	Frutta secca e semi	g	30	1 manciata
+170187	Noci	Frutta secca e semi	g	30	1 manciata
+170581	Nocciole	Frutta secca e semi	g	30	1 manciata
+170162	Anacardi	Frutta secca e semi	g	30	1 manciata
+170185	Pistacchi tostati, non salati	Frutta secca e semi	g	30	1 manciata
+173806	Arachidi tostate, non salate	Frutta secca e semi	g	30	1 manciata
+170591	Pinoli	Frutta secca e semi	g	10	1 cucchiaio
+170569	Noci del Brasile	Frutta secca e semi	g	5	1 noce
+170178	Noci macadamia	Frutta secca e semi	g	30	1 manciata
+170169	Cocco, polpa fresca	Frutta secca e semi	g	50	1 porzione
+170170	Cocco disidratato (rapè)	Frutta secca e semi	g	10	1 cucchiaio
+170554	Semi di chia	Frutta secca e semi	g	10	1 cucchiaio
+169414	Semi di lino	Frutta secca e semi	g	10	1 cucchiaio
+170562	Semi di girasole	Frutta secca e semi	g	10	1 cucchiaio
+170556	Semi di zucca	Frutta secca e semi	g	10	1 cucchiaio
+170150	Semi di sesamo	Frutta secca e semi	g	10	1 cucchiaio
+170273	Cioccolato fondente 70–85%	Dolci e snack	g	10	1 quadretto
+170272	Cioccolato fondente 60–69%	Dolci e snack	g	10	1 quadretto
+167587	Cioccolato al latte	Dolci e snack	g	10	1 quadretto
+169593	Cacao amaro in polvere	Dolci e snack	g	5	1 cucchiaino
+168000	Crema spalmabile nocciole e cacao	Dolci e snack	g	15	1 cucchiaio
+174950	Biscotti al burro	Dolci e snack	g	10	1 biscotto
+172707	Pan di Spagna	Dolci e snack	g	60	1 fetta
+172704	Plumcake	Dolci e snack	g	50	1 fetta
+175009	Pancake	Dolci e snack	g	40	1 pancake
+167575	Gelato alla vaniglia	Dolci e snack	g	100	1 coppetta
+168809	Gelato al cioccolato	Dolci e snack	g	100	1 coppetta
+169677	Patatine in busta	Dolci e snack	g	25	1 pacchetto
+167959	Popcorn senza grassi	Dolci e snack	g	20	1 porzione
+171891	Caffè espresso	Bevande	ml	30	1 tazzina
+173227	Tè	Bevande	ml	200	1 tazza
+169100	Succo d'arancia	Bevande	ml	200	1 bicchiere
+173933	Succo di mela	Bevande	ml	200	1 bicchiere
+174852	Cola	Bevande	ml	330	1 lattina
+168746	Birra	Bevande	ml	330	1 bottiglia
+168749	Birra light	Bevande	ml	330	1 bottiglia
+173190	Vino rosso	Bevande	ml	125	1 bicchiere
+174837	Vino bianco	Bevande	ml	125	1 bicchiere
+174815	Superalcolici 40% (gin, rum, vodka, whisky)	Bevande	ml	40	1 bicchierino
