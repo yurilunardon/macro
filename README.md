@@ -18,6 +18,14 @@ Conta calorie e macro per uso personale, per iPhone. Scansioni il codice a barre
 - **Obiettivi diversi nei giorni di allenamento e di riposo**, con un programma settimanale. Nel Diario puoi cambiare il tipo di un singolo giorno.
 - **Avviso di scadenza**: l'app legge quando scade la firma di AltStore e lo segnala nei 3 giorni prima.
 - **Scorri a sinistra per eliminare** voci, alimenti, pesate, ingredienti, ricette e pasti salvati.
+- **Fabbisogno reale**: dalle calorie registrate e dall'andamento del peso nelle ultime 4 settimane l'app stima quanto consumi davvero e può aggiornare gli obiettivi.
+- **Statistiche** su 7, 30 e 90 giorni: medie, ripartizione dei macro, giorni nell'obiettivo. Con il **peso obiettivo** stima anche la data in cui lo raggiungi.
+- **Lettura dell'etichetta**: fotografi la tabella nutrizionale e i valori si compilano da soli. Funziona sul telefono, senza internet, ma non in Expo Go.
+- **Promemoria**: pesata, colazione, pranzo, cena, e la sera prima che l'app scada.
+- **Misure corporee**: vita, fianchi, petto, braccio, coscia, collo e massa grassa.
+- **Digiuno intermittente**: timer nel Diario, con notifica a fine digiuno e storico.
+- **Copia** un giorno intero o una singola voce in oggi o domani.
+- **Esportazione CSV** del diario e di peso e misure, per Excel o Numbers.
 - **Backup e ripristino** in un file JSON, da salvare su iCloud Drive.
 
 ## I tuoi dati e AltStore
@@ -91,6 +99,7 @@ src/
   db/                  SQLite: schema e migrazioni, alimenti, diario, ricette, pasti salvati, giorni, peso, backup
   lib/                 logica pura e testata: nutrienti, obiettivi, date, Open Food Facts, backup, ricerca
   data/                alimenti base (generati, non modificarli a mano)
+modules/label-reader/  modulo nativo iOS (Swift, Vision) che legge il testo dalle foto
 scripts/build-ipa.sh   build dell'IPA non firmato sul Mac
 scripts/generic-foods/ elenco curato degli alimenti base e script che genera src/data/generic-foods.json
 ```

@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { DEFAULT_TARGETS, type Profile, type Targets } from '@/lib/goals';
+import type { ReminderSettings } from '@/lib/reminders';
 
 import { notifyChange } from './live';
 
@@ -12,6 +13,10 @@ type SettingsMap = {
   restTargets: Targets;
   /** Days of the week (Date.getDay(), 0 = Sunday) that are training days. */
   trainingWeekdays: number[];
+  /** Weight to reach, in kg, for the forecast in Progressi. */
+  goalWeight: number;
+  reminders: ReminderSettings;
+  fasting: { enabled: boolean; goalHours: number };
   lastBackupAt: string;
   /** Which version of the shipped basic foods has been added to this phone. */
   genericFoodsVersion: number;

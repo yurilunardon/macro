@@ -10,19 +10,15 @@ type PromptNumberOptions = {
   /** Accepted range; values outside it show an error instead of calling onSubmit. */
   min: number;
   max: number;
-  onSubmit: (value: number) => void;
-};
+} & (
+  | { allowEmpty?: false; onSubmit: (value: number) => void }
+  /** An empty answer calls onSubmit with null, for clearing a value. */
+  | { allowEmpty: true; onSubmit: (value: number | null) => void }
+);
 
 /** Native iOS dialog asking for a decimal number. */
-export function promptNumber({
-  title,
-  message,
-  defaultValue = '',
-  confirmLabel = 'Salva',
-  min,
-  max,
-  onSubmit,
-}: PromptNumberOptions): void {
+export function promptNumber(options: PromptNumberOptions): void {
+  const { title, message, defaultValue = '', confirmLabel = 'Salva', min, max } = options;
   if (Platform.OS !== 'ios') {
     Alert.alert(title, 'Disponibile solo su iPhone.');
     return;
@@ -35,12 +31,16 @@ export function promptNumber({
       {
         text: confirmLabel,
         onPress: (text?: string) => {
+          if (options.allowEmpty && (text ?? '').trim() === '') {
+            options.onSubmit(null);
+            return;
+          }
           const value = parseDecimal(text ?? '');
           if (value === null || value < min || value > max) {
             Alert.alert('Valore non valido', `Inserisci un numero tra ${min} e ${max}.`);
             return;
           }
-          onSubmit(value);
+          options.onSubmit(value);
         },
       },
     ],

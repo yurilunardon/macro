@@ -7,6 +7,11 @@ const ACCENTS: Record<string, string> = {
   ç: 'c', ñ: 'n', ß: 'ss', œ: 'oe', æ: 'ae',
 };
 
+/** Lower case with accented Latin letters replaced by plain ones ("Caffè" → "caffe"). */
+export function foldAccents(text: string): string {
+  return text.toLowerCase().replace(/[^\u0000-\u007f]/g, (c) => ACCENTS[c] ?? c);
+}
+
 /**
  * Lower case without accents or punctuation, so "Caffè" matches "caffe" and "Würstel" matches
  * "wurstel". SQLite's LIKE only folds ASCII case, so this is stored next to each food.

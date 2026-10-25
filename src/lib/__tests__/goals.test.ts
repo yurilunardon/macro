@@ -7,6 +7,7 @@ import {
   deriveRestTargets,
   parseProfile,
   parseTargets,
+  targetsFromExpenditure,
   totalDailyEnergy,
   type Profile,
   WEEKDAYS,
@@ -114,5 +115,17 @@ describe('training and rest days', () => {
     const rest = deriveRestTargets({ kcal: 2800, protein: 160, carbs: 370, fat: 75 });
     expect(rest).toEqual({ kcal: 2380, protein: 160, carbs: 266, fat: 75 });
     expect(deriveRestTargets({ kcal: 1500, protein: 200, carbs: 50, fat: 80 }).carbs).toBe(0);
+  });
+});
+
+describe('targetsFromExpenditure', () => {
+  it('applies the goal to the measured maintenance', () => {
+    expect(targetsFromExpenditure(2800, 80, { goal: 'lose', proteinPerKg: 2, fatPercent: 25 })).toEqual({
+      kcal: 2240,
+      protein: 160,
+      carbs: 261,
+      fat: 62,
+    });
+    expect(targetsFromExpenditure(2800, 80, { goal: 'maintain', proteinPerKg: 2, fatPercent: 25 }).kcal).toBe(2800);
   });
 });

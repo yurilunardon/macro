@@ -162,3 +162,20 @@ export function deriveRestTargets(training: Targets, reductionPercent = 15): Tar
   const carbs = Math.max(0, Math.round((kcal - training.protein * 4 - training.fat * 9) / 4));
   return { kcal, protein: training.protein, carbs, fat: training.fat };
 }
+
+/**
+ * Targets from a measured maintenance (instead of the formula): the goal adjustment, protein
+ * per kg and fat share of the profile are kept, carbs fill the rest.
+ */
+export function targetsFromExpenditure(
+  tdee: number,
+  weightKg: number,
+  p: Pick<Profile, 'goal' | 'proteinPerKg' | 'fatPercent'>,
+): Targets {
+  const goalFactor = GOAL_TYPES.find((g) => g.key === p.goal)?.factor ?? 1;
+  const kcal = Math.round(tdee * goalFactor);
+  const protein = Math.round(p.proteinPerKg * weightKg);
+  const fat = Math.round((kcal * (p.fatPercent / 100)) / 9);
+  const carbs = Math.max(0, Math.round((kcal - protein * 4 - fat * 9) / 4));
+  return { kcal, protein, carbs, fat };
+}

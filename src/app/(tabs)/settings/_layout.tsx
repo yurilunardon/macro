@@ -12,6 +12,9 @@ export default function SettingsLayout() {
       <Stack.Screen name="recipes" options={{ title: 'Ricette e pasti salvati' }} />
       <Stack.Screen name="recipe" options={{ title: 'Ricetta' }} />
       <Stack.Screen name="saved-meal" options={{ title: 'Pasto salvato' }} />
+      <Stack.Screen name="reminders" options={{ title: 'Promemoria' }} />
+      <Stack.Screen name="fasting" options={{ title: 'Digiuno' }} />
+      <Stack.Screen name="label" options={{ title: 'Leggi etichetta', headerTransparent: true, headerTintColor: '#FFFFFF' }} />
     </Stack>
   );
 }

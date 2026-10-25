@@ -1,21 +1,26 @@
+import { useRouter, type Href } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { getFood, insertFood, updateFood } from '@/db/foods';
+import { labelScan, useLabelScan } from '@/hooks/use-label-scan';
+import { useTheme } from '@/hooks/use-theme';
 import {
   EMPTY_FOOD_FIELDS,
   fieldsFromFood,
   validateFoodFields,
   type FoodFields,
 } from '@/lib/food-validation';
-import { formatKcal } from '@/lib/format';
+import { formatKcal, formatNumber, numberToInput } from '@/lib/format';
+import type { LabelValues } from '@/lib/label-parser';
 import type { Food } from '@/lib/nutrition';
 
 import { AppText } from './app-text';
 import { Button } from './button';
-import { ListGroup, SectionFooter, SectionTitle } from './card';
+import { ActionRow, Card, ListGroup, SectionFooter, SectionTitle } from './card';
+import { canReadLabels } from './label-scanner';
 import { FieldRow, Segmented } from './form';
 import { ScreenScroll } from './screen';
 
@@ -24,11 +29,32 @@ type FoodFormProps = {
   foodId: number | null;
   initialBarcode?: string | null;
   onSaved: (id: number, created: boolean) => void;
+  /** Screen that photographs the nutrition label, in the same stack as the form. */
+  labelRoute?: Href;
 };
 
+/** "359 kcal · P 13 · C 71 · G 2 g", only the values that were found. */
+function scanSummary(v: LabelValues): string {
+  return [
+    v.kcal !== null ? `${formatKcal(v.kcal)} kcal` : null,
+    v.protein !== null ? `P ${formatNumber(v.protein, 1)}` : null,
+    v.carbs !== null ? `C ${formatNumber(v.carbs, 1)}` : null,
+    v.fat !== null ? `G ${formatNumber(v.fat, 1)}` : null,
+    v.salt !== null ? `sale ${formatNumber(v.salt, 2)}` : null,
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 /** Form to create a food or correct one, with values per 100 g or 100 ml. */
-export function FoodForm({ foodId, initialBarcode = null, onSaved }: FoodFormProps) {
+export function FoodForm({ foodId, initialBarcode = null, onSaved, labelRoute }: FoodFormProps) {
   const db = useSQLiteContext();
+  const router = useRouter();
+  const theme = useTheme();
+  const scan = useLabelScan();
+  // Results from before the form opened, or already used or dismissed, are not offered.
+  const [handledScan, setHandledScan] = useState(() => labelScan.latestId());
+  const pendingScan = scan && scan.id > handledScan ? scan : null;
   const [fields, setFields] = useState<FoodFields>({ ...EMPTY_FOOD_FIELDS, barcode: initialBarcode ?? '' });
   const [base, setBase] = useState<Food | null>(null);
   const [showErrors, setShowErrors] = useState(false);
@@ -54,6 +80,26 @@ export function FoodForm({ foodId, initialBarcode = null, onSaved }: FoodFormPro
   const unit = fields.unit;
   const messages = [...result.errors, ...(saveError ? [saveError] : [])];
 
+  const applyScan = () => {
+    if (!pendingScan) return;
+    const v = pendingScan.values;
+    const text = (value: number | null, decimals: number, fallback: string) =>
+      value === null ? fallback : numberToInput(value, decimals);
+    setFields((f) => ({
+      ...f,
+      unit: v.unit ?? f.unit,
+      kcal: text(v.kcal, 0, f.kcal),
+      protein: text(v.protein, 1, f.protein),
+      carbs: text(v.carbs, 1, f.carbs),
+      sugars: text(v.sugars, 1, f.sugars),
+      fat: text(v.fat, 1, f.fat),
+      satFat: text(v.satFat, 1, f.satFat),
+      fiber: text(v.fiber, 1, f.fiber),
+      salt: text(v.salt, 2, f.salt),
+    }));
+    setHandledScan(pendingScan.id);
+  };
+
   const save = async () => {
     setShowErrors(true);
     setSaveError(null);
@@ -78,6 +124,32 @@ export function FoodForm({ foodId, initialBarcode = null, onSaved }: FoodFormPro
 
   return (
     <ScreenScroll>
+      {pendingScan ? (
+        <Card style={[styles.scan, { backgroundColor: theme.accentSoft }]}>
+          <AppText variant="headline">Valori letti dalla foto</AppText>
+          <AppText variant="subhead" tone="textSecondary" numeric>
+            {scanSummary(pendingScan.values)}
+          </AppText>
+          <View style={styles.scanActions}>
+            <View style={styles.flex}>
+              <Button title="Usa questi valori" onPress={applyScan} compact />
+            </View>
+            <View style={styles.flex}>
+              <Button title="Ignora" variant="plain" onPress={() => setHandledScan(pendingScan.id)} compact />
+            </View>
+          </View>
+          <AppText variant="footnote" tone="textSecondary">
+            Controllali con l’etichetta: la lettura automatica può sbagliare.
+          </AppText>
+        </Card>
+      ) : null}
+      {canReadLabels && labelRoute ? (
+        <View style={styles.scanLink}>
+          <ListGroup>
+            <ActionRow label="Leggi l’etichetta con la fotocamera" symbol="text.viewfinder" onPress={() => router.push(labelRoute)} />
+          </ListGroup>
+        </View>
+      ) : null}
       <ListGroup>
         <FieldRow
           label="Nome"
@@ -164,6 +236,10 @@ export function FoodForm({ foodId, initialBarcode = null, onSaved }: FoodFormPro
 }
 
 const styles = StyleSheet.create({
+  flex: { flex: 1 },
+  scan: { gap: Spacing.sm, marginBottom: Spacing.lg },
+  scanActions: { flexDirection: 'row', gap: Spacing.sm },
+  scanLink: { marginBottom: Spacing.lg },
   gap: { height: Spacing.md },
   errors: { gap: Spacing.xs, paddingTop: Spacing.lg, paddingHorizontal: Spacing.lg },
   actions: { paddingTop: Spacing.xl },

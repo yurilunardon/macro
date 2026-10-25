@@ -95,7 +95,8 @@ export function CaloriesChart({ days }: { days: readonly DayBar[] }) {
   const sameTarget = days.every((d) => d.target === days[0]?.target);
   const plotH = height - pad.top - pad.bottom;
   const slot = days.length > 0 ? width / days.length : 0;
-  const barW = Math.min(28, slot * 0.6);
+  const barW = Math.max(1.5, Math.min(28, slot * 0.6));
+  const labelEvery = days.length <= 31 ? 7 : 30;
   const y = (v: number) => pad.top + (1 - v / maxValue) * plotH;
 
   return (
@@ -148,17 +149,20 @@ export function CaloriesChart({ days }: { days: readonly DayBar[] }) {
                 ) : null,
               )
             : null}
-          {days.map((d, i) => (
-            <SvgText
-              key={`d${d.date}`}
-              x={i * slot + slot / 2}
-              y={height - 6}
-              fontSize={11}
-              fill={theme.textSecondary}
-              textAnchor="middle">
-              {formatWeekdayInitial(d.date)}
-            </SvgText>
-          ))}
+          {days.map((d, i) =>
+            // A week shows every weekday; longer periods show a date every week or month.
+            days.length <= 7 || (days.length - 1 - i) % labelEvery === 0 ? (
+              <SvgText
+                key={`d${d.date}`}
+                x={i * slot + slot / 2}
+                y={height - 6}
+                fontSize={11}
+                fill={theme.textSecondary}
+                textAnchor={days.length <= 7 ? 'middle' : i === 0 ? 'start' : i === days.length - 1 ? 'end' : 'middle'}>
+                {days.length <= 7 ? formatWeekdayInitial(d.date) : formatShortDate(d.date)}
+              </SvgText>
+            ) : null,
+          )}
         </Svg>
       ) : null}
     </View>

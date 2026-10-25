@@ -7,9 +7,9 @@ import { isDateKey } from './dates';
 export const BACKUP_APP = 'macro';
 /**
  * 2 added `ref` and `category` to foods. 3 added recipes, saved meals and day types, and
- * dropped water. Older files are still accepted.
+ * dropped water. 4 added measurements and fasts. Older files are still accepted.
  */
-export const BACKUP_VERSION = 3;
+export const BACKUP_VERSION = 4;
 
 export type FoodRow = {
   id: number;
@@ -100,6 +100,8 @@ export type SavedMealItemRow = NutrientColumns & {
 };
 
 export type DayTypeRow = { date: string; type: string };
+export type MeasurementRow = { date: string; kind: string; value: number };
+export type FastRow = { id: number; start: string; end: string | null; goal_hours: number };
 
 export type BackupData = {
   app: typeof BACKUP_APP;
@@ -114,6 +116,8 @@ export type BackupData = {
   saved_meals: SavedMealRow[];
   saved_meal_items: SavedMealItemRow[];
   day_types: DayTypeRow[];
+  measurements: MeasurementRow[];
+  fasts: FastRow[];
 };
 
 export class BackupFormatError extends Error {}
@@ -212,6 +216,8 @@ const SAVED_MEAL_ITEM_COLUMNS: Record<keyof SavedMealItemRow, Check> = {
 };
 
 const DAY_TYPE_COLUMNS: Record<keyof DayTypeRow, Check> = { date: 'string', type: 'string' };
+const MEASUREMENT_COLUMNS: Record<keyof MeasurementRow, Check> = { date: 'string', kind: 'string', value: 'number' };
+const FAST_COLUMNS: Record<keyof FastRow, Check> = { id: 'number', start: 'string', end: 'string?', goal_hours: 'number' };
 
 function matches(value: unknown, check: Check): boolean {
   if (check.endsWith('?') && (value === null || value === undefined)) return true;
@@ -263,8 +269,10 @@ export function parseBackup(json: unknown): BackupData {
     saved_meals: readRows<SavedMealRow>(data, 'saved_meals', SAVED_MEAL_COLUMNS, 3),
     saved_meal_items: readRows<SavedMealItemRow>(data, 'saved_meal_items', SAVED_MEAL_ITEM_COLUMNS, 3),
     day_types: readRows<DayTypeRow>(data, 'day_types', DAY_TYPE_COLUMNS, 3),
+    measurements: readRows<MeasurementRow>(data, 'measurements', MEASUREMENT_COLUMNS, 4),
+    fasts: readRows<FastRow>(data, 'fasts', FAST_COLUMNS, 4),
   };
-  for (const row of [...backup.entries, ...backup.weights, ...backup.day_types]) {
+  for (const row of [...backup.entries, ...backup.weights, ...backup.day_types, ...backup.measurements]) {
     if (!isDateKey(row.date)) throw new BackupFormatError(`Data non valida nel backup: ${row.date}`);
   }
   for (const row of backup.day_types) {

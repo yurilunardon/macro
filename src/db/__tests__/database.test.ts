@@ -7,6 +7,8 @@ import type { FoodDraft } from '@/lib/nutrition';
 import { readBackup, restoreBackup } from '../backup';
 import { getLatestWeight, getWeightsSince, setWeight } from '../body';
 import { getDayPlan, getDayPlans, setDayType, setTrainingSettings } from '../days';
+import { deleteFast, endFast, getActiveFast, getFastHistory, setFastStart, startFast } from '../fasts';
+import { deleteMeasurementsOn, getMeasurements, setMeasurements } from '../measurements';
 import { deleteRecipe, getRecipe, getRecipes, saveRecipe } from '../recipes';
 import {
   addSavedMealToDiary,
@@ -22,8 +24,11 @@ import {
   addQuickEntry,
   copyMeal,
   deleteEntry,
+  copyDay,
+  copyEntry,
   deleteMealEntries,
   getDailyTotals,
+  getEntriesBetween,
   getEntriesForDate,
   getEntry,
   updateEntry,
@@ -102,7 +107,9 @@ describe('migrations', () => {
     expect(tables.map((t) => t.name)).toEqual([
       'day_types',
       'entries',
+      'fasts',
       'foods',
+      'measurements',
       'recipe_ingredients',
       'recipes',
       'saved_meal_items',
@@ -489,6 +496,65 @@ describe('training and rest days', () => {
   });
 });
 
+describe('copying days and entries', () => {
+  it('copies a whole day and a single entry', async () => {
+    const yog = (await getFood(db, await insertFood(db, skyr)))!;
+    const first = await addEntry(db, { date: '2026-10-24', meal: 'breakfast', food: yog, quantity: 150 });
+    await addEntry(db, { date: '2026-10-24', meal: 'dinner', food: yog, quantity: 200 });
+
+    expect(await copyDay(db, '2026-10-24', '2026-10-25')).toBe(2);
+    expect((await getEntriesForDate(db, '2026-10-25')).map((e) => [e.meal, e.quantity])).toEqual([
+      ['breakfast', 150],
+      ['dinner', 200],
+    ]);
+    await copyEntry(db, first, '2026-10-26');
+    expect((await getEntriesForDate(db, '2026-10-26')).map((e) => [e.meal, e.quantity])).toEqual([['breakfast', 150]]);
+    expect((await getEntriesBetween(db, '2026-10-24', '2026-10-25')).map((e) => e.date)).toEqual([
+      '2026-10-24',
+      '2026-10-24',
+      '2026-10-25',
+      '2026-10-25',
+    ]);
+  });
+});
+
+describe('measurements', () => {
+  it('keeps one value per kind per day and removes cleared values', async () => {
+    await setMeasurements(db, '2026-10-24', { waist: 88, arm: 37.5 });
+    await setMeasurements(db, '2026-10-25', { waist: 87.5, bodyFat: 16 });
+    await setMeasurements(db, '2026-10-25', { waist: 87, bodyFat: null });
+    expect(await getMeasurements(db)).toEqual([
+      { date: '2026-10-24', kind: 'arm', value: 37.5 },
+      { date: '2026-10-24', kind: 'waist', value: 88 },
+      { date: '2026-10-25', kind: 'waist', value: 87 },
+    ]);
+    await deleteMeasurementsOn(db, '2026-10-24');
+    expect((await getMeasurements(db)).map((m) => m.date)).toEqual(['2026-10-25']);
+  });
+});
+
+describe('fasting', () => {
+  it('starts, adjusts and ends a fast', async () => {
+    const id = await startFast(db, 16, new Date('2026-10-30T20:00:00.000Z'));
+    expect(await getActiveFast(db)).toEqual({ id, start: '2026-10-30T20:00:00.000Z', end: null, goalHours: 16 });
+    await setFastStart(db, id, new Date('2026-10-30T19:30:00.000Z'));
+    await endFast(db, id, new Date('2026-10-31T12:00:00.000Z'));
+    expect(await getActiveFast(db)).toBeNull();
+    expect(await getFastHistory(db)).toEqual([
+      { id, start: '2026-10-30T19:30:00.000Z', end: '2026-10-31T12:00:00.000Z', goalHours: 16 },
+    ]);
+    await deleteFast(db, id);
+    expect(await getFastHistory(db)).toEqual([]);
+  });
+
+  it('ends a forgotten fast when a new one starts', async () => {
+    const old = await startFast(db, 16, new Date('2026-10-29T20:00:00.000Z'));
+    const fresh = await startFast(db, 14, new Date('2026-10-30T20:00:00.000Z'));
+    expect((await getActiveFast(db))?.id).toBe(fresh);
+    expect((await getFastHistory(db)).map((f) => [f.id, f.end])).toEqual([[old, '2026-10-30T20:00:00.000Z']]);
+  });
+});
+
 describe('backup', () => {
   it('restores exactly what was exported, after a JSON round trip', async () => {
     const pasta = (await getFood(db, await insertFood(db, spaghetti)))!;
@@ -506,6 +572,8 @@ describe('backup', () => {
     });
     const savedId = await saveMealFromDiary(db, { date: '2026-10-25', meal: 'snack', name: 'Spuntino' });
     await setDayType(db, '2026-10-25', 'rest');
+    await setMeasurements(db, '2026-10-25', { waist: 86 });
+    const fastId = await startFast(db, 16, new Date('2026-10-25T20:00:00.000Z'));
     await setSetting(db, 'targets', { kcal: 2600, protein: 170, carbs: 300, fat: 75 });
     await setSetting(db, 'lastBackupAt', '2026-10-25T10:00:00.000Z');
 
@@ -527,6 +595,8 @@ describe('backup', () => {
     expect((await getSavedMeal(phone, savedId))?.items.map((i) => i.name)).toEqual(['Mela']);
     expect((await searchLocalFoods(phone, 'pasta pomodoro')).map((f) => f.name)).toEqual(['Pasta al pomodoro']);
     expect((await searchLocalFoods(phone, 'ricetta')).map((f) => f.name)).toEqual(['Pasta al pomodoro']);
+    expect(await getMeasurements(phone)).toEqual([{ date: '2026-10-25', kind: 'waist', value: 86 }]);
+    expect((await getActiveFast(phone))?.id).toBe(fastId);
     // New rows keep counting after the restored ids.
     const nextId = await insertFood(phone, { ...skyr, name: 'Nuovo' });
     expect(nextId).toBeGreaterThan(Math.max(...restored.foods.map((f) => f.id)));

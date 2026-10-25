@@ -175,6 +175,45 @@ export async function copyMeal(
   return result.changes;
 }
 
+/** Copies a whole day into another one, meal by meal. Returns how many entries were added. */
+export async function copyDay(db: SQLiteDatabase, from: DateKey, to: DateKey): Promise<number> {
+  const result = await db.runAsync(
+    `INSERT INTO entries (date, meal, food_id, name, brand, unit, quantity, kcal, protein, carbs, fat,
+       sugars, fiber, sat_fat, salt, created_at)
+     SELECT ?, meal, food_id, name, brand, unit, quantity, kcal, protein, carbs, fat, sugars, fiber, sat_fat, salt, ?
+     FROM entries WHERE date = ? ORDER BY created_at, id`,
+    to,
+    new Date().toISOString(),
+    from,
+  );
+  notifyChange();
+  return result.changes;
+}
+
+/** Logs the same entry again on another day, in the same meal. */
+export async function copyEntry(db: SQLiteDatabase, id: number, to: DateKey): Promise<void> {
+  await db.runAsync(
+    `INSERT INTO entries (date, meal, food_id, name, brand, unit, quantity, kcal, protein, carbs, fat,
+       sugars, fiber, sat_fat, salt, created_at)
+     SELECT ?, meal, food_id, name, brand, unit, quantity, kcal, protein, carbs, fat, sugars, fiber, sat_fat, salt, ?
+     FROM entries WHERE id = ?`,
+    to,
+    new Date().toISOString(),
+    id,
+  );
+  notifyChange();
+}
+
+/** Every entry in a range of days, oldest first, for the CSV export. */
+export async function getEntriesBetween(db: SQLiteDatabase, from: DateKey, to: DateKey): Promise<Entry[]> {
+  const rows = await db.getAllAsync<EntryRow>(
+    'SELECT * FROM entries WHERE date BETWEEN ? AND ? ORDER BY date, created_at, id',
+    from,
+    to,
+  );
+  return rows.map(entryFromRow);
+}
+
 export async function countMealEntries(db: SQLiteDatabase, date: DateKey, meal: MealKey): Promise<number> {
   const row = await db.getFirstAsync<{ n: number }>(
     'SELECT COUNT(*) AS n FROM entries WHERE date = ? AND meal = ?',

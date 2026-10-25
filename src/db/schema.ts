@@ -130,6 +130,22 @@ export const MIGRATIONS: readonly Migration[] = [
 
   CREATE TABLE day_types (date TEXT PRIMARY KEY NOT NULL, type TEXT NOT NULL);
   `,
+  // 4: body measurements and intermittent fasting.
+  `
+  CREATE TABLE measurements (
+    date TEXT NOT NULL,
+    kind TEXT NOT NULL,
+    value REAL NOT NULL,
+    PRIMARY KEY (date, kind)
+  );
+  CREATE TABLE fasts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    start TEXT NOT NULL,
+    end TEXT,
+    goal_hours REAL NOT NULL
+  );
+  CREATE INDEX fasts_start ON fasts (start);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

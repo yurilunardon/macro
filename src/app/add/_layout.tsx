@@ -13,6 +13,7 @@ export default function AddLayout() {
       <Stack.Screen name="food" options={{ title: '' }} />
       <Stack.Screen name="custom" options={{ title: 'Nuovo alimento' }} />
       <Stack.Screen name="quick" options={{ title: 'Aggiunta rapida' }} />
+      <Stack.Screen name="label" options={{ title: 'Leggi etichetta', headerTransparent: true, headerTintColor: '#FFFFFF' }} />
     </Stack>
   );
 }

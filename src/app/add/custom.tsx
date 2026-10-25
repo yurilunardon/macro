@@ -13,6 +13,7 @@ export default function CustomFoodScreen() {
       <FoodForm
         foodId={foodId}
         initialBarcode={barcode}
+        labelRoute="/add/label"
         onSaved={(id, created) => {
           // A new food goes straight to choosing the quantity; an edit returns to where it came from.
           if (created) router.replace({ pathname: '/add/food', params: { ...forward, foodId: id } });

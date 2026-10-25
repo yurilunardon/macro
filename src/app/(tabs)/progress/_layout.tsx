@@ -1,9 +1,12 @@
 import { Stack } from 'expo-router';
 
+export const unstable_settings = { anchor: 'index' };
+
 export default function ProgressLayout() {
   return (
-    <Stack screenOptions={{ headerLargeTitle: true, headerShadowVisible: false }}>
-      <Stack.Screen name="index" options={{ title: 'Progressi' }} />
+    <Stack screenOptions={{ headerShadowVisible: false, headerBackButtonDisplayMode: 'minimal' }}>
+      <Stack.Screen name="index" options={{ title: 'Progressi', headerLargeTitle: true }} />
+      <Stack.Screen name="measurements" options={{ title: 'Misure' }} />
     </Stack>
   );
 }

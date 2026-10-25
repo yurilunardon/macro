@@ -9,6 +9,7 @@ import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
 import { pickBackup, restoreBackup, shareBackup } from '@/db/backup';
+import { exportBodyCsv, exportDiaryCsv } from '@/db/export';
 import { useLiveQuery } from '@/db/live';
 import { getTrainingSettings } from '@/db/days';
 import { getSetting, getTargets } from '@/db/settings';
@@ -30,7 +31,7 @@ function backupStatus(lastBackupAt: string | null): { text: string; stale: boole
 export default function SettingsScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const [busy, setBusy] = useState<'export' | 'import' | null>(null);
+  const [busy, setBusy] = useState<'export' | 'import' | 'csv' | null>(null);
   const expiry = useAppExpiry();
 
   const { data } = useLiveQuery('settings', async (database) => {
@@ -47,6 +48,18 @@ export default function SettingsScreen() {
   });
 
   const status = backupStatus(data?.lastBackupAt ?? null);
+
+  const exportCsv = async (which: 'diary' | 'body') => {
+    setBusy('csv');
+    try {
+      const result = which === 'diary' ? await exportDiaryCsv(db) : await exportBodyCsv(db);
+      if (result === 'unavailable') Alert.alert('Condivisione non disponibile su questo dispositivo.');
+    } catch {
+      Alert.alert('Esportazione non riuscita', 'Riprova tra un momento.');
+    } finally {
+      setBusy(null);
+    }
+  };
 
   const exportBackup = async () => {
     setBusy('export');
@@ -136,6 +149,22 @@ export default function SettingsScreen() {
         />
       </ListGroup>
 
+      <SectionTitle>Abitudini</SectionTitle>
+      <ListGroup>
+        <Row
+          title="Promemoria"
+          subtitle="Pesata, pasti e scadenza dell’app"
+          icon={<Icon name="bell.fill" size={20} tone="accent" />}
+          onPress={() => router.push('/settings/reminders')}
+        />
+        <Row
+          title="Digiuno intermittente"
+          subtitle="Timer nel Diario e storico"
+          icon={<Icon name="timer" size={20} tone="accent" />}
+          onPress={() => router.push('/settings/fasting')}
+        />
+      </ListGroup>
+
       <SectionTitle>Backup</SectionTitle>
       <ListGroup>
         <Row
@@ -151,6 +180,20 @@ export default function SettingsScreen() {
           icon={<Icon name="arrow.counterclockwise" size={20} tone="accent" />}
           detail={busy === 'import' ? <ActivityIndicator /> : undefined}
           onPress={busy ? undefined : () => void importBackup()}
+          chevron={false}
+        />
+        <Row
+          title="Diario in CSV"
+          subtitle="Per Excel o Numbers"
+          icon={<Icon name="tablecells" size={20} tone="accent" />}
+          detail={busy === 'csv' ? <ActivityIndicator /> : undefined}
+          onPress={busy ? undefined : () => void exportCsv('diary')}
+          chevron={false}
+        />
+        <Row
+          title="Peso e misure in CSV"
+          icon={<Icon name="tablecells" size={20} tone="accent" />}
+          onPress={busy ? undefined : () => void exportCsv('body')}
           chevron={false}
         />
       </ListGroup>

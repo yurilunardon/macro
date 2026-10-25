@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { NotificationSync } from '@/components/notification-sync';
 import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
@@ -48,6 +49,7 @@ export default function RootLayout() {
                 }}
               />
             </Stack>
+            <NotificationSync />
           </SQLiteProvider>
         </Suspense>
       </ThemeProvider>

@@ -45,6 +45,18 @@ Lista di controlli per la prima prova, da fare prima in **Expo Go** e poi con l'
 - [ ] **Scadenza**: Profilo → Informazioni mostra **Scadenza dell'app** (solo nell'app installata con AltStore, non in Expo Go). Nei 3 giorni prima compare un avviso anche nel Diario.
 - [ ] **Acqua**: non c'è più da nessuna parte.
 
+## Novità della versione 1.2
+
+- [ ] **Etichetta**: Aggiungi → Crea alimento → **Leggi l'etichetta con la fotocamera** → fotografa una tabella nutrizionale → compare «Valori letti dalla foto» → **Usa questi valori** → controlla i campi.
+- [ ] **Progressi → Fabbisogno reale**: con meno di 2 settimane di dati spiega cosa manca. Con abbastanza giorni registrati e pesate mostra la stima e **Usa per i miei obiettivi**.
+- [ ] **Peso obiettivo**: Progressi → tocca «Imposta un peso obiettivo» → dopo qualche pesata mostra la data stimata.
+- [ ] **Statistiche**: Calorie e macro → cambia tra 7, 30 e 90 giorni; controlla medie, barra dei macro e percentuali.
+- [ ] **Misure**: Progressi → Misure → compila vita e braccio → **Salva** → compaiono nella lista e nello storico.
+- [ ] **Promemoria**: Profilo → Promemoria → attiva Pranzo e mettilo tra 2 minuti → arriva la notifica.
+- [ ] **Digiuno**: Profilo → Digiuno intermittente → attiva → nel Diario, in fondo, **Inizia digiuno** → «Iniziato alle…» permette di correggere l'ora → **Termina**.
+- [ ] **Copia**: nel Diario tieni premuta una voce → **Copia in oggi/domani**. Il pulsante **•••** in alto a sinistra copia o svuota il giorno intero.
+- [ ] **CSV**: Profilo → Diario in CSV → apri il file con Numbers: colonne separate, decimali con la virgola, accenti corretti.
+
 ## Obiettivi e progressi
 
 - [ ] Profilo → Calorie e macro → compila i tuoi dati → **Calcola** → **Salva obiettivi**. Il banner del Diario sparisce.

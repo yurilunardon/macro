@@ -6,6 +6,7 @@ import { ActionSheetIOS, Alert, Linking, Platform, Pressable, StyleSheet, View }
 
 import { AppText } from '@/components/app-text';
 import { ActionRow, Card, ListGroup, Row, SectionTitle } from '@/components/card';
+import { FastingCard } from '@/components/fasting-card';
 import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { MacroInline, MacroProgress } from '@/components/nutrition';
@@ -14,7 +15,15 @@ import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { getDayPlan, getTrainingSettings, setDayType } from '@/db/days';
-import { copyMeal, deleteEntry, deleteMealEntries, getEntriesForDate, type Entry } from '@/db/entries';
+import {
+  copyDay,
+  copyEntry,
+  copyMeal,
+  deleteEntry,
+  deleteMealEntries,
+  getEntriesForDate,
+  type Entry,
+} from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { saveMealFromDiary } from '@/db/saved-meals';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
@@ -72,12 +81,51 @@ export default function DiaryScreen() {
   const openAdd = (meal: MealKey, scan = false) =>
     router.push({ pathname: scan ? '/add/scan' : '/add', params: { meal, date } });
 
+  // From today an entry is copied to tomorrow (to plan ahead), from any other day to today.
+  const copyTarget = date === today ? { date: addDays(today, 1), label: 'domani' } : { date: today, label: 'oggi' };
+
   const entryMenu = (entry: Entry) =>
     Alert.alert(entry.name, [entryDetail(entry), `${formatKcal(entry.totals.kcal)} kcal`].filter(Boolean).join(' · '), [
-      { text: 'Annulla', style: 'cancel' },
       { text: 'Modifica', onPress: () => router.push(`/entry/${entry.id}`) },
+      {
+        text: `Copia in ${copyTarget.label}`,
+        onPress: async () => {
+          await copyEntry(db, entry.id, copyTarget.date);
+          void Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success);
+        },
+      },
       { text: 'Elimina', style: 'destructive', onPress: () => void deleteEntry(db, entry.id) },
+      { text: 'Annulla', style: 'cancel' },
     ]);
+
+  const dayMenu = () => {
+    if (Platform.OS !== 'ios' || entries.length === 0) return;
+    ActionSheetIOS.showActionSheetWithOptions(
+      {
+        title: formatDayTitle(date, today),
+        options: [`Copia tutto in ${copyTarget.label}`, 'Svuota il giorno', 'Annulla'],
+        destructiveButtonIndex: 1,
+        cancelButtonIndex: 2,
+      },
+      (index) => {
+        if (index === 0) {
+          void copyDay(db, date, copyTarget.date).then(() =>
+            Haptics.notificationAsync(Haptics.NotificationFeedbackType.Success),
+          );
+        }
+        if (index === 1) {
+          Alert.alert('Svuotare il giorno?', `Elimina tutte le voci di ${formatDayTitle(date, today).toLowerCase()}.`, [
+            { text: 'Annulla', style: 'cancel' },
+            {
+              text: 'Svuota',
+              style: 'destructive',
+              onPress: () => void Promise.all(MEALS.map((m) => deleteMealEntries(db, date, m.key))),
+            },
+          ]);
+        }
+      },
+    );
+  };
 
   const copyFromYesterday = async (meal: MealKey) => {
     const copied = await copyMeal(db, { date: addDays(date, -1), meal }, { date, meal });
@@ -135,6 +183,16 @@ export default function DiaryScreen() {
     <ScreenScroll>
       <Stack.Screen
         options={{
+          headerLeft: () =>
+            entries.length > 0 ? (
+              <Pressable
+                onPress={dayMenu}
+                hitSlop={10}
+                accessibilityRole="button"
+                accessibilityLabel="Azioni sul giorno: copia o svuota">
+                <Icon name="ellipsis.circle" size={22} tone="accent" />
+              </Pressable>
+            ) : null,
           headerRight: () => (
             <Pressable
               onPress={() => openAdd(mealForTime(), true)}
@@ -273,6 +331,8 @@ export default function DiaryScreen() {
           </View>
         );
       })}
+
+      <FastingCard />
     </ScreenScroll>
   );
 }
