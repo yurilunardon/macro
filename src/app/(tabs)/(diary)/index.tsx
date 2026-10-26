@@ -13,7 +13,7 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import Animated, { ZoomIn, ZoomOut } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
@@ -49,7 +49,6 @@ const RANGE = 730;
 export default function NutritionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const theme = useTheme();
   const today = useToday();
   const expiry = useAppExpiry();
   const { width } = useWindowDimensions();
@@ -88,14 +87,28 @@ export default function NutritionScreen() {
   };
   const dayAtShown = () => days[shown.current];
 
+  // Picking a day above jumps straight to it, near or far, and the page slides in from the side
+  // it comes from, as in Calendar. Scrolling through the days in between would rush every one of
+  // them past the screen.
+  const enter = useSharedValue(0);
   const goTo = (day: DateKey) => {
     const index = indexOf(day);
     if (index === shown.current) return;
     haptics.selection();
+    const direction = Math.sign(index - shown.current);
     shown.current = index;
     pick(day);
-    list.current?.scrollToIndex({ index, animated: true });
+    list.current?.scrollToIndex({ index, animated: false });
+    const h = heights.current.get(day);
+    if (h !== undefined) setHeight(h);
+    enter.set(direction);
+    enter.set(withSpring(0, ENTER_SPRING));
+    settle(day);
   };
+  const enterStyle = useAnimatedStyle(() => ({
+    opacity: 1 - Math.abs(enter.get()) * 0.7,
+    transform: [{ translateX: enter.get() * width * 0.25 }],
+  }));
 
   // At midnight, or back after days away, today moves on: follow it if it was on screen.
   useEffect(() => {
@@ -157,6 +170,12 @@ export default function NutritionScreen() {
 
   return (
     <ScreenScroll>
+      {/* As in Calendar: always in the bar, dimmed while today is on screen. */}
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button disabled={date === today} accessibilityLabel="Torna a oggi" onPress={() => goTo(today)}>
+          Oggi
+        </Stack.Toolbar.Button>
+      </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sul giorno">
           <Stack.Toolbar.MenuAction
@@ -179,30 +198,14 @@ export default function NutritionScreen() {
       {expiry && expiry.level !== 'ok' ? <ExpiryBanner status={expiry} /> : null}
 
       <WeekStrip selected={date} today={today} onSelect={goTo} onChangeWeek={(direction) => goTo(addDays(date, direction * 7))} />
-      <View style={styles.dateRow}>
-        <AppText variant="subhead" tone="textSecondary" align="center" numberOfLines={1} style={styles.dateText}>
-          <AppText variant="subhead" weight="600">
-            {formatLongDate(date)}
-          </AppText>
-          {` · ${relative}`}
+      <AppText variant="subhead" tone="textSecondary" align="center" numberOfLines={1} style={styles.date}>
+        <AppText variant="subhead" weight="600">
+          {formatLongDate(date)}
         </AppText>
-        {date !== today ? (
-          // Away from today a way back appears beside the date, and leaves again once there.
-          <Animated.View entering={TODAY_IN} exiting={TODAY_OUT} style={styles.todaySlot}>
-            <Pressable
-              onPress={() => goTo(today)}
-              hitSlop={8}
-              accessibilityRole="button"
-              accessibilityLabel="Vai a oggi"
-              style={({ pressed }) => [styles.today, { backgroundColor: theme.accentSoft }, pressed && styles.pressed]}>
-              <AppText variant="subhead" weight="600" tone="accent">
-                Oggi
-              </AppText>
-            </Pressable>
-          </Animated.View>
-        ) : null}
-      </View>
+        {` · ${relative}`}
+      </AppText>
 
+      <Animated.View style={enterStyle}>
       <FlatList
         ref={list}
         data={days}
@@ -224,12 +227,12 @@ export default function NutritionScreen() {
         onMomentumScrollEnd={onRest}
         style={[styles.pager, { width, height }]}
       />
+      </Animated.View>
     </ScreenScroll>
   );
 }
 
-const TODAY_IN = ZoomIn.springify().damping(18).stiffness(220);
-const TODAY_OUT = ZoomOut.duration(160);
+const ENTER_SPRING = { duration: 420, dampingRatio: 1 };
 
 /** Shown from three days before the app's signature expires. */
 function ExpiryBanner({ status }: { status: ExpiryStatus }) {
@@ -258,12 +261,7 @@ function ExpiryBanner({ status }: { status: ExpiryStatus }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  dateRow: { justifyContent: 'center', minHeight: 32, marginBottom: Spacing.md },
-  // Room on both sides for the "Oggi" button, so the date stays centred.
-  dateText: { paddingHorizontal: 64 },
-  todaySlot: { position: 'absolute', right: 0 },
-  today: { paddingHorizontal: Spacing.md, height: 30, borderRadius: 15, justifyContent: 'center' },
-  pressed: { opacity: 0.5 },
+  date: { marginBottom: Spacing.md },
   // Full width, out of the screen's side margins: each page has its own.
   pager: { marginHorizontal: -Spacing.lg },
   page: { paddingHorizontal: Spacing.lg },

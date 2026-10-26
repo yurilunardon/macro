@@ -1,8 +1,8 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect, useState } from 'react';
-import Animated, { FadeIn, LayoutAnimationConfig } from 'react-native-reanimated';
+import { useEffect, useRef, useState } from 'react';
+import Animated, { FadeIn, LayoutAnimationConfig, useAnimatedRef, useScrollViewOffset, useSharedValue } from 'react-native-reanimated';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -15,7 +15,7 @@ import { ProgressBar } from '@/components/progress';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SetTypeMenu } from '@/components/set-type-menu';
-import { SortableList } from '@/components/sortable-list';
+import { JiggleHandle, JiggleList } from '@/components/jiggle-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Radius, Spacing } from '@/constants/theme';
 import { restFor, updateExerciseOptions } from '@/db/exercises';
@@ -75,6 +75,11 @@ export default function WorkoutScreen() {
   const now = useClock(1000);
   const { names } = useExerciseNames();
   const [reordering, setReordering] = useState(false);
+  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const scrollOffset = useScrollViewOffset(scrollRef);
+  const maxOffset = useSharedValue(0);
+  const viewport = useRef(0);
+  const content = useRef(0);
   const { data } = useLiveQuery('workout:active', async (database) => {
     const active = await getActiveWorkout(database);
     const [workout, restAlert] = await Promise.all([
@@ -110,6 +115,20 @@ export default function WorkoutScreen() {
   const onSetDone = (setId: number, rest: number) => {
     const next = nextSetLabel(workout, setId, title);
     restTimer.start(rest, next ? `Poi: ${next}` : 'Ultima serie completata', { sound: data.sound });
+  };
+
+  // Removing an exercise with sets already ticked loses them, so that asks first.
+  const removeExercise = async (ex: WorkoutExercise) => {
+    if (ex.sets.some((set) => set.done)) {
+      const ok = await confirmDestructive({
+        title: `Eliminare ${title(ex)}?`,
+        message: 'Le serie completate verranno eliminate.',
+        action: 'Elimina esercizio',
+      });
+      if (!ok) return;
+    }
+    haptics.light();
+    await removeWorkoutExercise(db, ex.id);
   };
 
   const finish = async () => {
@@ -167,7 +186,16 @@ export default function WorkoutScreen() {
 
   return (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
-      <ScreenScroll>
+      <ScreenScroll
+        animatedRef={scrollRef}
+        onLayout={(event) => {
+          viewport.current = event.nativeEvent.layout.height;
+          maxOffset.set(content.current - viewport.current);
+        }}
+        onContentSizeChange={(_, height) => {
+          content.current = height;
+          maxOffset.set(content.current - viewport.current);
+        }}>
         <Stack.Screen options={{ title: workout.name }} />
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.down" accessibilityLabel="Riduci: l’allenamento continua" onPress={() => router.back()} />
@@ -220,32 +248,19 @@ export default function WorkoutScreen() {
           </Pressable>
         ) : null}
 
-        {reordering ? (
-          <View style={styles.reorder}>
-            <SortableList
-              items={workout.exercises}
-              keyOf={(ex) => String(ex.id)}
-              rowHeight={60}
-              onReorder={(keys) => void reorderWorkoutExercises(db, keys.map(Number))}
-              renderRow={(ex) => (
-                <View>
-                  <AppText numberOfLines={1}>{title(ex)}</AppText>
-                  <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                    {`${ex.sets.length} serie · ${ex.sets.filter((set) => set.done).length} fatte`}
-                  </AppText>
-                </View>
-              )}
-            />
-            <AppText variant="footnote" tone="textSecondary" style={styles.reorderHint}>
-              Tieni premuto un esercizio e trascinalo.
-            </AppText>
-          </View>
-        ) : (
-          // Rows already there when the screen opens appear with it; new sets slide in.
-          <LayoutAnimationConfig skipEntering>
-            {workout.exercises.map((ex) => (
+        {/* Rows already there when the screen opens appear with it; new sets slide in. */}
+        <LayoutAnimationConfig skipEntering>
+          <JiggleList
+            items={workout.exercises}
+            keyOf={(ex) => String(ex.id)}
+            editing={reordering}
+            onStartEditing={() => setReordering(true)}
+            onReorder={(keys) => void reorderWorkoutExercises(db, keys.map(Number))}
+            onRemove={(ex) => void removeExercise(ex)}
+            scroll={{ ref: scrollRef, offset: scrollOffset, maxOffset }}
+            gap={Spacing.lg}
+            renderItem={(ex) => (
               <ExerciseBlock
-                key={ex.id}
                 item={ex}
                 names={names(ex.exercise)}
                 onSetDone={onSetDone}
@@ -254,11 +269,11 @@ export default function WorkoutScreen() {
                   setReordering(true);
                 }}
               />
-            ))}
-          </LayoutAnimationConfig>
-        )}
+            )}
+          />
+        </LayoutAnimationConfig>
 
-        <View style={[styles.footer, reordering && styles.hidden]}>
+        <View style={[styles.footer, reordering && styles.dimmed]} pointerEvents={reordering ? 'none' : 'auto'}>
           <Button
             title="Aggiungi esercizio"
             variant="tinted"
@@ -321,18 +336,17 @@ function ExerciseBlock({ item, names, onSetDone, onReorder }: ExerciseBlockProps
     <View style={styles.exercise}>
       <ListGroup>
         <View style={styles.exerciseHeader}>
-          <Pressable
-            onLongPress={onReorder}
-            delayLongPress={350}
-            accessibilityHint="Tieni premuto per riordinare gli esercizi"
-            style={styles.flex}>
-            <AppText variant="headline" tone="accent">
-              {names.title}
-            </AppText>
-            <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-              {[names.subtitle, range ? `${item.sets.length} × ${range}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
-            </AppText>
-          </Pressable>
+          {/* Held, the name lifts the whole exercise to move it, as an app on the Home Screen. */}
+          <JiggleHandle style={styles.flex}>
+            <View accessible accessibilityHint="Tieni premuto per spostare l’esercizio">
+              <AppText variant="headline" tone="accent">
+                {names.title}
+              </AppText>
+              <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                {[names.subtitle, range ? `${item.sets.length} × ${range}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
+              </AppText>
+            </View>
+          </JiggleHandle>
           <MenuButton
             icon="ellipsis.circle"
             accessibilityLabel={`Opzioni per ${names.title}`}
@@ -641,7 +655,7 @@ const styles = StyleSheet.create({
   stat: { flex: 1, alignItems: 'center', gap: 2 },
   howTo: { paddingTop: Spacing.md, paddingHorizontal: Spacing.lg },
   notes: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
-  exercise: { marginTop: Spacing.lg },
+  exercise: {},
   exerciseHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -670,9 +684,7 @@ const styles = StyleSheet.create({
   },
   check: { height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   footer: { paddingTop: Spacing.xl, gap: Spacing.md },
-  hidden: { display: 'none' },
-  reorder: { marginTop: Spacing.lg },
-  reorderHint: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
+  dimmed: { opacity: 0.4 },
   bottomSpace: { height: 170 },
   restBar: {
     position: 'absolute',

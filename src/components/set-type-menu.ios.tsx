@@ -1,3 +1,5 @@
+import { StyleSheet } from 'react-native';
+
 import { Button, Host, Menu, Section, Text } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, frame } from '@expo/ui/swift-ui/modifiers';
 
@@ -15,7 +17,8 @@ export function SetTypeMenu({ badge, type, done, onChange, onDelete }: SetTypeMe
   const scheme = useColorScheme();
   const color = type === 'warmup' ? theme.warning : type === 'normal' ? (done ? theme.accent : theme.text) : theme.danger;
   return (
-    <Host matchContents colorScheme={scheme === 'dark' ? 'dark' : 'light'}>
+    // A fixed size: a host that measured its content would start at 0 × 0 and make the row jump.
+    <Host style={styles.host} colorScheme={scheme === 'dark' ? 'dark' : 'light'}>
       <Menu
         label={
           <Text modifiers={[font({ size: 15, weight: 'bold' }), foregroundStyle(color), frame({ width: 36, height: 36 })]}>
@@ -37,3 +40,7 @@ export function SetTypeMenu({ badge, type, done, onChange, onDelete }: SetTypeMe
     </Host>
   );
 }
+
+const styles = StyleSheet.create({
+  host: { width: 36, height: 36 },
+});
