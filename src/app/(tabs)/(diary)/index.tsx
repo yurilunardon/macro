@@ -1,19 +1,29 @@
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect, useRef, useState } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import {
+  Alert,
+  FlatList,
+  Linking,
+  Pressable,
+  StyleSheet,
+  useWindowDimensions,
+  View,
+  type ListRenderItemInfo,
+  type NativeScrollEvent,
+  type NativeSyntheticEvent,
+} from 'react-native';
+import Animated, { ZoomIn, ZoomOut } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
-import { DayPage, type DayPager } from '@/components/day-page';
+import { DayPage } from '@/components/day-page';
 import { Icon } from '@/components/icon';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { toast } from '@/components/toast';
 import { WeekStrip } from '@/components/week-strip';
-import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { copyDay, deleteMealEntries, getEntriesForDate } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
@@ -33,146 +43,92 @@ import { sumNutrients } from '@/lib/nutrition';
 import { formatExpiry, type ExpiryStatus } from '@/lib/provisioning';
 import { haptics } from '@/services/haptics';
 
-/** Two page margins, so the next day starts just past the edge of the screen. */
-const PAGE_GAP = Spacing.lg * 2;
-const PAGE_SPRING = { duration: 450, dampingRatio: 1 };
-/** Should a page be slow to report that it is ready, slide anyway after this long. */
-const READY_TIMEOUT = 500;
-
-type Page = { date: DateKey; slot: number };
+/** Days kept in the pager on either side of the day the app was opened on: two years. */
+const RANGE = 730;
 
 export default function NutritionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const theme = useTheme();
   const today = useToday();
   const expiry = useAppExpiry();
-  const { width: screenWidth } = useWindowDimensions();
-  const pageWidth = Math.min(screenWidth, MaxContentWidth) - Spacing.lg * 2;
-  const stride = pageWidth + PAGE_GAP;
+  const { width } = useWindowDimensions();
 
-  // The days sit side by side like pages in numbered slots, and the row slides under the finger
-  // as in Calendar. `view` is the day the pager rests on; its neighbours are drawn already, so
-  // the day coming in shows its own data from the first frame. Any other day is first drawn in
-  // the slot beside the current one, off screen, and slides in once its data is there: near or
-  // far, every change of day looks the same.
-  // The data of a day only changes after the slide, so React never works during the animation.
-  const [view, setViewState] = useState<Page>({ date: today, slot: 0 });
-  const [incoming, setIncomingState] = useState<Page | null>(null);
-  // The same two, for the callbacks that run once an animation ends.
-  const viewRef = useRef(view);
-  const incomingRef = useRef(incoming);
-  const setView = (page: Page) => {
-    viewRef.current = page;
-    setViewState(page);
-  };
-  const setIncoming = (page: Page | null) => {
-    incomingRef.current = page;
-    setIncomingState(page);
-  };
-  // The day in the title and the week strip: it changes as soon as a day is picked. null means
-  // "today", so the diary moves to the new day when the app is reopened tomorrow.
+  // The days are pages of a native paging scroll view, as in Calendar and Photos: the system
+  // moves them under the finger and can be flicked through as fast as the hand goes. The pages
+  // around the one on screen are kept ready; see DayPage for why they cost little.
+  const [anchor] = useState(today);
+  const days = useMemo(() => Array.from({ length: RANGE * 2 + 1 }, (_, i) => addDays(anchor, i - RANGE)), [anchor]);
+  const indexOf = (day: DateKey) => Math.min(days.length - 1, Math.max(0, RANGE + daysBetween(anchor, day)));
+  const list = useRef<FlatList<DateKey>>(null);
+
+  // null means "today", so the diary moves to the new day when the app is reopened tomorrow.
   const [selected, setSelected] = useState<DateKey | null>(null);
   const date = selected ?? today;
-
-  const track = useSharedValue(0);
-  const position = useSharedValue(0);
-  const settled = useSharedValue(0);
-  const moving = useRef(false);
-  const queued = useRef<DateKey | null>(null);
-
   const pick = (day: DateKey) => setSelected(day === today ? null : day);
+  const [initialIndex] = useState(() => indexOf(date));
+  const shown = useRef(initialIndex);
+
+  // The day that gets menus and swipe actions: the one the pages have come to rest on, a moment
+  // after they stop, so nothing is built while they move.
+  const [interactiveDay, setInteractiveDay] = useState(date);
+  const settleTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  const settle = (day: DateKey) => {
+    clearTimeout(settleTimer.current);
+    settleTimer.current = setTimeout(() => setInteractiveDay(day), 250);
+  };
+  useEffect(() => () => clearTimeout(settleTimer.current), []);
+
+  // The pager is as tall as the day on screen, not as the longest day kept ready beside it.
+  const heights = useRef(new Map<DateKey, number>());
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  const onPageLayout = (day: DateKey, h: number) => {
+    heights.current.set(day, h);
+    if (day === dayAtShown()) setHeight(h);
+  };
+  const dayAtShown = () => days[shown.current];
+
+  const goTo = (day: DateKey) => {
+    const index = indexOf(day);
+    if (index === shown.current) return;
+    haptics.selection();
+    shown.current = index;
+    pick(day);
+    list.current?.scrollToIndex({ index, animated: true });
+  };
 
   // At midnight, or back after days away, today moves on: follow it if it was on screen.
   useEffect(() => {
-    if (selected !== null || viewRef.current.date === today || moving.current) return;
-    setView({ date: today, slot: viewRef.current.slot });
+    if (selected !== null || days[shown.current] === today) return;
+    shown.current = indexOf(today);
+    list.current?.scrollToIndex({ index: shown.current, animated: false });
+    setInteractiveDay(today);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [today, selected]);
 
-  // A new width (rotation, split screen) lines the row up again.
-  useEffect(() => {
-    track.set(-position.get() * stride);
-  }, [stride, track, position]);
-
-  /** The day drawn in a slot. */
-  const dayAt = (slot: number): DateKey => {
-    const brought = incomingRef.current;
-    if (brought?.slot === slot) return brought.date;
-    return addDays(viewRef.current.date, slot - viewRef.current.slot);
+  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    const index = Math.round(event.nativeEvent.contentOffset.x / width);
+    if (index === shown.current || index < 0 || index >= days.length) return;
+    shown.current = index;
+    pick(days[index]);
+    // While moving it only grows, so the page leaving is never cut; it fits the new day once still.
+    const h = heights.current.get(days[index]);
+    if (h !== undefined) setHeight((current) => Math.max(current ?? 0, h));
   };
 
-  const settle = (slot: number) => {
-    if (slot === settled.get()) {
-      moving.current = false;
-      return;
-    }
-    settled.set(slot);
-    setView({ date: dayAt(slot), slot });
-    setIncoming(null);
-    moving.current = false;
-    const next = queued.current;
-    queued.current = null;
-    if (next) goTo(next);
+  const onRest = () => {
+    const day = days[shown.current];
+    const h = heights.current.get(day);
+    if (h !== undefined) setHeight(h);
+    settle(day);
   };
 
-  const slide = (slot: number) => {
-    moving.current = true;
-    position.set(slot);
-    track.set(
-      withSpring(-slot * stride, PAGE_SPRING, (finished) => {
-        'worklet';
-        if (finished) scheduleOnRN(settle, slot);
-      }),
-    );
-  };
-
-  const goTo = (day: DateKey) => {
-    const distance = daysBetween(viewRef.current.date, day);
-    if (distance === 0 && !moving.current) {
-      pick(day);
-      return;
-    }
-    haptics.selection();
-    pick(day);
-    if (moving.current) {
-      // Picked while sliding: go there once the pages have settled.
-      queued.current = day;
-      return;
-    }
-    const slot = viewRef.current.slot + Math.sign(distance);
-    if (Math.abs(distance) === 1) {
-      slide(slot);
-      return;
-    }
-    moving.current = true;
-    setIncoming({ date: day, slot });
-    setTimeout(() => onReady(day), READY_TIMEOUT);
-  };
-
-  /** A page has its data on screen: the day being brought in can now slide. */
-  const onReady = (day: DateKey) => {
-    const brought = incomingRef.current;
-    if (brought?.date !== day || position.get() !== settled.get()) return;
-    slide(brought.slot);
-  };
-
-  const pager: DayPager = {
-    track,
-    position,
-    settled,
-    stride,
-    pageWidth,
-    onSwipe: (slot) => pick(dayAt(slot)),
-    onSettle: settle,
-  };
-
-  const trackStyle = useAnimatedStyle(() => ({ transform: [{ translateX: track.get() }] }));
-
-  // The current day with the one before and after it; a day far away replaces the neighbour on
-  // its side while it slides in.
-  const pages: Page[] = [-1, 0, 1].map((step) =>
-    incoming && incoming.slot === view.slot + step
-      ? incoming
-      : { date: addDays(view.date, step), slot: view.slot + step },
+  const renderDay = ({ item }: ListRenderItemInfo<DateKey>) => (
+    <View style={[styles.page, { width }]}>
+      <View onLayout={(event) => onPageLayout(item, event.nativeEvent.layout.height)}>
+        <DayPage date={item} today={today} interactive={item === interactiveDay} />
+      </View>
+    </View>
   );
 
   // The day's entries, for the actions in the header.
@@ -201,23 +157,16 @@ export default function NutritionScreen() {
 
   return (
     <ScreenScroll>
-      {/* The buttons in the bar never come and go: "Oggi" is always there, as in Calendar. */}
-      <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button accessibilityLabel="Vai a oggi" onPress={() => goTo(today)}>
-          Oggi
-        </Stack.Toolbar.Button>
-      </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sul giorno">
           <Stack.Toolbar.MenuAction
             icon="doc.on.doc"
             disabled={count === 0}
-            subtitle={count > 0 ? countLabel(count, 'alimento', 'alimenti') : undefined}
             onPress={() => void copyWholeDay()}>
-            {`Copia tutto in ${copyTarget.label}`}
+            {`Copia giorno in ${copyTarget.label}`}
           </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon="trash" destructive disabled={count === 0} onPress={() => void clearDay()}>
-            {`Svuota ${dayName}`}
+            Svuota giorno
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
         <Stack.Toolbar.Button
@@ -230,27 +179,57 @@ export default function NutritionScreen() {
       {expiry && expiry.level !== 'ok' ? <ExpiryBanner status={expiry} /> : null}
 
       <WeekStrip selected={date} today={today} onSelect={goTo} onChangeWeek={(direction) => goTo(addDays(date, direction * 7))} />
-      <AppText variant="subhead" tone="textSecondary" align="center" style={styles.date}>
-        <AppText variant="subhead" weight="600">
-          {formatLongDate(date)}
+      <View style={styles.dateRow}>
+        <AppText variant="subhead" tone="textSecondary" align="center" numberOfLines={1} style={styles.dateText}>
+          <AppText variant="subhead" weight="600">
+            {formatLongDate(date)}
+          </AppText>
+          {` · ${relative}`}
         </AppText>
-        {` · ${relative}`}
-      </AppText>
-
-      <View style={{ width: pageWidth }}>
-        <Animated.View style={trackStyle}>
-          {pages.map((page) => (
-            <View
-              key={page.date}
-              style={[{ width: pageWidth, left: page.slot * stride }, page.slot === view.slot ? styles.current : styles.beside]}>
-              <DayPage date={page.date} today={today} active={page.slot === view.slot} pager={pager} onReady={onReady} />
-            </View>
-          ))}
-        </Animated.View>
+        {date !== today ? (
+          // Away from today a way back appears beside the date, and leaves again once there.
+          <Animated.View entering={TODAY_IN} exiting={TODAY_OUT} style={styles.todaySlot}>
+            <Pressable
+              onPress={() => goTo(today)}
+              hitSlop={8}
+              accessibilityRole="button"
+              accessibilityLabel="Vai a oggi"
+              style={({ pressed }) => [styles.today, { backgroundColor: theme.accentSoft }, pressed && styles.pressed]}>
+              <AppText variant="subhead" weight="600" tone="accent">
+                Oggi
+              </AppText>
+            </Pressable>
+          </Animated.View>
+        ) : null}
       </View>
+
+      <FlatList
+        ref={list}
+        data={days}
+        keyExtractor={(day) => day}
+        renderItem={renderDay}
+        extraData={`${interactiveDay}|${today}`}
+        horizontal
+        pagingEnabled
+        directionalLockEnabled
+        showsHorizontalScrollIndicator={false}
+        getItemLayout={(_, index) => ({ length: width, offset: width * index, index })}
+        initialScrollIndex={initialIndex}
+        initialNumToRender={1}
+        maxToRenderPerBatch={1}
+        windowSize={7}
+        scrollEventThrottle={16}
+        onScroll={onScroll}
+        onScrollBeginDrag={() => clearTimeout(settleTimer.current)}
+        onMomentumScrollEnd={onRest}
+        style={[styles.pager, { width, height }]}
+      />
     </ScreenScroll>
   );
 }
+
+const TODAY_IN = ZoomIn.springify().damping(18).stiffness(220);
+const TODAY_OUT = ZoomOut.duration(160);
 
 /** Shown from three days before the app's signature expires. */
 function ExpiryBanner({ status }: { status: ExpiryStatus }) {
@@ -279,9 +258,14 @@ function ExpiryBanner({ status }: { status: ExpiryStatus }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  date: { marginBottom: Spacing.lg },
+  dateRow: { justifyContent: 'center', minHeight: 32, marginBottom: Spacing.md },
+  // Room on both sides for the "Oggi" button, so the date stays centred.
+  dateText: { paddingHorizontal: 64 },
+  todaySlot: { position: 'absolute', right: 0 },
+  today: { paddingHorizontal: Spacing.md, height: 30, borderRadius: 15, justifyContent: 'center' },
+  pressed: { opacity: 0.5 },
+  // Full width, out of the screen's side margins: each page has its own.
+  pager: { marginHorizontal: -Spacing.lg },
+  page: { paddingHorizontal: Spacing.lg },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md, borderWidth: 1.5 },
-  // The day on screen sets the height of the row; the others overlay it on either side.
-  current: { position: 'relative' },
-  beside: { position: 'absolute', top: 0 },
 });

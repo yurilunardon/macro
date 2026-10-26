@@ -8,6 +8,7 @@ import { Button } from '@/components/button';
 import { ActionRow, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
+import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
@@ -54,7 +55,7 @@ export default function ProgramScreen() {
       </View>
     );
   }
-  if (program === null || hidden.has(`program:${program.id}`)) {
+  if (program === null) {
     return (
       <View style={styles.center}>
         <AppText tone="textSecondary">Scheda eliminata</AppText>
@@ -89,8 +90,14 @@ export default function ProgramScreen() {
       router.push({ pathname: '/training/day', params: { id: dayId } });
     });
 
-  const remove = () => {
-    deleteWithUndo({ key: `program:${program.id}`, title: 'Scheda eliminata', run: () => deleteProgram(db, program.id) });
+  const remove = async () => {
+    const ok = await confirmDestructive({
+      title: `Eliminare ${program.name}?`,
+      message: 'Gli allenamenti fatti restano nello storico.',
+      action: 'Elimina scheda',
+    });
+    if (!ok) return;
+    await deleteProgram(db, program.id);
     router.back();
   };
 
@@ -110,7 +117,7 @@ export default function ProgramScreen() {
             <Stack.Toolbar.MenuAction icon="arrow.up.arrow.down" disabled={days.length < 2} onPress={() => setReordering(true)}>
               Riordina i giorni
             </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon="trash" destructive onPress={remove}>
+            <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
               Elimina scheda
             </Stack.Toolbar.MenuAction>
           </Stack.Toolbar.Menu>

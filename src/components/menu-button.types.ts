@@ -18,4 +18,9 @@ export type MenuButtonProps = {
   title?: string;
   accessibilityLabel: string;
   groups: MenuGroup[];
+  /**
+   * Draws the button exactly as it looks, but without the native menu behind it: for content
+   * kept ready off screen, where a SwiftUI view per button would cost too much.
+   */
+  inert?: boolean;
 };

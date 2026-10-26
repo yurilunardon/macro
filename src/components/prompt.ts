@@ -1,4 +1,4 @@
-import { Alert, Platform } from 'react-native';
+import { ActionSheetIOS, Alert, Platform } from 'react-native';
 
 import { parseDecimal } from '@/lib/format';
 
@@ -57,9 +57,20 @@ type ConfirmOptions = {
   action: string;
 };
 
-/** Native confirmation before something that cannot be undone. Resolves to whether to go ahead. */
+/**
+ * Confirmation before something that cannot be undone. On iPhone it is the sheet that rises
+ * from the bottom, as when deleting in Apple's apps, rather than an alert in the middle of the
+ * screen. Resolves to whether to go ahead.
+ */
 export function confirmDestructive({ title, message, action }: ConfirmOptions): Promise<boolean> {
   return new Promise((resolve) => {
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        { title, message, options: [action, 'Annulla'], destructiveButtonIndex: 0, cancelButtonIndex: 1 },
+        (index) => resolve(index === 0),
+      );
+      return;
+    }
     Alert.alert(
       title,
       message,

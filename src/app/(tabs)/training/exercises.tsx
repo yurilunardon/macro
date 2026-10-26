@@ -3,9 +3,9 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { ScrollView, StyleSheet } from 'react-native';
 
-import { ListGroup, Row, SectionFooter } from '@/components/card';
+import { Row, SectionFooter } from '@/components/card';
 import { Chip } from '@/components/form';
-import { ScreenScroll } from '@/components/screen';
+import { GroupedList } from '@/components/grouped-list';
 import { Spacing } from '@/constants/theme';
 import { searchExercises } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
@@ -23,7 +23,7 @@ export default function ExercisesScreen() {
   const { data } = useLiveQuery(`exercises:${query}:${muscle ?? ''}`, (database) => searchExercises(database, { query, muscle }), ['training', 'settings']);
 
   return (
-    <ScreenScroll>
+    <>
       <Stack.Screen
         options={{
           headerSearchBarOptions: {
@@ -44,16 +44,20 @@ export default function ExercisesScreen() {
         </Stack.Toolbar.Menu>
         <Stack.Toolbar.Button icon="plus" accessibilityLabel="Nuovo esercizio" onPress={() => router.push('/exercise-new')} />
       </Stack.Toolbar>
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-        <Chip label="Tutti" selected={muscle === null} onPress={() => setMuscle(null)} />
-        {MUSCLES.map((m) => (
-          <Chip key={m.key} label={m.label} selected={muscle === m.key} onPress={() => setMuscle(muscle === m.key ? null : m.key)} />
-        ))}
-      </ScrollView>
-      <ListGroup>
-        {(data ?? []).map((exercise) => (
+      <GroupedList
+        data={data ?? []}
+        keyOf={(exercise) => String(exercise.id)}
+        header={
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+            <Chip label="Tutti" selected={muscle === null} onPress={() => setMuscle(null)} />
+            {MUSCLES.map((m) => (
+              <Chip key={m.key} label={m.label} selected={muscle === m.key} onPress={() => setMuscle(muscle === m.key ? null : m.key)} />
+            ))}
+          </ScrollView>
+        }
+        footer={<SectionFooter>I più usati in cima. «Aa» cambia la lingua dei nomi.</SectionFooter>}
+        renderRow={(exercise) => (
           <Row
-            key={exercise.id}
             title={names(exercise).title}
             subtitle={
               exercise.ref
@@ -62,10 +66,9 @@ export default function ExercisesScreen() {
             }
             onPress={() => router.push({ pathname: '/training/exercise', params: { id: exercise.id } })}
           />
-        ))}
-      </ListGroup>
-      <SectionFooter>I più usati in cima. «Aa» cambia la lingua dei nomi.</SectionFooter>
-    </ScreenScroll>
+        )}
+      />
+    </>
   );
 }
 

@@ -1,11 +1,8 @@
 import { Link, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect } from 'react';
+import { memo } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
-import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
-import type { SharedValue } from 'react-native-reanimated';
-import { useSharedValue, withSpring } from 'react-native-reanimated';
-import { scheduleOnRN } from 'react-native-worklets';
+import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { getDayPlan, getTrainingSettings, setDayType } from '@/db/days';
 import { copyEntry, copyMeal, deleteEntry, deleteMealEntries, getEntriesForDate, moveEntry, type Entry } from '@/db/entries';
@@ -26,7 +23,6 @@ import { AppText } from './app-text';
 import { Card, ListGroup } from './card';
 import { Icon } from './icon';
 import { MenuButton } from './menu-button';
-import { project } from './motion';
 import { MacroBars } from './nutrient-grid';
 import { MacroInline } from './nutrition';
 import { CalorieRing } from './progress';
@@ -34,25 +30,8 @@ import { confirmDestructive } from './prompt';
 import { SwipeToDelete } from './swipe-to-delete';
 import { toast } from './toast';
 
-/** How the visible page moves: shared with the screen, which owns the pager. */
-export type DayPager = {
-  /** Horizontal position of the row of pages. */
-  track: SharedValue<number>;
-  /** Slot the pages are moving to (or resting on). */
-  position: SharedValue<number>;
-  /** Slot of the day the screen has settled on: a swipe moves at most one page from it. */
-  settled: SharedValue<number>;
-  /** Width of a page plus the gap to the next one. */
-  stride: number;
-  pageWidth: number;
-  /** Called on the JS side as soon as a swipe lets go towards another slot. */
-  onSwipe: (slot: number) => void;
-  /** Called on the JS side once the pages have come to rest. */
-  onSettle: (slot: number) => void;
-};
 
-const PAGE_SPRING = { duration: 450, dampingRatio: 1 };
-const tick = haptics.selection;
+const FADE_IN = FadeIn.duration(180);
 
 /** "120 g · Barilla", or for a quick entry just that it was typed by hand. */
 function entryDetail(entry: Entry): string | null {
@@ -63,78 +42,39 @@ function entryDetail(entry: Entry): string | null {
 type DayPageProps = {
   date: DateKey;
   today: DateKey;
-  /** The page on screen; its neighbours are drawn ahead so a swipe never shows stale data. */
-  active: boolean;
-  pager: DayPager;
-  /** Called once this day's data is on screen. */
-  onReady: (date: DateKey) => void;
+  /**
+   * Only the day on screen gets menus, swipe actions and context menus. The days around it are
+   * drawn ahead as the same layout without them, so they cost little to keep ready and nothing
+   * moves when a day becomes the current one.
+   */
+  interactive: boolean;
 };
 
 /** One day of the food diary: summary of the day and its four meals. */
-export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
+export const DayPage = memo(function DayPage({ date, today, interactive }: DayPageProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
   const hidden = usePendingDeletes();
 
-  const { data } = useLiveQuery(`diary:${date}`, async (database) => {
-    const [entries, yesterday, plan, training] = await Promise.all([
-      getEntriesForDate(database, date),
-      getEntriesForDate(database, addDays(date, -1)),
-      getDayPlan(database, date),
-      getTrainingSettings(database),
-    ]);
-    return {
-      entries,
-      yesterdayMeals: new Set(yesterday.map((e) => e.meal)),
-      plan,
-      scheduledType: dayTypeFor(weekdayOf(date), training.trainingWeekdays, null),
-    };
-  }, ['food', 'settings']);
-  const loaded = data !== undefined;
-  useEffect(() => {
-    if (loaded) onReady(date);
-  }, [loaded, date, onReady]);
-
-  // Dragging the summary moves the whole row of pages; far or fast enough, it turns the day.
-  const { track, position, settled, stride, pageWidth, onSwipe, onSettle } = pager;
-  const dragStart = useSharedValue(0);
-  const pan = usePanGesture({
-    enabled: active,
-    activeOffsetX: [-14, 14],
-    failOffsetY: [-12, 12],
-    onActivate: () => {
-      'worklet';
-      // Grabbing the pages mid-animation continues from where they are.
-      dragStart.set(track.get());
+  const { data } = useLiveQuery(
+    `diary:${date}`,
+    async (database) => {
+      const [entries, yesterday, plan, training] = await Promise.all([
+        getEntriesForDate(database, date),
+        getEntriesForDate(database, addDays(date, -1)),
+        getDayPlan(database, date),
+        getTrainingSettings(database),
+      ]);
+      return {
+        entries,
+        yesterdayMeals: new Set(yesterday.map((e) => e.meal)),
+        plan,
+        scheduledType: dayTypeFor(weekdayOf(date), training.trainingWeekdays, null),
+      };
     },
-    onUpdate: (event) => {
-      'worklet';
-      track.set(dragStart.get() + event.translationX);
-    },
-    onDeactivate: (event) => {
-      'worklet';
-      // Where the pages would come to rest, relative to the page that was showing.
-      const projected = track.get() + project(event.velocityX, 0.99) + position.get() * stride;
-      // Swiping left goes forward in time, as in Calendar.
-      const direction = !event.canceled && Math.abs(projected) > pageWidth * 0.3 ? (projected < 0 ? 1 : -1) : 0;
-      // Only the pages next to the settled one are drawn, so never go further than those.
-      const base = settled.get();
-      const next = Math.min(base + 1, Math.max(base - 1, position.get() + direction));
-      const moved = next !== position.get();
-      position.set(next);
-      track.set(
-        withSpring(-next * stride, { ...PAGE_SPRING, velocity: event.velocityX }, (finished) => {
-          'worklet';
-          if (finished) scheduleOnRN(onSettle, next);
-        }),
-      );
-      if (moved) {
-        scheduleOnRN(tick);
-        scheduleOnRN(onSwipe, next);
-      }
-    },
-  });
+    ['food', 'settings'],
+  );
 
   const entries = (data?.entries ?? []).filter((e) => !hidden.has(`entry:${e.id}`));
   const totals = sumNutrients(entries.map((e) => e.totals));
@@ -214,9 +154,12 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
   const dayTypeLabel = dayType === 'training' ? 'Allenamento' : 'Riposo';
   const dayTypeIcon = dayType === 'training' ? 'figure.strengthtraining.traditional' : 'bed.double.fill';
 
+  // Until its data is there the day stays empty, then fades in: never a half-filled page.
+  if (!data) return <View style={styles.loading} />;
+
   return (
-    <View>
-      {data?.plan.isDefault ? (
+    <Animated.View entering={FADE_IN}>
+      {data.plan.isDefault ? (
         <Pressable onPress={() => router.navigate('/settings/goals')} accessibilityRole="button">
           <Card style={[styles.banner, { backgroundColor: theme.accentSoft }]}>
             <Icon name="target" size={22} tone="accent" />
@@ -231,13 +174,11 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
         </Pressable>
       ) : null}
 
-      <GestureDetector gesture={pan} touchAction="pan-y">
-        <View>
-          <Card style={styles.summary}>
+      <Card style={styles.summary}>
             <View style={styles.summaryHead}>
               {dayType ? (
-                active ? (
                   <MenuButton
+                    inert={!interactive}
                     icon={dayTypeIcon}
                     title={dayTypeLabel}
                     accessibilityLabel="Tipo di giorno: cambia gli obiettivi"
@@ -256,14 +197,6 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
                       },
                     ]}
                   />
-                ) : (
-                  <View style={styles.dayType}>
-                    <Icon name={dayTypeIcon} size={15} tone="accent" />
-                    <AppText variant="subhead" weight="600" tone="accent">
-                      {dayTypeLabel}
-                    </AppText>
-                  </View>
-                )
               ) : (
                 <View />
               )}
@@ -284,9 +217,7 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
                 />
               ) : null}
             </View>
-          </Card>
-        </View>
-      </GestureDetector>
+      </Card>
 
       {MEALS.map((meal) => {
         const mealEntries = entries.filter((e) => e.meal === meal.key);
@@ -295,6 +226,7 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
         const canCopy = count === 0 && data?.yesterdayMeals.has(meal.key);
         const menu = (
           <MenuButton
+            inert={!interactive}
             icon="ellipsis.circle"
             accessibilityLabel={`Azioni per ${meal.label.toLowerCase()}`}
             groups={[
@@ -352,50 +284,54 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
                     </AppText>
                   ) : null}
                 </View>
-                {active ? menu : <Icon name="ellipsis.circle" size={22} tone="accent" />}
+                {menu}
               </View>
-              {mealEntries.map((entry) => (
-                <SwipeToDelete key={entry.id} onDelete={() => removeEntry(entry)}>
-                  <Link href={`/entry/${entry.id}`} asChild>
-                    <Link.Trigger>
-                      <Pressable
-                        accessibilityRole="button"
-                        accessibilityHint="Tocca per modificare, tieni premuto per altre azioni, scorri a sinistra per eliminare">
-                        {({ pressed }) => (
-                          <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
-                            <View style={styles.entryText}>
-                              <AppText numberOfLines={1}>{entry.name}</AppText>
-                              <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                                {entryDetail(entry) ? `${entryDetail(entry)}   ` : ''}
-                                <MacroInline totals={entry.totals} />
-                              </AppText>
-                            </View>
-                            <Kcal value={entry.totals.kcal} />
-                          </View>
-                        )}
-                      </Pressable>
-                    </Link.Trigger>
-                    <Link.Menu>
-                      <Link.MenuAction icon="pencil" onPress={() => router.push(`/entry/${entry.id}`)}>
-                        {entry.quick ? 'Modifica' : 'Modifica quantità'}
-                      </Link.MenuAction>
-                      <Link.Menu title="Sposta in" icon="arrow.up.arrow.down">
-                        {MEALS.filter((m) => m.key !== entry.meal).map((m) => (
-                          <Link.MenuAction key={m.key} icon={m.symbol} onPress={() => void moveEntryTo(entry, m.key)}>
-                            {m.label}
-                          </Link.MenuAction>
-                        ))}
+              {mealEntries.map((entry) => {
+                const row = (pressed: boolean) => (
+                  <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
+                    <View style={styles.entryText}>
+                      <AppText numberOfLines={1}>{entry.name}</AppText>
+                      <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                        {entryDetail(entry) ? `${entryDetail(entry)}   ` : ''}
+                        <MacroInline totals={entry.totals} />
+                      </AppText>
+                    </View>
+                    <Kcal value={entry.totals.kcal} />
+                  </View>
+                );
+                if (!interactive) return <View key={entry.id}>{row(false)}</View>;
+                return (
+                  <SwipeToDelete key={entry.id} onDelete={() => removeEntry(entry)}>
+                    <Link href={`/entry/${entry.id}`} asChild>
+                      <Link.Trigger>
+                        <Pressable
+                          accessibilityRole="button"
+                          accessibilityHint="Tocca per modificare, tieni premuto per altre azioni, scorri a sinistra per eliminare">
+                          {({ pressed }) => row(pressed)}
+                        </Pressable>
+                      </Link.Trigger>
+                      <Link.Menu>
+                        <Link.MenuAction icon="pencil" onPress={() => router.push(`/entry/${entry.id}`)}>
+                          {entry.quick ? 'Modifica' : 'Modifica quantità'}
+                        </Link.MenuAction>
+                        <Link.Menu title="Sposta in" icon="arrow.up.arrow.down">
+                          {MEALS.filter((m) => m.key !== entry.meal).map((m) => (
+                            <Link.MenuAction key={m.key} icon={m.symbol} onPress={() => void moveEntryTo(entry, m.key)}>
+                              {m.label}
+                            </Link.MenuAction>
+                          ))}
+                        </Link.Menu>
+                        <Link.MenuAction icon="doc.on.doc" onPress={() => void copyEntryTo(entry)}>
+                          {`Copia in ${copyTarget.label}`}
+                        </Link.MenuAction>
+                        <Link.MenuAction icon="trash" destructive onPress={() => removeEntry(entry)}>
+                          Elimina
+                        </Link.MenuAction>
                       </Link.Menu>
-                      <Link.MenuAction icon="doc.on.doc" onPress={() => void copyEntryTo(entry)}>
-                        {`Copia in ${copyTarget.label}`}
-                      </Link.MenuAction>
-                      <Link.MenuAction icon="trash" destructive onPress={() => removeEntry(entry)}>
-                        Elimina
-                      </Link.MenuAction>
-                    </Link.Menu>
-                  </Link>
-                </SwipeToDelete>
-              ))}
+                    </Link>
+                  </SwipeToDelete>
+                );
+              })}
               <View style={styles.addRow}>
                 <Pressable
                   onPress={() => openAdd(meal.key)}
@@ -424,9 +360,9 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
           </View>
         );
       })}
-    </View>
+    </Animated.View>
   );
-}
+});
 
 /** "435 kcal" on one line, the number leading. */
 function Kcal({ value }: { value: number }) {
@@ -442,6 +378,7 @@ function Kcal({ value }: { value: number }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  loading: { minHeight: 700 },
   pressed: { opacity: 0.5 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
   summary: { gap: Spacing.md, paddingTop: Spacing.md },

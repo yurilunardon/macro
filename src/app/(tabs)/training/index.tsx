@@ -4,16 +4,17 @@ import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
+import { confirmDestructive } from '@/components/prompt';
 import { ProgressBar } from '@/components/progress';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
-import { deleteProgram, getNextDay, getPrograms, setNextDay, type Program } from '@/db/programs';
-import { getActiveWorkout, getWorkoutHistory, getWorkSetsBetween, startWorkout } from '@/db/workouts';
+import { getNextDay, getPrograms, setNextDay } from '@/db/programs';
+import { deleteWorkout, getActiveWorkout, getWorkoutHistory, getWorkSetsBetween, startWorkout } from '@/db/workouts';
 import { useClock } from '@/hooks/use-clock';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
@@ -22,7 +23,6 @@ import { MUSCLES, muscleLabel } from '@/lib/exercises';
 import { countLabel, formatNumber } from '@/lib/format';
 import { formatDuration, formatWorkoutLength, setsPerMuscle } from '@/lib/training';
 import { haptics } from '@/services/haptics';
-import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 /** Weekly hard sets per muscle that research links with growth, roughly. */
 const VOLUME_LOW = 10;
@@ -45,7 +45,6 @@ export default function TrainingScreen() {
     return { active, next, programs, history, volume };
   }, ['training']);
   const now = useClock(1000, Boolean(data?.active));
-  const hidden = usePendingDeletes();
 
   const start = async (dayId: number | null) => {
     await startWorkout(db, { dayId });
@@ -58,16 +57,21 @@ export default function TrainingScreen() {
     void setNextDay(db, dayId);
   };
 
-  const removeProgram = (program: Program) =>
-    deleteWithUndo({ key: `program:${program.id}`, title: 'Scheda eliminata', run: () => deleteProgram(db, program.id) });
+  const confirmWorkout = () =>
+    confirmDestructive({
+      title: 'Eliminare l’allenamento?',
+      message: 'Sparisce dallo storico e dai record.',
+      action: 'Elimina allenamento',
+    });
 
-  const programs = (data?.programs ?? []).filter((p) => !hidden.has(`program:${p.id}`));
+  const programs = data?.programs ?? [];
+  const activeProgram = programs.find((p) => p.active);
   const thisWeek = (data?.history ?? []).filter((w) => w.date >= week[0]);
   const muscles = setsPerMuscle(data?.volume ?? []);
   const trained = MUSCLES.filter((m) => (muscles.get(m.key) ?? 0) > 0).sort(
     (a, b) => (muscles.get(b.key) ?? 0) - (muscles.get(a.key) ?? 0),
   );
-  const next = data?.next && !hidden.has(`program:${data.next.program.id}`) ? data.next : null;
+  const next = data?.next ?? null;
 
   return (
     <ScreenScroll>
@@ -150,14 +154,15 @@ export default function TrainingScreen() {
           <SectionTitle>Recenti</SectionTitle>
           <ListGroup>
             {(data?.history ?? []).slice(0, 3).map((w) => (
-              <Row
-                key={w.id}
-                title={w.name}
-                subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
-                  (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,
-                )} · ${countLabel(w.workSets, 'serie', 'serie')}`}
-                onPress={() => router.push({ pathname: '/training/session', params: { id: w.id } })}
-              />
+              <SwipeToDelete key={w.id} confirm={confirmWorkout} onDelete={() => void deleteWorkout(db, w.id)}>
+                <Row
+                  title={w.name}
+                  subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
+                    (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,
+                  )} · ${countLabel(w.workSets, 'serie', 'serie')}`}
+                  onPress={() => router.push({ pathname: '/training/session', params: { id: w.id } })}
+                />
+              </SwipeToDelete>
             ))}
             <Row title="Tutti gli allenamenti" onPress={() => router.push('/training/history')} />
           </ListGroup>
@@ -203,29 +208,15 @@ export default function TrainingScreen() {
       </Card>
       <SectionFooter>{`Serie allenanti per muscolo. Obiettivo: ${VOLUME_LOW}–${VOLUME_HIGH} a settimana.`}</SectionFooter>
 
-      <SectionTitle>Schede</SectionTitle>
-      <ListGroup>
-        {programs.map((p) => (
-          <SwipeToDelete key={p.id} onDelete={() => removeProgram(p)}>
-            <Row
-              title={p.name}
-              subtitle={`${countLabel(p.days.length, 'giorno', 'giorni')}${p.active ? ' · in uso' : ''}`}
-              icon={
-                <Icon
-                  name={p.active ? 'checkmark.circle.fill' : 'list.bullet.rectangle'}
-                  size={20}
-                  tone={p.active ? 'accent' : 'textSecondary'}
-                />
-              }
-              onPress={() => router.push({ pathname: '/training/program', params: { id: p.id } })}
-            />
-          </SwipeToDelete>
-        ))}
-        <ActionRow label="Nuova scheda" onPress={() => router.push('/training/new')} />
-      </ListGroup>
-
+      {/* Set up once, opened rarely: last. */}
       <SectionTitle>Libreria</SectionTitle>
       <ListGroup>
+        <Row
+          title="Schede"
+          subtitle={activeProgram ? `In uso: ${activeProgram.name}` : countLabel(programs.length, 'scheda', 'schede')}
+          icon={<Icon name="list.bullet.rectangle" size={18} tone="accent" />}
+          onPress={() => router.push('/training/programs')}
+        />
         <Row
           title="Esercizi"
           icon={<Icon name="books.vertical" size={18} tone="accent" />}

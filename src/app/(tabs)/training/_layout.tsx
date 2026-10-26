@@ -9,6 +9,7 @@ export default function TrainingLayout() {
     <Stack screenOptions={TAB_STACK_OPTIONS}>
       <Stack.Screen name="index" options={{ ...LARGE_TITLE, title: 'Allenamento' }} />
       <Stack.Screen name="new" options={{ title: 'Nuova scheda' }} />
+      <Stack.Screen name="programs" options={{ title: 'Schede' }} />
       <Stack.Screen name="program" options={{ title: 'Scheda' }} />
       <Stack.Screen name="day" options={{ title: 'Giorno' }} />
       <Stack.Screen name="exercises" options={{ title: 'Esercizi' }} />

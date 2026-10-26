@@ -4,9 +4,9 @@ import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
-import { ActionRow, ListGroup, Row } from '@/components/card';
+import { ActionRow, Row } from '@/components/card';
 import { Chip } from '@/components/form';
-import { ScreenScroll } from '@/components/screen';
+import { GroupedList } from '@/components/grouped-list';
 import { Spacing } from '@/constants/theme';
 import { applyPick, isPickerTarget, type PickerTarget } from '@/db/exercise-picks';
 import { searchExercises, type Exercise } from '@/db/exercises';
@@ -36,8 +36,11 @@ export default function ExercisePickerScreen() {
     router.back();
   };
 
+  const create = { id: -1 } as const;
+  type Item = Exercise | typeof create;
+
   return (
-    <ScreenScroll>
+    <>
       <Stack.Screen
         options={{
           title: target === 'replace' ? 'Sostituisci esercizio' : 'Aggiungi esercizio',
@@ -52,36 +55,43 @@ export default function ExercisePickerScreen() {
         <Stack.Toolbar.Button onPress={() => router.back()}>Annulla</Stack.Toolbar.Button>
       </Stack.Toolbar>
 
-      <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
-        <Chip label="Tutti" selected={muscle === null} onPress={() => setMuscle(null)} />
-        {MUSCLES.map((m) => (
-          <Chip key={m.key} label={m.label} selected={muscle === m.key} onPress={() => setMuscle(muscle === m.key ? null : m.key)} />
-        ))}
-      </ScrollView>
-
-      <ListGroup>
-        <ActionRow
-          label={query.trim() ? `Crea «${query.trim()}»` : 'Crea un esercizio'}
-          onPress={() => router.push({ pathname: '/exercise-new', params: { target, id, name: query.trim() } })}
-        />
-        {(data ?? []).map((exercise) => (
-          <Row
-            key={exercise.id}
-            title={names(exercise).title}
-            subtitle={names(exercise).subtitle ?? `${muscleLabel(exercise.muscle)} · ${equipmentLabel(exercise.equipment)}`}
-            onPress={() => void pick(exercise)}
-            chevron={false}
-          />
-        ))}
-      </ListGroup>
-      {data && data.length === 0 ? (
-        <View style={styles.empty}>
-          <AppText tone="textSecondary" align="center">
-            Nessun risultato. Puoi creare l’esercizio.
-          </AppText>
-        </View>
-      ) : null}
-    </ScreenScroll>
+      <GroupedList<Item>
+        data={[create, ...(data ?? [])]}
+        keyOf={(item) => String(item.id)}
+        header={
+          <ScrollView horizontal showsHorizontalScrollIndicator={false} contentContainerStyle={styles.chips}>
+            <Chip label="Tutti" selected={muscle === null} onPress={() => setMuscle(null)} />
+            {MUSCLES.map((m) => (
+              <Chip key={m.key} label={m.label} selected={muscle === m.key} onPress={() => setMuscle(muscle === m.key ? null : m.key)} />
+            ))}
+          </ScrollView>
+        }
+        footer={
+          data && data.length === 0 ? (
+            <View style={styles.empty}>
+              <AppText tone="textSecondary" align="center">
+                Nessun risultato. Puoi creare l’esercizio.
+              </AppText>
+            </View>
+          ) : undefined
+        }
+        renderRow={(item) =>
+          'name' in item ? (
+            <Row
+              title={names(item).title}
+              subtitle={names(item).subtitle ?? `${muscleLabel(item.muscle)} · ${equipmentLabel(item.equipment)}`}
+              onPress={() => void pick(item)}
+              chevron={false}
+            />
+          ) : (
+            <ActionRow
+              label={query.trim() ? `Crea «${query.trim()}»` : 'Crea un esercizio'}
+              onPress={() => router.push({ pathname: '/exercise-new', params: { target, id, name: query.trim() } })}
+            />
+          )
+        }
+      />
+    </>
   );
 }
 
