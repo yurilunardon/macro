@@ -13,22 +13,22 @@ import { useLiveQuery } from '@/db/live';
 import { saveMealFromDiary } from '@/db/saved-meals';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { remainingKcal } from '@/lib/calories';
-import { addDays, formatDayTitle, weekdayOf, type DateKey } from '@/lib/dates';
+import { addDays, weekdayOf, type DateKey } from '@/lib/dates';
 import { countLabel, formatKcal, formatNumber } from '@/lib/format';
 import { dayTypeFor, type DayType } from '@/lib/goals';
 import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
 import { sumNutrients } from '@/lib/nutrition';
 import { QUICK_ADD_NAME } from '@/lib/quick-add';
 import { haptics } from '@/services/haptics';
+import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 import { AppText } from './app-text';
-import { ActionRow, Card, ListGroup, Row } from './card';
+import { Card, ListGroup } from './card';
 import { Icon } from './icon';
-import { MacroPills } from './macro-pills';
 import { MenuButton } from './menu-button';
 import { project } from './motion';
-import { NutrientGrid } from './nutrient-grid';
+import { MacroBars } from './nutrient-grid';
+import { MacroInline } from './nutrition';
 import { CalorieRing } from './progress';
 import { confirmDestructive } from './prompt';
 import { SwipeToDelete } from './swipe-to-delete';
@@ -38,13 +38,17 @@ import { toast } from './toast';
 export type DayPager = {
   /** Horizontal position of the row of pages. */
   track: SharedValue<number>;
-  /** Index of the page being shown, in days from the pager's anchor date. */
+  /** Slot the pages are moving to (or resting on). */
   position: SharedValue<number>;
+  /** Slot of the day the screen has settled on: a swipe moves at most one page from it. */
+  settled: SharedValue<number>;
   /** Width of a page plus the gap to the next one. */
   stride: number;
   pageWidth: number;
-  /** Called on the JS side once a swipe has settled on another day. */
-  onSwipe: (position: number) => void;
+  /** Called on the JS side as soon as a swipe lets go towards another slot. */
+  onSwipe: (slot: number) => void;
+  /** Called on the JS side once the pages have come to rest. */
+  onSettle: (slot: number) => void;
 };
 
 const PAGE_SPRING = { duration: 450, dampingRatio: 1 };
@@ -71,6 +75,7 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
+  const hidden = usePendingDeletes();
 
   const { data } = useLiveQuery(`diary:${date}`, async (database) => {
     const [entries, yesterday, plan, training] = await Promise.all([
@@ -85,14 +90,14 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
       plan,
       scheduledType: dayTypeFor(weekdayOf(date), training.trainingWeekdays, null),
     };
-  });
+  }, ['food', 'settings']);
   const loaded = data !== undefined;
   useEffect(() => {
     if (loaded) onReady(date);
   }, [loaded, date, onReady]);
 
   // Dragging the summary moves the whole row of pages; far or fast enough, it turns the day.
-  const { track, position, stride, pageWidth, onSwipe } = pager;
+  const { track, position, settled, stride, pageWidth, onSwipe, onSettle } = pager;
   const dragStart = useSharedValue(0);
   const pan = usePanGesture({
     enabled: active,
@@ -113,26 +118,35 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
       const projected = track.get() + project(event.velocityX, 0.99) + position.get() * stride;
       // Swiping left goes forward in time, as in Calendar.
       const direction = !event.canceled && Math.abs(projected) > pageWidth * 0.3 ? (projected < 0 ? 1 : -1) : 0;
-      const next = position.get() + direction;
+      // Only the pages next to the settled one are drawn, so never go further than those.
+      const base = settled.get();
+      const next = Math.min(base + 1, Math.max(base - 1, position.get() + direction));
+      const moved = next !== position.get();
       position.set(next);
-      track.set(withSpring(-next * stride, { ...PAGE_SPRING, velocity: event.velocityX }));
-      if (direction !== 0) {
+      track.set(
+        withSpring(-next * stride, { ...PAGE_SPRING, velocity: event.velocityX }, (finished) => {
+          'worklet';
+          if (finished) scheduleOnRN(onSettle, next);
+        }),
+      );
+      if (moved) {
         scheduleOnRN(tick);
         scheduleOnRN(onSwipe, next);
       }
     },
   });
 
-  const entries = data?.entries ?? [];
+  const entries = (data?.entries ?? []).filter((e) => !hidden.has(`entry:${e.id}`));
   const totals = sumNutrients(entries.map((e) => e.totals));
   const targets = data?.plan.targets;
-  const remaining = remainingKcal(totals.kcal, targets?.kcal ?? 0);
-  const dayName = formatDayTitle(date, today).toLowerCase();
   // From today things are copied to tomorrow (to plan ahead), from any other day to today.
   const copyTarget = date === today ? { date: addDays(today, 1), label: 'domani' } : { date: today, label: 'oggi' };
 
   const openAdd = (meal: MealKey, scan = false) =>
     router.push({ pathname: scan ? '/add/scan' : '/add', params: { meal, date } });
+
+  const removeEntry = (entry: Entry) =>
+    deleteWithUndo({ key: `entry:${entry.id}`, title: `${entry.name} eliminato`, run: () => deleteEntry(db, entry.id) });
 
   const copied = (count: number, where: string) => {
     haptics.success();
@@ -150,7 +164,7 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
   const saveAsMeal = (meal: MealKey, count: number) =>
     Alert.prompt(
       'Salva come pasto',
-      `Dai un nome a questi ${countLabel(count, 'alimento', 'alimenti')}: li ritrovi in Aggiungi → Miei e li registri tutti insieme con un tocco.`,
+      countLabel(count, 'alimento', 'alimenti'),
       [
         { text: 'Annulla', style: 'cancel' },
         {
@@ -160,7 +174,7 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
             if (trimmed === '') return;
             await saveMealFromDiary(db, { date, meal, name: trimmed });
             haptics.success();
-            toast.show(`«${trimmed}» è tra i tuoi pasti`, 'bookmark.fill');
+            toast.show(`${trimmed} salvato`, 'bookmark.fill');
           },
         },
       ],
@@ -171,7 +185,7 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
   const clearMeal = async (meal: MealKey, count: number, kcal: number) => {
     const ok = await confirmDestructive({
       title: `Svuotare ${mealLabel(meal).toLowerCase()}?`,
-      message: `Elimini ${countLabel(count, 'alimento', 'alimenti')} (${formatKcal(kcal)} kcal) di ${dayName}.`,
+      message: `${countLabel(count, 'alimento', 'alimenti')}, ${formatKcal(kcal)} kcal.`,
       action: 'Svuota',
     });
     if (ok) await deleteMealEntries(db, date, meal);
@@ -196,6 +210,10 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
     void setDayType(db, date, type === data?.scheduledType ? null : type);
   };
 
+  const dayType = data?.plan.dayType ?? null;
+  const dayTypeLabel = dayType === 'training' ? 'Allenamento' : 'Riposo';
+  const dayTypeIcon = dayType === 'training' ? 'figure.strengthtraining.traditional' : 'bed.double.fill';
+
   return (
     <View>
       {data?.plan.isDefault ? (
@@ -205,7 +223,7 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
             <View style={styles.flex}>
               <AppText variant="headline">Imposta i tuoi obiettivi</AppText>
               <AppText variant="subhead" tone="textSecondary">
-                Calcola calorie e macro da peso, altezza e attività.
+                Calorie e macro da peso, altezza e attività.
               </AppText>
             </View>
             <Icon name="chevron.right" size={13} tone="textSecondary" weight="semibold" />
@@ -216,61 +234,56 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
       <GestureDetector gesture={pan} touchAction="pan-y">
         <View>
           <Card style={styles.summary}>
-            <View style={styles.summaryTop}>
-              <CalorieRing eaten={totals.kcal} target={targets?.kcal ?? 0} />
-              <View style={styles.summaryStats}>
-                <View>
-                  <AppText variant="footnote" tone="textSecondary">
-                    {remaining.over ? 'Oltre l’obiettivo' : 'Rimanenti'}
-                  </AppText>
-                  <AppText variant="title2" numeric tone={remaining.over ? 'danger' : 'text'}>
-                    {formatKcal(remaining.kcal)}
-                    <AppText variant="subhead" tone="textSecondary">
-                      {' kcal'}
-                    </AppText>
-                  </AppText>
-                </View>
-                {data?.plan.dayType ? (
-                  active ? (
-                    <MenuButton
-                      icon={data.plan.dayType === 'training' ? 'figure.strengthtraining.traditional' : 'bed.double.fill'}
-                      title={data.plan.dayType === 'training' ? 'Allenamento' : 'Riposo'}
-                      accessibilityLabel="Tipo di giorno: cambia gli obiettivi"
-                      groups={[
-                        {
-                          title: 'Obiettivi del giorno',
-                          actions: [
-                            {
-                              label: 'Allenamento',
-                              icon: 'figure.strengthtraining.traditional',
-                              checked: data.plan.dayType === 'training',
-                              onPress: () => changeDayType('training'),
-                            },
-                            {
-                              label: 'Riposo',
-                              icon: 'bed.double.fill',
-                              checked: data.plan.dayType === 'rest',
-                              onPress: () => changeDayType('rest'),
-                            },
-                          ],
-                        },
-                      ]}
-                    />
-                  ) : (
+            <View style={styles.summaryHead}>
+              {dayType ? (
+                active ? (
+                  <MenuButton
+                    icon={dayTypeIcon}
+                    title={dayTypeLabel}
+                    accessibilityLabel="Tipo di giorno: cambia gli obiettivi"
+                    groups={[
+                      {
+                        title: 'Obiettivi del giorno',
+                        actions: [
+                          {
+                            label: 'Allenamento',
+                            icon: 'figure.strengthtraining.traditional',
+                            checked: dayType === 'training',
+                            onPress: () => changeDayType('training'),
+                          },
+                          { label: 'Riposo', icon: 'bed.double.fill', checked: dayType === 'rest', onPress: () => changeDayType('rest') },
+                        ],
+                      },
+                    ]}
+                  />
+                ) : (
+                  <View style={styles.dayType}>
+                    <Icon name={dayTypeIcon} size={15} tone="accent" />
                     <AppText variant="subhead" weight="600" tone="accent">
-                      {data.plan.dayType === 'training' ? 'Allenamento' : 'Riposo'}
+                      {dayTypeLabel}
                     </AppText>
-                  )
-                ) : null}
-              </View>
+                  </View>
+                )
+              ) : (
+                <View />
+              )}
+              <AppText variant="subhead" tone="textSecondary" numeric>
+                <AppText variant="subhead" weight="600" numeric>
+                  {formatKcal(totals.kcal)}
+                </AppText>
+                {` / ${formatKcal(targets?.kcal ?? 0)} kcal`}
+              </AppText>
             </View>
-            {targets ? (
-              <NutrientGrid
-                totals={totals}
-                targets={targets}
-                onPress={(key) => router.push({ pathname: '/nutrients', params: { date, key } })}
-              />
-            ) : null}
+            <View style={styles.summaryBody}>
+              <CalorieRing eaten={totals.kcal} target={targets?.kcal ?? 0} />
+              {targets ? (
+                <MacroBars
+                  totals={totals}
+                  targets={targets}
+                  onPress={(key) => router.push({ pathname: '/nutrients', params: { date, key } })}
+                />
+              ) : null}
+            </View>
           </Card>
         </View>
       </GestureDetector>
@@ -324,23 +337,25 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
           <View key={meal.key} style={styles.meal}>
             <ListGroup>
               <View style={styles.mealHeader}>
-                <Icon name={meal.symbol} size={18} tone="textSecondary" />
-                <View style={styles.flex}>
-                  <AppText variant="headline">{meal.label}</AppText>
-                  {count > 0 ? <MacroPills totals={mealTotals} /> : null}
-                </View>
-                {count > 0 ? (
-                  <AppText variant="headline" numeric>
-                    {formatKcal(mealTotals.kcal)}
-                    <AppText variant="footnote" tone="textSecondary">
-                      {' kcal'}
+                <View style={styles.mealTitle}>
+                  <View style={styles.mealName}>
+                    <Icon name={meal.symbol} size={17} tone="textSecondary" />
+                    <AppText variant="headline">{meal.label}</AppText>
+                  </View>
+                  {count > 0 ? (
+                    <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
+                      <AppText variant="footnote" weight="600" numeric>
+                        {`${formatKcal(mealTotals.kcal)} kcal`}
+                      </AppText>
+                      {'   '}
+                      <MacroInline totals={mealTotals} />
                     </AppText>
-                  </AppText>
-                ) : null}
+                  ) : null}
+                </View>
                 {active ? menu : <Icon name="ellipsis.circle" size={22} tone="accent" />}
               </View>
               {mealEntries.map((entry) => (
-                <SwipeToDelete key={entry.id} onDelete={() => void deleteEntry(db, entry.id)}>
+                <SwipeToDelete key={entry.id} onDelete={() => removeEntry(entry)}>
                   <Link href={`/entry/${entry.id}`} asChild>
                     <Link.Trigger>
                       <Pressable
@@ -350,23 +365,12 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
                           <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
                             <View style={styles.entryText}>
                               <AppText numberOfLines={1}>{entry.name}</AppText>
-                              {entryDetail(entry) ? (
-                                <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                                  {entryDetail(entry)}
-                                </AppText>
-                              ) : null}
-                              <View style={styles.entryPills}>
-                                <MacroPills totals={entry.totals} />
-                              </View>
-                            </View>
-                            <View style={styles.entryKcal}>
-                              <AppText variant="headline" numeric>
-                                {formatKcal(entry.totals.kcal)}
-                              </AppText>
-                              <AppText variant="caption" tone="textSecondary">
-                                kcal
+                              <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                                {entryDetail(entry) ? `${entryDetail(entry)}   ` : ''}
+                                <MacroInline totals={entry.totals} />
                               </AppText>
                             </View>
+                            <Kcal value={entry.totals.kcal} />
                           </View>
                         )}
                       </Pressable>
@@ -385,23 +389,37 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
                       <Link.MenuAction icon="doc.on.doc" onPress={() => void copyEntryTo(entry)}>
                         {`Copia in ${copyTarget.label}`}
                       </Link.MenuAction>
-                      <Link.MenuAction icon="trash" destructive onPress={() => void deleteEntry(db, entry.id)}>
+                      <Link.MenuAction icon="trash" destructive onPress={() => removeEntry(entry)}>
                         Elimina
                       </Link.MenuAction>
                     </Link.Menu>
                   </Link>
                 </SwipeToDelete>
               ))}
-              <ActionRow label="Aggiungi" onPress={() => openAdd(meal.key)} />
-              {canCopy ? (
-                <Row
-                  title="Copia da ieri"
-                  subtitle="Ripeti gli stessi alimenti di ieri"
-                  icon={<Icon name="clock.arrow.circlepath" size={18} tone="textSecondary" />}
-                  onPress={() => void copyFromYesterday(meal.key)}
-                  chevron={false}
-                />
-              ) : null}
+              <View style={styles.addRow}>
+                <Pressable
+                  onPress={() => openAdd(meal.key)}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}
+                  style={({ pressed }) => [styles.add, pressed && styles.pressed]}>
+                  <Icon name="plus.circle.fill" size={20} tone="accent" />
+                  <AppText tone="accent" weight="600">
+                    Aggiungi
+                  </AppText>
+                </Pressable>
+                {canCopy ? (
+                  <Pressable
+                    onPress={() => void copyFromYesterday(meal.key)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Copia ${meal.label.toLowerCase()} da ieri`}
+                    style={({ pressed }) => [styles.copy, { backgroundColor: theme.fill }, pressed && styles.pressed]}>
+                    <Icon name="clock.arrow.circlepath" size={14} tone="textSecondary" />
+                    <AppText variant="subhead" weight="600" tone="textSecondary">
+                      Copia da ieri
+                    </AppText>
+                  </Pressable>
+                ) : null}
+              </View>
             </ListGroup>
           </View>
         );
@@ -410,30 +428,54 @@ export function DayPage({ date, today, active, pager, onReady }: DayPageProps) {
   );
 }
 
+/** "435 kcal" on one line, the number leading. */
+function Kcal({ value }: { value: number }) {
+  return (
+    <AppText numeric tone="textSecondary">
+      {formatKcal(value)}
+      <AppText variant="footnote" tone="textSecondary">
+        {' kcal'}
+      </AppText>
+    </AppText>
+  );
+}
+
 const styles = StyleSheet.create({
-  flex: { flex: 1, gap: Spacing.xs + 2 },
+  flex: { flex: 1 },
+  pressed: { opacity: 0.5 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
-  summary: { gap: Spacing.lg },
-  summaryTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xl },
-  summaryStats: { flex: 1, gap: Spacing.md, alignItems: 'flex-start' },
-  meal: { marginTop: Spacing.lg },
+  summary: { gap: Spacing.md, paddingTop: Spacing.md },
+  summaryHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 },
+  dayType: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2, paddingVertical: Spacing.xs },
+  summaryBody: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  meal: { marginTop: Spacing.md },
   mealHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.sm,
+    gap: Spacing.xs,
     paddingLeft: Spacing.lg,
     paddingRight: Spacing.xs,
-    paddingVertical: Spacing.sm,
-    minHeight: 56,
+    paddingVertical: Spacing.md,
   },
+  mealTitle: { flex: 1, gap: 2 },
+  mealName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   entry: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
+    paddingVertical: Spacing.sm + 3,
+    minHeight: 56,
   },
-  entryText: { flex: 1, gap: 2 },
-  entryPills: { marginTop: Spacing.xs },
-  entryKcal: { alignItems: 'flex-end' },
+  entryText: { flex: 1, gap: 1 },
+  addRow: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
+  add: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, minHeight: 48 },
+  copy: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.xs + 2,
+    paddingHorizontal: Spacing.md,
+    height: 32,
+    borderRadius: 16,
+  },
 });

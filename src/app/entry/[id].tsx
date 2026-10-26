@@ -30,7 +30,7 @@ export default function EntryScreen() {
     const entry = await getEntry(database, entryId);
     const food = entry?.foodId ? await getFood(database, entry.foodId) : null;
     return { entry, servingSize: food?.servingSize ?? null };
-  });
+  }, ['food']);
 
   if (!data || !data.entry) {
     return (

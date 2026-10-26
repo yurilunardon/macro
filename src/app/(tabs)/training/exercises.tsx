@@ -20,7 +20,7 @@ export default function ExercisesScreen() {
   const { language, names } = useExerciseNames();
   const [query, setQuery] = useState('');
   const [muscle, setMuscle] = useState<Muscle | null>(null);
-  const { data } = useLiveQuery(`exercises:${query}:${muscle ?? ''}`, (database) => searchExercises(database, { query, muscle }));
+  const { data } = useLiveQuery(`exercises:${query}:${muscle ?? ''}`, (database) => searchExercises(database, { query, muscle }), ['training', 'settings']);
 
   return (
     <ScreenScroll>
@@ -64,7 +64,7 @@ export default function ExercisesScreen() {
           />
         ))}
       </ListGroup>
-      <SectionFooter>In cima gli esercizi che fai più spesso. Con «Aa» scegli se vedere prima il nome inglese o quello italiano; la ricerca li trova tutti e due.</SectionFooter>
+      <SectionFooter>I più usati in cima. «Aa» cambia la lingua dei nomi.</SectionFooter>
     </ScreenScroll>
   );
 }

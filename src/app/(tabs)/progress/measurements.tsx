@@ -20,7 +20,7 @@ type Fields = Record<MeasurementKind, string>;
 
 export default function MeasurementsScreen() {
   const today = useToday();
-  const { data } = useLiveQuery('measurements', (database) => getMeasurements(database));
+  const { data } = useLiveQuery('measurements', (database) => getMeasurements(database), ['body']);
   if (!data) {
     return (
       <View style={styles.center}>
@@ -85,8 +85,7 @@ function MeasurementsForm({ rows, today }: { rows: Measurement[]; today: string 
         })}
       </ListGroup>
       <SectionFooter>
-        Misura sempre allo stesso modo: al mattino, a digiuno, con il metro appoggiato senza stringere. In grigio
-        l’ultima misura. Lascia vuoti i campi che non misuri.
+        Misura al mattino, a digiuno, senza stringere il metro. In grigio l’ultima misura.
       </SectionFooter>
       <View style={styles.button}>
         <Button title="Salva misure" onPress={() => void save()} loading={saving} />
@@ -117,7 +116,7 @@ function MeasurementsForm({ rows, today }: { rows: Measurement[]; today: string 
               </SwipeToDelete>
             ))}
           </ListGroup>
-          <SectionFooter>Centimetri, tranne la massa grassa. Scorri a sinistra per eliminare un giorno.</SectionFooter>
+          <SectionFooter>Centimetri, tranne la massa grassa.</SectionFooter>
         </>
       ) : null}
     </ScreenScroll>

@@ -7,7 +7,7 @@ export function useExerciseNames(): {
   language: NameLanguage;
   names: (exercise: { name: string; nameEn: string | null }) => { title: string; subtitle: string | null };
 } {
-  const { data } = useLiveQuery('exercise-names', (database) => getSetting(database, 'exerciseNames'));
+  const { data } = useLiveQuery('exercise-names', (database) => getSetting(database, 'exerciseNames'), ['settings']);
   const language: NameLanguage = data ?? 'en';
   return { language, names: (exercise) => exerciseNames(exercise, language) };
 }

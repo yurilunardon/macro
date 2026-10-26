@@ -74,7 +74,7 @@ export default function ProgressScreen() {
         getMeasurements(database),
       ]);
     return { weights, recentWeights, latest, totals, plans, goalWeight, profile, training, measurements };
-  });
+  }, ['body', 'food', 'settings']);
 
   const weights = data?.weights ?? [];
   const first = weights[0];
@@ -126,7 +126,7 @@ export default function ProgressScreen() {
   const editGoalWeight = () =>
     promptNumber({
       title: 'Peso obiettivo',
-      message: 'In chilogrammi. Lascia vuoto e salva per toglierlo.',
+      message: 'In chilogrammi. Vuoto per eliminarlo.',
       defaultValue: data?.goalWeight ? numberToInput(data.goalWeight) : '',
       min: 20,
       max: 400,
@@ -216,7 +216,7 @@ export default function ProgressScreen() {
           />
         ) : null}
       </ListGroup>
-      <SectionFooter>Una pesata al giorno: se ti pesi di nuovo, la nuova sostituisce quella vecchia.</SectionFooter>
+      <SectionFooter>Una pesata al giorno: l’ultima sostituisce la precedente.</SectionFooter>
 
       <SectionTitle>Fabbisogno reale</SectionTitle>
       <Card style={styles.card}>

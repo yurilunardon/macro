@@ -2,6 +2,7 @@ import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
+import Animated, { FadeIn, LayoutAnimationConfig } from 'react-native-reanimated';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -14,6 +15,7 @@ import { ProgressBar } from '@/components/progress';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SetTypeMenu } from '@/components/set-type-menu';
+import { SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Radius, Spacing } from '@/constants/theme';
 import { restFor, updateExerciseOptions } from '@/db/exercises';
@@ -26,8 +28,8 @@ import {
   finishWorkout,
   getActiveWorkout,
   getWorkout,
-  moveWorkoutExercise,
   removeWorkoutExercise,
+  reorderWorkoutExercises,
   setWorkoutExerciseRest,
   updateSet,
   updateWorkoutNotes,
@@ -72,6 +74,7 @@ export default function WorkoutScreen() {
   const theme = useTheme();
   const now = useClock(1000);
   const { names } = useExerciseNames();
+  const [reordering, setReordering] = useState(false);
   const { data } = useLiveQuery('workout:active', async (database) => {
     const active = await getActiveWorkout(database);
     const [workout, restAlert] = await Promise.all([
@@ -79,7 +82,7 @@ export default function WorkoutScreen() {
       getSetting(database, 'restAlert'),
     ]);
     return { workout, sound: restAlert === 'sound' };
-  });
+  }, ['training', 'settings']);
 
   if (!data) {
     return (
@@ -106,14 +109,14 @@ export default function WorkoutScreen() {
 
   const onSetDone = (setId: number, rest: number) => {
     const next = nextSetLabel(workout, setId, title);
-    restTimer.start(rest, next ? `Poi: ${next}` : 'Ultima serie fatta: puoi terminare', { sound: data.sound });
+    restTimer.start(rest, next ? `Poi: ${next}` : 'Ultima serie completata', { sound: data.sound });
   };
 
   const finish = async () => {
     if (doneCount === 0) {
       const discard = await confirmDestructive({
         title: 'Nessuna serie spuntata',
-        message: 'Non c’è niente da salvare: vuoi annullare l’allenamento?',
+        message: 'Non c’è niente da salvare.',
         action: 'Annulla allenamento',
       });
       if (!discard) return;
@@ -141,7 +144,7 @@ export default function WorkoutScreen() {
   const discard = async () => {
     const ok = await confirmDestructive({
       title: 'Annullare l’allenamento?',
-      message: 'Le serie registrate in questo allenamento verranno eliminate.',
+      message: 'Le serie registrate verranno eliminate.',
       action: 'Annulla allenamento',
     });
     if (!ok) return;
@@ -170,17 +173,31 @@ export default function WorkoutScreen() {
           <Stack.Toolbar.Button icon="chevron.down" accessibilityLabel="Riduci: l’allenamento continua" onPress={() => router.back()} />
         </Stack.Toolbar>
         <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Altre azioni">
-            <Stack.Toolbar.MenuAction icon="note.text" onPress={editNotes}>
-              {workout.notes ? 'Modifica le note' : 'Aggiungi una nota'}
-            </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon="xmark.circle" destructive onPress={() => void discard()}>
-              Annulla allenamento
-            </Stack.Toolbar.MenuAction>
-          </Stack.Toolbar.Menu>
-          <Stack.Toolbar.Button variant="prominent" onPress={() => void finish()}>
-            Fine
-          </Stack.Toolbar.Button>
+          {reordering ? (
+            <Stack.Toolbar.Button variant="done" onPress={() => setReordering(false)}>
+              Fine
+            </Stack.Toolbar.Button>
+          ) : (
+            <>
+              <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Altre azioni">
+                <Stack.Toolbar.MenuAction
+                  icon="arrow.up.arrow.down"
+                  disabled={workout.exercises.length < 2}
+                  onPress={() => setReordering(true)}>
+                  Riordina esercizi
+                </Stack.Toolbar.MenuAction>
+                <Stack.Toolbar.MenuAction icon="note.text" onPress={editNotes}>
+                  {workout.notes ? 'Modifica nota' : 'Aggiungi nota'}
+                </Stack.Toolbar.MenuAction>
+                <Stack.Toolbar.MenuAction icon="xmark.circle" destructive onPress={() => void discard()}>
+                  Annulla allenamento
+                </Stack.Toolbar.MenuAction>
+              </Stack.Toolbar.Menu>
+              <Stack.Toolbar.Button variant="prominent" onPress={() => void finish()}>
+                Termina
+              </Stack.Toolbar.Button>
+            </>
+          )}
         </Stack.Toolbar>
 
         <View style={styles.stats}>
@@ -190,7 +207,7 @@ export default function WorkoutScreen() {
         </View>
         {doneCount === 0 ? (
           <AppText variant="footnote" tone="textSecondary" align="center" style={styles.howTo}>
-            Ogni riga è una serie: controlla chili e ripetizioni, poi tocca ✓ quando l’hai finita. Parte il recupero.
+            Tocca ✓ a fine serie: parte il recupero.
           </AppText>
         ) : null}
 
@@ -203,18 +220,45 @@ export default function WorkoutScreen() {
           </Pressable>
         ) : null}
 
-        {workout.exercises.map((ex, index) => (
-          <ExerciseBlock
-            key={ex.id}
-            item={ex}
-            names={names(ex.exercise)}
-            first={index === 0}
-            last={index === workout.exercises.length - 1}
-            onSetDone={onSetDone}
-          />
-        ))}
+        {reordering ? (
+          <View style={styles.reorder}>
+            <SortableList
+              items={workout.exercises}
+              keyOf={(ex) => String(ex.id)}
+              rowHeight={60}
+              onReorder={(keys) => void reorderWorkoutExercises(db, keys.map(Number))}
+              renderRow={(ex) => (
+                <View>
+                  <AppText numberOfLines={1}>{title(ex)}</AppText>
+                  <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                    {`${ex.sets.length} serie · ${ex.sets.filter((set) => set.done).length} fatte`}
+                  </AppText>
+                </View>
+              )}
+            />
+            <AppText variant="footnote" tone="textSecondary" style={styles.reorderHint}>
+              Tieni premuto un esercizio e trascinalo.
+            </AppText>
+          </View>
+        ) : (
+          // Rows already there when the screen opens appear with it; new sets slide in.
+          <LayoutAnimationConfig skipEntering>
+            {workout.exercises.map((ex) => (
+              <ExerciseBlock
+                key={ex.id}
+                item={ex}
+                names={names(ex.exercise)}
+                onSetDone={onSetDone}
+                onReorder={() => {
+                  haptics.medium();
+                  setReordering(true);
+                }}
+              />
+            ))}
+          </LayoutAnimationConfig>
+        )}
 
-        <View style={styles.footer}>
+        <View style={[styles.footer, reordering && styles.hidden]}>
           <Button
             title="Aggiungi esercizio"
             variant="tinted"
@@ -246,12 +290,12 @@ function Stat({ label, value }: { label: string; value: string }) {
 type ExerciseBlockProps = {
   item: WorkoutExercise;
   names: { title: string; subtitle: string | null };
-  first: boolean;
-  last: boolean;
   onSetDone: (setId: number, rest: number) => void;
+  /** Switches the screen to dragging the exercises into another order. */
+  onReorder: () => void;
 };
 
-function ExerciseBlock({ item, names, first, last, onSetDone }: ExerciseBlockProps) {
+function ExerciseBlock({ item, names, onSetDone, onReorder }: ExerciseBlockProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const { exercise } = item;
@@ -264,7 +308,7 @@ function ExerciseBlock({ item, names, first, last, onSetDone }: ExerciseBlockPro
   const editNote = () =>
     Alert.prompt(
       'Nota fissa',
-      'Resta su questo esercizio in ogni allenamento: regolazioni della macchina, presa, attenzioni.',
+      'Visibile in ogni allenamento con questo esercizio.',
       [
         { text: 'Annulla', style: 'cancel' },
         { text: 'Salva', onPress: (text?: string) => void updateExerciseOptions(db, exercise.id, { note: text ?? '' }) },
@@ -277,14 +321,18 @@ function ExerciseBlock({ item, names, first, last, onSetDone }: ExerciseBlockPro
     <View style={styles.exercise}>
       <ListGroup>
         <View style={styles.exerciseHeader}>
-          <View style={styles.flex}>
+          <Pressable
+            onLongPress={onReorder}
+            delayLongPress={350}
+            accessibilityHint="Tieni premuto per riordinare gli esercizi"
+            style={styles.flex}>
             <AppText variant="headline" tone="accent">
               {names.title}
             </AppText>
             <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
               {[names.subtitle, range ? `${item.sets.length} × ${range}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
             </AppText>
-          </View>
+          </Pressable>
           <MenuButton
             icon="ellipsis.circle"
             accessibilityLabel={`Opzioni per ${names.title}`}
@@ -302,23 +350,22 @@ function ExerciseBlock({ item, names, first, last, onSetDone }: ExerciseBlockPro
                 title: 'Blocchi',
                 actions: [
                   {
-                    label: exercise.trackRir ? 'Togli la colonna RIR' : 'Aggiungi la colonna RIR',
+                    label: exercise.trackRir ? 'Nascondi colonna RIR' : 'Mostra colonna RIR',
                     icon: 'gauge.with.dots.needle.33percent',
                     onPress: () => void updateExerciseOptions(db, exercise.id, { trackRir: !exercise.trackRir }),
                   },
-                  { label: exercise.note ? 'Modifica la nota fissa' : 'Aggiungi una nota fissa', icon: 'pin', onPress: editNote },
+                  { label: exercise.note ? 'Modifica nota fissa' : 'Aggiungi nota fissa', icon: 'pin', onPress: editNote },
                 ],
               },
               {
                 actions: [
-                  ...(first ? [] : [{ label: 'Sposta su', icon: 'arrow.up' as const, onPress: () => void moveWorkoutExercise(db, item.id, -1) }]),
-                  ...(last ? [] : [{ label: 'Sposta giù', icon: 'arrow.down' as const, onPress: () => void moveWorkoutExercise(db, item.id, 1) }]),
+                  { label: 'Riordina esercizi', icon: 'arrow.up.arrow.down', onPress: onReorder },
                   {
                     label: 'Sostituisci esercizio',
                     icon: 'arrow.triangle.2.circlepath',
                     onPress: () => router.push({ pathname: '/exercise-picker', params: { target: 'replace', id: item.id } }),
                   },
-                  { label: 'Rimuovi esercizio', icon: 'trash', destructive: true, onPress: () => void removeWorkoutExercise(db, item.id) },
+                  { label: 'Elimina esercizio', icon: 'trash', destructive: true, onPress: () => void removeWorkoutExercise(db, item.id) },
                 ],
               },
             ]}
@@ -363,7 +410,8 @@ function ExerciseBlock({ item, names, first, last, onSetDone }: ExerciseBlockPro
         {item.sets.map((set, index) => {
           const badge = set.type === 'warmup' ? 'R' : set.type === 'drop' ? 'D' : set.type === 'failure' ? 'C' : String(++ordinal);
           return (
-            <SwipeToDelete key={set.id} onDelete={() => void deleteSet(db, set.id)}>
+            <Animated.View key={set.id} entering={FadeIn.duration(200)}>
+            <SwipeToDelete onDelete={() => void deleteSet(db, set.id)}>
               <SetRow
                 set={set}
                 badge={badge}
@@ -379,6 +427,7 @@ function ExerciseBlock({ item, names, first, last, onSetDone }: ExerciseBlockPro
                 onDelete={() => void deleteSet(db, set.id)}
               />
             </SwipeToDelete>
+            </Animated.View>
           );
         })}
         <ActionRow label="Aggiungi serie" symbol="plus" onPress={() => void addSet(db, item.id)} />
@@ -621,6 +670,9 @@ const styles = StyleSheet.create({
   },
   check: { height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   footer: { paddingTop: Spacing.xl, gap: Spacing.md },
+  hidden: { display: 'none' },
+  reorder: { marginTop: Spacing.lg },
+  reorderHint: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
   bottomSpace: { height: 170 },
   restBar: {
     position: 'absolute',

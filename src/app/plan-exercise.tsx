@@ -109,8 +109,8 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
       </ListGroup>
       <SectionFooter>
         {timed
-          ? 'Quando tieni il massimo in tutte le serie, l’app ti propone qualche secondo in più.'
-          : 'Doppia progressione: resti sullo stesso carico aggiungendo ripetizioni; quando tutte le serie arrivano al massimo della fascia, l’app ti propone il carico successivo.'}
+          ? 'Al massimo in tutte le serie, ti propone più secondi.'
+          : 'Al massimo della fascia in tutte le serie, ti propone più carico.'}
       </SectionFooter>
 
       <SectionTitle>Recupero</SectionTitle>
@@ -128,7 +128,7 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
 
       <View style={styles.actions}>
         <Button title="Salva" onPress={() => void save()} disabled={!valid} />
-        <Button title="Togli dalla scheda" variant="destructive" onPress={() => void remove()} />
+        <Button title="Elimina dalla scheda" variant="destructive" onPress={() => void remove()} />
       </View>
     </ScrollView>
   );

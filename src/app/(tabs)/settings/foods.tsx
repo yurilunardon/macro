@@ -30,6 +30,7 @@ export default function FoodsScreen() {
 
   const { data } = useLiveQuery(`foods:${list}`, (database) =>
     list === 'custom' ? getCustomFoods(database) : list === 'favorites' ? getFavoriteFoods(database) : getRecentFoods(database, 100),
+    ['food'],
   );
 
   // A recipe's values come from its ingredients, so it opens in the recipe editor.
@@ -45,9 +46,9 @@ export default function FoodsScreen() {
     ]);
 
   const footer: Record<ListKey, string> = {
-    custom: 'Gli alimenti che hai creato o corretto. Tocca per modificarne i valori, scorri a sinistra per eliminarli.',
-    favorites: 'Li trovi per primi in Aggiungi → Preferiti. Scorri a sinistra per toglierne uno.',
-    recent: 'Gli ultimi alimenti che hai registrato nel diario: si aggiornano da soli.',
+    custom: 'Alimenti creati o corretti da te.',
+    favorites: 'In cima quando aggiungi un alimento.',
+    recent: 'Gli ultimi registrati.',
   };
 
   return (
@@ -67,7 +68,7 @@ export default function FoodsScreen() {
         {(data ?? []).map((food) => (
           <SwipeToDelete
             key={food.id}
-            label={list === 'favorites' ? 'Togli' : 'Elimina'}
+            label={list === 'favorites' ? 'Rimuovi' : 'Elimina'}
             onDelete={() => (list === 'favorites' ? void setFavorite(db, food.id, false) : remove(food))}>
             <FoodRow food={food} onPress={() => edit(food)} onLongPress={list === 'favorites' ? undefined : () => askDelete(food)} />
           </SwipeToDelete>

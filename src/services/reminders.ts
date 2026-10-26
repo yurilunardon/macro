@@ -61,7 +61,7 @@ export async function syncNotifications(input: {
     await Notifications.scheduleNotificationAsync({
       identifier: `${PREFIX}expiry`,
       content: {
-        title: 'Rinnova Macro',
+        title: 'Rinnova Fuel',
         body: `L’app scade ${formatExpiry(input.expiresAt)}. Apri AltStore e tocca Refresh All, con il Mac acceso sulla stessa Wi-Fi.`,
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: expiryAt },

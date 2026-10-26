@@ -11,9 +11,9 @@ export type ReminderSettings = Record<ReminderKey, ReminderSetting> & {
 
 export const REMINDERS: readonly { key: ReminderKey; label: string; title: string; body: string }[] = [
   { key: 'weighIn', label: 'Pesata', title: 'Pesati', body: 'Al mattino, prima di colazione: registralo in Progressi.' },
-  { key: 'breakfast', label: 'Colazione', title: 'Colazione', body: 'Registra la colazione in Macro.' },
-  { key: 'lunch', label: 'Pranzo', title: 'Pranzo', body: 'Registra il pranzo in Macro.' },
-  { key: 'dinner', label: 'Cena', title: 'Cena', body: 'Registra la cena in Macro.' },
+  { key: 'breakfast', label: 'Colazione', title: 'Colazione', body: 'Registra la colazione in Fuel.' },
+  { key: 'lunch', label: 'Pranzo', title: 'Pranzo', body: 'Registra il pranzo in Fuel.' },
+  { key: 'dinner', label: 'Cena', title: 'Cena', body: 'Registra la cena in Fuel.' },
 ];
 
 export const DEFAULT_REMINDERS: ReminderSettings = {

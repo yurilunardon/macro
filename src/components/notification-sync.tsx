@@ -13,7 +13,7 @@ export function NotificationSync() {
   const expiry = useAppExpiry();
   const { data } = useLiveQuery('notification-sync', async (database) => ({
     settings: await getSetting(database, 'reminders'),
-  }));
+  }), ['settings']);
   const expiresAt = expiry?.expiresAt ?? null;
   // Only what the notifications depend on, so the minute-by-minute clock does not reschedule them.
   const key = data ? JSON.stringify([data.settings, expiresAt?.toISOString() ?? null]) : null;

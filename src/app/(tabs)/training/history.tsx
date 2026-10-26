@@ -17,7 +17,7 @@ import { groupByMonth } from '@/lib/weights';
 export default function HistoryScreen() {
   const router = useRouter();
   const today = useToday();
-  const { data } = useLiveQuery('workout-history', (database) => getWorkoutHistory(database));
+  const { data } = useLiveQuery('workout-history', (database) => getWorkoutHistory(database), ['training']);
 
   if (!data) {
     return (
@@ -32,7 +32,7 @@ export default function HistoryScreen() {
     <ScreenScroll>
       {months.length === 0 ? (
         <AppText tone="textSecondary" align="center" style={styles.empty}>
-          Nessun allenamento ancora. Quando ne finisci uno lo trovi qui, con tutte le serie.
+          Nessun allenamento.
         </AppText>
       ) : null}
       {months.map((month) => (

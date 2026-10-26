@@ -139,7 +139,7 @@ export function FoodForm({ foodId, initialBarcode = null, onSaved, labelRoute }:
             </View>
           </View>
           <AppText variant="footnote" tone="textSecondary">
-            Controllali con l’etichetta: la lettura automatica può sbagliare.
+            Verifica con l’etichetta.
           </AppText>
         </Card>
       ) : null}

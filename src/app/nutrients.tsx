@@ -35,7 +35,7 @@ export default function NutrientsSheet() {
   const { data } = useLiveQuery(`nutrients:${date}`, async (database) => {
     const [entries, plan] = await Promise.all([getEntriesForDate(database, date), getDayPlan(database, date)]);
     return { entries, plan };
-  });
+  }, ['food', 'settings']);
 
   if (!data) {
     return (
@@ -111,8 +111,7 @@ export default function NutrientsSheet() {
       )}
       {key === 'fiber' ? (
         <SectionFooter>
-          L’obiettivo di fibre è indicativo: 14 g ogni 1000 kcal del tuo obiettivo, e almeno 25 g. Alcuni prodotti non
-          riportano le fibre in etichetta.
+          Obiettivo indicativo: 14 g ogni 1000 kcal, minimo 25 g. Non tutte le etichette riportano le fibre.
         </SectionFooter>
       ) : null}
 

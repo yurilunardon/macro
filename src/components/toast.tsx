@@ -1,7 +1,7 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import type { SFSymbol } from 'expo-symbols';
 import { useSyncExternalStore } from 'react';
-import { AccessibilityInfo, StyleSheet, View } from 'react-native';
+import { AccessibilityInfo, Pressable, StyleSheet, View } from 'react-native';
 import Animated, { Easing, FadeInUp, FadeOutUp } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -11,9 +11,12 @@ import { useTheme } from '@/hooks/use-theme';
 import { AppText } from './app-text';
 import { Icon } from './icon';
 
-type ToastMessage = { id: number; title: string; icon: SFSymbol };
+type ToastAction = { label: string; onPress: () => void };
+type ToastMessage = { id: number; title: string; icon: SFSymbol; action?: ToastAction };
 
 const VISIBLE_MS = 1800;
+/** Long enough to read the message and reach the button. */
+const WITH_ACTION_MS = 4500;
 const ENTER = FadeInUp.duration(280).easing(Easing.bezier(0.23, 1, 0.32, 1));
 const EXIT = FadeOutUp.duration(220).easing(Easing.bezier(0.23, 1, 0.32, 1));
 const glass = isLiquidGlassAvailable();
@@ -37,18 +40,23 @@ function subscribe(listener: () => void): () => void {
 /**
  * A short confirmation at the top of the screen, like the pills iOS shows for AirDrop or
  * silent mode: for actions whose result is not visible where the user is, e.g. copying a meal
- * to tomorrow. It never needs to be dismissed.
+ * to tomorrow, or with an "Annulla" button after deleting something. It never needs to be
+ * dismissed.
  */
 export const toast = {
-  show(title: string, icon: SFSymbol = 'checkmark.circle.fill'): void {
-    current = { id: nextId++, title, icon };
+  show(title: string, icon: SFSymbol = 'checkmark.circle.fill', action?: ToastAction): void {
+    const id = nextId++;
+    current = { id, title, icon, action };
     emit();
     AccessibilityInfo.announceForAccessibility(title);
     clearTimeout(timer);
-    timer = setTimeout(() => {
-      current = null;
-      emit();
-    }, VISIBLE_MS);
+    timer = setTimeout(() => toast.hide(id), action ? WITH_ACTION_MS : VISIBLE_MS);
+  },
+  /** Hides the toast, or only the one with this id if given. */
+  hide(id?: number): void {
+    if (!current || (id !== undefined && current.id !== id)) return;
+    current = null;
+    emit();
   },
 };
 
@@ -59,9 +67,14 @@ export function ToastHost() {
   const message = useSyncExternalStore(subscribe, () => current);
 
   return (
-    <View pointerEvents="none" style={StyleSheet.absoluteFill}>
+    <View pointerEvents="box-none" style={StyleSheet.absoluteFill}>
       {message ? (
-        <Animated.View key={message.id} entering={ENTER} exiting={EXIT} style={[styles.slot, { top: insets.top + Spacing.xs }]}>
+        <Animated.View
+          key={message.id}
+          entering={ENTER}
+          exiting={EXIT}
+          pointerEvents={message.action ? 'box-none' : 'none'}
+          style={[styles.slot, { top: insets.top + Spacing.xs }]}>
           {glass ? (
             <GlassView style={styles.pill} glassEffectStyle="regular">
               <ToastContent message={message} />
@@ -78,12 +91,27 @@ export function ToastHost() {
 }
 
 function ToastContent({ message }: { message: ToastMessage }) {
+  const { action } = message;
   return (
     <>
       <Icon name={message.icon} size={18} tone="accent" />
-      <AppText variant="subhead" weight="600" numberOfLines={1}>
+      <AppText variant="subhead" weight="600" numberOfLines={1} style={styles.title}>
         {message.title}
       </AppText>
+      {action ? (
+        <Pressable
+          onPress={() => {
+            toast.hide(message.id);
+            action.onPress();
+          }}
+          hitSlop={12}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
+          <AppText variant="subhead" weight="700" tone="accent">
+            {action.label}
+          </AppText>
+        </Pressable>
+      ) : null}
     </>
   );
 }
@@ -100,6 +128,9 @@ const styles = StyleSheet.create({
     maxWidth: '90%',
     overflow: 'hidden',
   },
+  title: { flexShrink: 1 },
+  action: { marginLeft: Spacing.sm },
+  pressed: { opacity: 0.5 },
   solid: {
     borderWidth: StyleSheet.hairlineWidth,
     boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',

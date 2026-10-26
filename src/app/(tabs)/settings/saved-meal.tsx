@@ -4,7 +4,7 @@ import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, View } from 
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { Card, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
+import { Card, ListGroup, SectionTitle } from '@/components/card';
 import { MacroInline } from '@/components/nutrition';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
@@ -20,7 +20,7 @@ export default function SavedMealScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
 
-  const { data } = useLiveQuery(`saved-meal:${mealId}`, (database) => getSavedMeal(database, mealId));
+  const { data } = useLiveQuery(`saved-meal:${mealId}`, (database) => getSavedMeal(database, mealId), ['food']);
 
   if (!data) {
     return (
@@ -86,12 +86,12 @@ export default function SavedMealScreen() {
             <SwipeToDelete key={item.id} onDelete={() => void deleteSavedMealItem(db, item.id)}>
               <Pressable
                 onLongPress={() =>
-                  Alert.alert(item.name, 'Toglierlo da questo pasto salvato?', [
+                  Alert.alert(item.name, 'Eliminare dal pasto?', [
                     { text: 'Annulla', style: 'cancel' },
-                    { text: 'Togli', style: 'destructive', onPress: () => void deleteSavedMealItem(db, item.id) },
+                    { text: 'Elimina', style: 'destructive', onPress: () => void deleteSavedMealItem(db, item.id) },
                   ])
                 }
-                accessibilityHint="Tieni premuto per toglierlo dal pasto"
+                accessibilityHint="Tieni premuto per eliminarlo dal pasto"
                 style={styles.row}>
                 <View style={styles.flex}>
                   <AppText numberOfLines={1}>{item.name}</AppText>
@@ -113,7 +113,6 @@ export default function SavedMealScreen() {
           Questo pasto è vuoto.
         </AppText>
       )}
-      <SectionFooter>Scorri a sinistra o tieni premuto su un alimento per toglierlo da questo pasto.</SectionFooter>
 
       <View style={styles.actions}>
         <Button title="Elimina pasto salvato" variant="destructive" onPress={remove} />

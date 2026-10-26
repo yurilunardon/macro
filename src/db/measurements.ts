@@ -24,7 +24,7 @@ export async function setMeasurements(
       );
     }
   }
-  notifyChange();
+  notifyChange('body');
 }
 
 export async function getMeasurements(db: SQLiteDatabase): Promise<Measurement[]> {
@@ -36,5 +36,5 @@ export async function getMeasurements(db: SQLiteDatabase): Promise<Measurement[]
 
 export async function deleteMeasurementsOn(db: SQLiteDatabase, date: DateKey): Promise<void> {
   await db.runAsync('DELETE FROM measurements WHERE date = ?', date);
-  notifyChange();
+  notifyChange('body');
 }

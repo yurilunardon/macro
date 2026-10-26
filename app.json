@@ -2,7 +2,7 @@
   "expo": {
     "name": "Macro",
     "slug": "macro",
-    "version": "1.6.0",
+    "version": "1.7.0",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "macro",
@@ -18,7 +18,8 @@
         "usesNonExemptEncryption": false
       },
       "infoPlist": {
-        "CADisableMinimumFrameDurationOnPhone": true
+        "CADisableMinimumFrameDurationOnPhone": true,
+        "CFBundleDisplayName": "Fuel"
       }
     },
     "android": {
@@ -36,7 +37,7 @@
       [
         "expo-camera",
         {
-          "cameraPermission": "Macro usa la fotocamera per leggere i codici a barre e le tabelle nutrizionali degli alimenti.",
+          "cameraPermission": "Fuel usa la fotocamera per leggere i codici a barre e le tabelle nutrizionali.",
           "microphonePermission": false,
           "recordAudioAndroid": false,
           "barcodeScannerEnabled": true

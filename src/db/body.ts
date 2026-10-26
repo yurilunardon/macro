@@ -14,12 +14,12 @@ export async function setWeight(db: SQLiteDatabase, date: DateKey, kg: number): 
     date,
     kg,
   );
-  notifyChange();
+  notifyChange('body');
 }
 
 export async function deleteWeight(db: SQLiteDatabase, date: DateKey): Promise<void> {
   await db.runAsync('DELETE FROM weights WHERE date = ?', date);
-  notifyChange();
+  notifyChange('body');
 }
 
 /** Weights from `from` onwards, oldest first. */

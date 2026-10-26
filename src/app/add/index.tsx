@@ -67,6 +67,7 @@ export default function AddScreen() {
 
   const lists = useLiveQuery(`add-lists:${list}`, (database) =>
     list === 'recent' ? getRecentFoods(database) : list === 'favorites' ? getFavoriteFoods(database) : Promise.resolve([]),
+    ['food'],
   );
   const mine = useLiveQuery(`add-mine:${list === 'custom'}:${forDiary}`, async (database) => {
     if (list !== 'custom') return null;
@@ -76,11 +77,12 @@ export default function AddScreen() {
       getCustomFoods(database),
     ]);
     return { savedMeals, recipes: recipes.map((r) => r.food), custom };
-  });
+  }, ['food']);
   const basic = useLiveQuery(`add-basic:${list === 'basic'}`, (database) =>
     list === 'basic' ? getGenericFoods(database) : Promise.resolve([]),
+    ['food'],
   );
-  const local = useLiveQuery(`add-local:${trimmed}`, (database) => searchLocalFoods(database, trimmed));
+  const local = useLiveQuery(`add-local:${trimmed}`, (database) => searchLocalFoods(database, trimmed), ['food']);
 
   useEffect(() => () => abortRef.current?.abort(), []);
 
@@ -242,7 +244,7 @@ export default function AddScreen() {
           ) : (
             <View style={styles.empty}>
               <AppText tone="textSecondary" align="center">
-                Nessun prodotto trovato. Prova con meno parole o crea l’alimento a mano.
+                Nessun risultato. Prova con meno parole o crea l’alimento.
               </AppText>
               <Pressable
                 onPress={() => router.push({ pathname: '/add/custom', params })}
@@ -278,8 +280,7 @@ function MyFoods({
   if (savedMeals.length + recipes.length + custom.length === 0) {
     return (
       <AppText tone="textSecondary" align="center" style={styles.empty}>
-        Qui trovi i pasti salvati, le ricette e gli alimenti creati da te. Le ricette si creano da Profilo → Ricette e
-        pasti salvati.
+        Pasti salvati, ricette e alimenti creati da te.
       </AppText>
     );
   }
@@ -369,8 +370,7 @@ function BasicFoods({ groups, onOpen }: { groups: { category: string; foods: Foo
         })}
       </ListGroup>
       <AppText variant="footnote" tone="textSecondary" style={styles.footnote}>
-        Valori medi da USDA FoodData Central, per alimenti sfusi e freschi. Per i prodotti confezionati usa lo
-        scanner.
+        Valori medi USDA per alimenti sfusi e freschi. Per i confezionati usa lo scanner.
       </AppText>
     </>
   );

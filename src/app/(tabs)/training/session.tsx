@@ -28,7 +28,7 @@ export default function SessionScreen() {
   const { data } = useLiveQuery(`session:${id}`, async (database) => {
     const [workout, records] = await Promise.all([getWorkout(database, id), getRecords(database, id)]);
     return { workout, records };
-  });
+  }, ['training', 'settings']);
 
   if (!data) {
     return (
@@ -75,7 +75,7 @@ export default function SessionScreen() {
           <Icon name="checkmark.seal.fill" size={28} tone="accent" />
           <AppText variant="title2">Allenamento completato</AppText>
           <AppText variant="subhead" tone="textSecondary">
-            Salvato: la prossima volta trovi questi carichi come riferimento.
+            Carichi salvati per la prossima volta.
           </AppText>
         </Card>
       ) : null}

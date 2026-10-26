@@ -25,6 +25,8 @@ type SettingsMap = {
   restAlert: 'silent' | 'sound';
   /** Which name of the exercises comes first. */
   exerciseNames: 'en' | 'it';
+  /** The day picked as the next workout, until a workout starts after `chosenAt`. */
+  nextDay: { dayId: number; chosenAt: string };
 };
 
 export type SettingKey = keyof SettingsMap;
@@ -45,7 +47,7 @@ export async function setSetting<K extends SettingKey>(db: SQLiteDatabase, key: 
     key,
     JSON.stringify(value),
   );
-  notifyChange();
+  notifyChange('settings');
 }
 
 /** Targets plus whether the user has set them (otherwise defaults are shown). */
@@ -56,5 +58,5 @@ export async function getTargets(db: SQLiteDatabase): Promise<{ targets: Targets
 
 export async function deleteSetting(db: SQLiteDatabase, key: SettingKey): Promise<void> {
   await db.runAsync('DELETE FROM settings WHERE key = ?', key);
-  notifyChange();
+  notifyChange('settings');
 }

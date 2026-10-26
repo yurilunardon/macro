@@ -46,7 +46,7 @@ export default function SettingsScreen() {
       ),
     ]);
     return { ...goals, restTargets: training.restTargets, lastBackupAt, counts };
-  });
+  }, ['food', 'settings']);
 
   const status = backupStatus(data?.lastBackupAt ?? null);
 

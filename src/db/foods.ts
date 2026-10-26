@@ -67,7 +67,7 @@ export async function insertFood(db: SQLiteDatabase, draft: FoodDraft): Promise<
     now,
     foodSearchText(draft),
   );
-  notifyChange();
+  notifyChange('food');
   return result.lastInsertRowId;
 }
 
@@ -92,7 +92,7 @@ export async function updateFood(db: SQLiteDatabase, id: number, draft: FoodDraf
     foodSearchText({ ...draft, category: current?.category ?? null }),
     id,
   );
-  notifyChange();
+  notifyChange('food');
 }
 
 /** Recomputes the search text of every food, after a migration or a restore. */
@@ -120,13 +120,13 @@ export async function saveOffFood(db: SQLiteDatabase, draft: FoodDraft): Promise
 
 export async function setFavorite(db: SQLiteDatabase, id: number, favorite: boolean): Promise<void> {
   await db.runAsync('UPDATE foods SET favorite = ? WHERE id = ?', favorite ? 1 : 0, id);
-  notifyChange();
+  notifyChange('food');
 }
 
 /** Deletes a food. Diary entries keep their own copy of the values, so history is unchanged. */
 export async function deleteFood(db: SQLiteDatabase, id: number): Promise<void> {
   await db.runAsync('DELETE FROM foods WHERE id = ?', id);
-  notifyChange();
+  notifyChange('food');
 }
 
 function escapeLike(text: string): string {

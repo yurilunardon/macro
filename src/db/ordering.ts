@@ -25,5 +25,15 @@ export async function moveRow(
   for (const [position, rowId] of ids.entries()) {
     await db.runAsync(`UPDATE ${table} SET position = ? WHERE id = ?`, position, rowId);
   }
-  notifyChange();
+  notifyChange('training');
+}
+
+/** Saves the order of a parent's rows after they have been dragged: `ids` from first to last. */
+export async function setOrder(db: SQLiteDatabase, table: OrderedTable, ids: readonly number[]): Promise<void> {
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    for (const [position, id] of ids.entries()) {
+      await tx.runAsync(`UPDATE ${table} SET position = ? WHERE id = ?`, position, id);
+    }
+  });
+  notifyChange('training');
 }

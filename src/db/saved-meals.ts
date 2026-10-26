@@ -71,7 +71,7 @@ export async function saveMealFromDiary(
       input.meal,
     );
   });
-  notifyChange();
+  notifyChange('food');
   return id;
 }
 
@@ -120,22 +120,22 @@ export async function addSavedMealToDiary(
     new Date().toISOString(),
     id,
   );
-  notifyChange();
+  notifyChange('food');
   return result.changes;
 }
 
 export async function renameSavedMeal(db: SQLiteDatabase, id: number, name: string): Promise<void> {
   await db.runAsync('UPDATE saved_meals SET name = ? WHERE id = ?', name, id);
-  notifyChange();
+  notifyChange('food');
 }
 
 export async function deleteSavedMeal(db: SQLiteDatabase, id: number): Promise<void> {
   await db.runAsync('DELETE FROM saved_meal_items WHERE saved_meal_id = ?', id);
   await db.runAsync('DELETE FROM saved_meals WHERE id = ?', id);
-  notifyChange();
+  notifyChange('food');
 }
 
 export async function deleteSavedMealItem(db: SQLiteDatabase, itemId: number): Promise<void> {
   await db.runAsync('DELETE FROM saved_meal_items WHERE id = ?', itemId);
-  notifyChange();
+  notifyChange('food');
 }

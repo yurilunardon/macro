@@ -40,7 +40,7 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek }: WeekStrip
   const { data } = useLiveQuery(`week:${days[0]}`, async (database) => {
     const [totals, plans] = await Promise.all([getDailyTotals(database, days[0], days[6]), getDayPlans(database, days)]);
     return { kcal: new Map(totals.map((t) => [t.date, t.kcal])), plans };
-  });
+  }, ['food', 'settings']);
 
   // Swiping the strip turns the week: it follows the finger, then the new week slides in.
   const stripX = useSharedValue(0);

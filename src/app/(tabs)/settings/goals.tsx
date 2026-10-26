@@ -44,7 +44,7 @@ export default function GoalsScreen() {
       getTrainingSettings(database),
     ]);
     return { profile, targets: goals.targets, latestWeight: weight?.kg ?? null, training };
-  });
+  }, ['settings', 'body']);
 
   if (!data) {
     return (
@@ -171,8 +171,7 @@ function GoalsForm({
   return (
     <ScreenScroll>
       <AppText tone="textSecondary" style={styles.intro}>
-        Compila i tuoi dati e tocca «Calcola»: stimo il fabbisogno con la formula di Mifflin-St Jeor. Puoi poi
-        ritoccare i numeri a mano.
+        Inserisci i tuoi dati e tocca Calcola. Poi puoi modificare i numeri a mano.
       </AppText>
 
       <SectionTitle>Su di te</SectionTitle>
@@ -224,7 +223,7 @@ function GoalsForm({
         <FieldRow label="Grassi" value={pf.fatPercent} onChangeText={setP('fatPercent')} suffix="%" numeric invalid={pInvalid('fatPercent')} />
       </ListGroup>
       <SectionFooter>
-        Chi si allena con i pesi di solito sta tra 1,6 e 2,2 g di proteine per kg. I carboidrati coprono le calorie che restano.
+        Proteine consigliate: 1,6–2,2 g per kg. I carboidrati coprono le calorie restanti.
       </SectionFooter>
 
       <View style={styles.button}>
@@ -297,7 +296,7 @@ function GoalsForm({
                 Scegli almeno un giorno di allenamento.
               </AppText>
             ) : (
-              'Tocca i giorni in cui ti alleni. Nel Diario puoi cambiare un singolo giorno.'
+              'Giorni in cui ti alleni.'
             )}
           </SectionFooter>
 
@@ -309,8 +308,7 @@ function GoalsForm({
             <FieldRow label="Grassi" value={rf.fat} onChangeText={setR('fat')} suffix="g" numeric invalid={rInvalid('fat')} />
           </ListGroup>
           <SectionFooter>
-            Di solito nei giorni di riposo si mangia un po’ meno, togliendo carboidrati e lasciando uguali proteine e
-            grassi.
+            Di solito meno carboidrati, stesse proteine e grassi.
           </SectionFooter>
           <View style={styles.button}>
             <Button

@@ -154,7 +154,7 @@ export async function saveRecipe(db: SQLiteDatabase, input: RecipeInput): Promis
       await statement.finalizeAsync();
     }
   });
-  notifyChange();
+  notifyChange('food');
   return id as number;
 }
 
@@ -168,5 +168,5 @@ export async function deleteRecipe(db: SQLiteDatabase, foodId: number): Promise<
     await tx.runAsync('UPDATE recipe_ingredients SET food_id = NULL WHERE food_id = ?', foodId);
     await tx.runAsync(`DELETE FROM foods WHERE id = ? AND source = 'recipe'`, foodId);
   });
-  notifyChange();
+  notifyChange('food');
 }

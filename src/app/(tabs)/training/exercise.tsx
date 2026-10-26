@@ -34,7 +34,7 @@ export default function ExerciseScreen() {
   const { data } = useLiveQuery(`exercise:${id}`, async (database) => {
     const [exercise, sessions] = await Promise.all([getExercise(database, id), getExerciseHistory(database, id)]);
     return { exercise, sessions };
-  });
+  }, ['training', 'settings']);
 
   if (!data) {
     return (
@@ -80,7 +80,7 @@ export default function ExerciseScreen() {
   const remove = async () => {
     const ok = await confirmDestructive({
       title: `Eliminare «${names(exercise).title}»?`,
-      message: 'Sparisce dalla libreria e dalle schede; gli allenamenti già fatti restano nello storico.',
+      message: 'Gli allenamenti fatti restano nello storico.',
       action: 'Elimina',
     });
     if (!ok) return;
@@ -115,11 +115,11 @@ export default function ExerciseScreen() {
           ) : null}
           {bestSet ? (
             <AppText variant="footnote" tone="textSecondary">
-              {`Serie migliore: ${formatSet(bestSet, exercise.kind)}. Il massimale è stimato con la formula di Epley dalle serie fino a 12 ripetizioni: non serve provarlo.`}
+              {`Serie migliore: ${formatSet(bestSet, exercise.kind)}. Massimale stimato (Epley).`}
             </AppText>
           ) : (
             <AppText variant="footnote" tone="textSecondary">
-              Dopo il primo allenamento qui vedrai come cresce il massimale stimato.
+              Il grafico appare dopo il primo allenamento.
             </AppText>
           )}
         </Card>
@@ -157,7 +157,7 @@ export default function ExerciseScreen() {
           />
         ))}
       </View>
-      <SectionFooter>Il timer parte da solo quando spunti una serie. In una scheda puoi dare a questo esercizio un recupero diverso.</SectionFooter>
+      <SectionFooter>Parte quando completi una serie.</SectionFooter>
 
       {sessions.length > 0 ? <SectionTitle>Storico</SectionTitle> : null}
       {sessions.length > 0 ? (

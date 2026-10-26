@@ -87,5 +87,5 @@ export async function setDayType(db: SQLiteDatabase, date: DateKey, type: DayTyp
       type,
     );
   }
-  notifyChange();
+  notifyChange('settings');
 }

@@ -19,14 +19,14 @@ export default function NewProgramScreen() {
   const fromTemplate = async (template: ProgramTemplate) => {
     const id = await createProgramFromTemplate(db, template);
     haptics.success();
-    toast.show(`«${template.name}» è la tua scheda`, 'checkmark.circle.fill');
+    toast.show(`${template.name} in uso`, 'checkmark.circle.fill');
     router.replace({ pathname: '/training/program', params: { id } });
   };
 
   const empty = () =>
     Alert.prompt(
       'Nuova scheda',
-      'Dalle un nome, poi aggiungi i giorni (es. Push, Pull, Legs) e i loro esercizi.',
+      undefined,
       [
         { text: 'Annulla', style: 'cancel' },
         {

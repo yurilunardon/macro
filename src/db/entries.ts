@@ -74,7 +74,7 @@ export async function addEntry(
     ...totalsParams(totals),
     new Date().toISOString(),
   );
-  notifyChange();
+  notifyChange('food');
   return result.lastInsertRowId;
 }
 
@@ -93,7 +93,7 @@ export async function addQuickEntry(
     ...totalsParams(input.totals),
     new Date().toISOString(),
   );
-  notifyChange();
+  notifyChange('food');
   return result.lastInsertRowId;
 }
 
@@ -111,7 +111,7 @@ export async function updateQuickEntry(
     ...totalsParams(changes.totals),
     id,
   );
-  notifyChange();
+  notifyChange('food');
 }
 
 export async function getEntry(db: SQLiteDatabase, id: number): Promise<Entry | null> {
@@ -140,24 +140,24 @@ export async function updateEntry(
     ...totalsParams(totals),
     entry.id,
   );
-  notifyChange();
+  notifyChange('food');
 }
 
 export async function deleteEntry(db: SQLiteDatabase, id: number): Promise<void> {
   await db.runAsync('DELETE FROM entries WHERE id = ?', id);
-  notifyChange();
+  notifyChange('food');
 }
 
 /** Moves an entry to another meal of the same day. */
 export async function moveEntry(db: SQLiteDatabase, id: number, meal: MealKey): Promise<void> {
   await db.runAsync('UPDATE entries SET meal = ? WHERE id = ?', meal, id);
-  notifyChange();
+  notifyChange('food');
 }
 
 /** Empties one meal of one day. */
 export async function deleteMealEntries(db: SQLiteDatabase, date: DateKey, meal: MealKey): Promise<void> {
   await db.runAsync('DELETE FROM entries WHERE date = ? AND meal = ?', date, meal);
-  notifyChange();
+  notifyChange('food');
 }
 
 /** Copies every entry of one meal to another day (for example "same breakfast as yesterday"). */
@@ -177,7 +177,7 @@ export async function copyMeal(
     from.date,
     from.meal,
   );
-  notifyChange();
+  notifyChange('food');
   return result.changes;
 }
 
@@ -192,7 +192,7 @@ export async function copyDay(db: SQLiteDatabase, from: DateKey, to: DateKey): P
     new Date().toISOString(),
     from,
   );
-  notifyChange();
+  notifyChange('food');
   return result.changes;
 }
 
@@ -207,7 +207,7 @@ export async function copyEntry(db: SQLiteDatabase, id: number, to: DateKey): Pr
     new Date().toISOString(),
     id,
   );
-  notifyChange();
+  notifyChange('food');
 }
 
 /** Every entry in a range of days, oldest first, for the CSV export. */

@@ -158,7 +158,7 @@ export async function insertExercise(db: SQLiteDatabase, draft: ExerciseDraft): 
     exerciseSearchText(draft.name.trim(), null, draft.muscle, draft.equipment),
     new Date().toISOString(),
   );
-  notifyChange();
+  notifyChange('training');
   return result.lastInsertRowId;
 }
 
@@ -178,7 +178,7 @@ export async function updateExerciseOptions(
     next.note && next.note.trim() !== '' ? next.note.trim() : null,
     id,
   );
-  notifyChange();
+  notifyChange('training');
 }
 
 /**
@@ -194,7 +194,7 @@ export async function deleteExercise(db: SQLiteDatabase, id: number): Promise<vo
   if (!row) return;
   if (row.ref !== null || row.uses > 0) await db.runAsync('UPDATE exercises SET archived = 1 WHERE id = ?', id);
   else await db.runAsync('DELETE FROM exercises WHERE id = ?', id);
-  notifyChange();
+  notifyChange('training');
 }
 
 /** Rebuilds the search text, which backups leave out. */

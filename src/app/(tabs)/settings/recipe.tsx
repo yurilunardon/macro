@@ -153,8 +153,7 @@ function RecipeEditor() {
         />
       </ListGroup>
       <SectionFooter>
-        Pesa il piatto finito: la cottura cambia il peso, la pasta assorbe acqua e la carne la perde. Se lo lasci vuoto
-        uso la somma degli ingredienti crudi.
+        Peso del piatto cotto. Se vuoto, si usa la somma degli ingredienti crudi.
       </SectionFooter>
 
       <SectionTitle>Ingredienti</SectionTitle>
@@ -167,9 +166,9 @@ function RecipeEditor() {
               totals={scaleNutrients(ing.per100, ing.quantity)}
               onPress={() => editQuantity(index)}
               onLongPress={() =>
-                Alert.alert(ing.name, 'Toglierlo dalla ricetta?', [
+                Alert.alert(ing.name, 'Eliminare dalla ricetta?', [
                   { text: 'Annulla', style: 'cancel' },
-                  { text: 'Togli', style: 'destructive', onPress: () => recipeDraft.removeIngredient(index) },
+                  { text: 'Elimina', style: 'destructive', onPress: () => recipeDraft.removeIngredient(index) },
                 ])
               }
             />
@@ -182,7 +181,7 @@ function RecipeEditor() {
       </ListGroup>
       <SectionFooter>
         {draft.ingredients.length > 0
-          ? 'Tocca un ingrediente per cambiare la quantità, scorri a sinistra per toglierlo.'
+          ? 'Tocca un ingrediente per cambiare la quantità.'
           : 'Aggiungi gli ingredienti con il loro peso crudo.'}
       </SectionFooter>
       {showErrors && invalid.has('ingredients') ? (
@@ -235,7 +234,7 @@ function IngredientRow({
       onPress={onPress}
       onLongPress={onLongPress}
       accessibilityRole="button"
-      accessibilityHint="Tocca per cambiare la quantità, tieni premuto per toglierlo"
+      accessibilityHint="Tocca per cambiare la quantità, tieni premuto per eliminarlo"
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.cardPressed }]}>
       <View style={styles.flex}>
         <AppText numberOfLines={1}>{name}</AppText>

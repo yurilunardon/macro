@@ -68,5 +68,5 @@ export async function seedGenericFoods(db: SQLiteDatabase, { force = false } = {
     }
   });
   await setSetting(db, 'genericFoodsVersion', GENERIC_FOODS_VERSION);
-  notifyChange();
+  notifyChange('food');
 }

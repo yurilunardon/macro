@@ -65,7 +65,7 @@ export function LabelScanner({ onDone }: { onDone: () => void }) {
           Serve la fotocamera
         </AppText>
         <AppText tone="textSecondary" align="center">
-          La foto resta sul telefono: il testo viene letto dall’iPhone, senza internet.
+          La foto non lascia il telefono.
         </AppText>
         <View style={styles.permissionButton}>
           {permission?.canAskAgain !== false ? (

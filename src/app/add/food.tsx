@@ -35,11 +35,11 @@ type Resolution =
 const MEAL_OPTIONS = MEALS.map((m) => ({ key: m.key, label: m.label }));
 
 const SOURCE_NOTES = {
-  off: 'Dati da Open Food Facts (licenza ODbL), inseriti da volontari: controlla che corrispondano all’etichetta.',
+  off: 'Dati Open Food Facts (ODbL): verifica con l’etichetta.',
   custom: 'Alimento creato da te.',
   generic:
-    'Valori medi da USDA FoodData Central (pubblico dominio). Le porzioni sono indicative: per essere precisi, pesa.',
-  recipe: 'Ricetta: valori per 100 g del piatto finito. La modifichi da Profilo → Ricette e pasti salvati.',
+    'Valori medi USDA. Porzioni indicative.',
+  recipe: 'Ricetta: valori per 100 g del piatto cotto.',
 } as const;
 
 export default function FoodScreen() {
@@ -133,8 +133,8 @@ function Missing({
     resolution.kind === 'error'
       ? `${resolution.message} Controlla la connessione e riprova, oppure inserisci i valori a mano.`
       : resolution.incomplete
-        ? `Il prodotto ${code} è su Open Food Facts ma senza tabella nutrizionale. Copia i valori dall’etichetta: lo salvo sul telefono e la prossima volta lo trovi subito.`
-        : `Il codice ${code} non è su Open Food Facts. Copia i valori dall’etichetta: lo salvo sul telefono e la prossima volta lo trovi subito.`;
+        ? `Prodotto ${code} senza valori nutrizionali. Inseriscili dall’etichetta.`
+        : `Codice ${code} non trovato. Inserisci i valori dall’etichetta.`;
 
   return (
     <ScrollView contentContainerStyle={styles.missing} contentInsetAdjustmentBehavior="automatic">
@@ -182,7 +182,7 @@ function FoodDetail({
   const { data, loading } = useLiveQuery(`food:${id}`, async (database) => {
     const [food, lastQuantity] = await Promise.all([getFood(database, id), getLastQuantity(database, id)]);
     return { food, lastQuantity };
-  });
+  }, ['food']);
 
   if (!data) {
     return <View style={styles.center}>{loading ? <ActivityIndicator /> : null}</View>;

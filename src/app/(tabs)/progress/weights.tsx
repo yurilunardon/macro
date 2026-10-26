@@ -23,7 +23,7 @@ export default function WeightsScreen() {
   const { data } = useLiveQuery('weights:all', async (database) => {
     const [weights, latest] = await Promise.all([getWeightsSince(database, '0000-01-01'), getLatestWeight(database)]);
     return { weights, latest };
-  });
+  }, ['body']);
 
   const logWeight = () =>
     promptNumber({
@@ -54,7 +54,7 @@ export default function WeightsScreen() {
       </Stack.Toolbar>
       {months.length === 0 ? (
         <AppText tone="textSecondary" align="center" style={styles.empty}>
-          Nessuna pesata. Tocca + per registrare il peso di oggi.
+          Nessuna pesata.
         </AppText>
       ) : null}
       {months.map((month) => (

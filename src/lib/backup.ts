@@ -393,7 +393,7 @@ function readRows<T>(data: Record<string, unknown>, table: string, columns: Reco
 export function parseBackup(json: unknown): BackupData {
   if (typeof json !== 'object' || json === null) throw new BackupFormatError('Il file non è un backup');
   const data = json as Record<string, unknown>;
-  if (data.app !== BACKUP_APP) throw new BackupFormatError('Il file non è un backup di Macro');
+  if (data.app !== BACKUP_APP) throw new BackupFormatError('Il file non è un backup di Fuel');
   if (typeof data.version !== 'number' || data.version > BACKUP_VERSION) {
     throw new BackupFormatError('Backup creato da una versione più recente dell’app');
   }

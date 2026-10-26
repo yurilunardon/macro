@@ -7,7 +7,7 @@ import { useTheme } from '@/hooks/use-theme';
 
 export default function TabsLayout() {
   const theme = useTheme();
-  const { data: active } = useLiveQuery('active-workout', getActiveWorkout);
+  const { data: active } = useLiveQuery('active-workout', getActiveWorkout, ['training']);
   return (
     <NativeTabs tintColor={theme.accent}>
       {active ? (

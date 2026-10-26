@@ -9,9 +9,10 @@ import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { ProgressBar } from '@/components/progress';
 import { ScreenScroll } from '@/components/screen';
+import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
-import { getNextDay, getPrograms } from '@/db/programs';
+import { deleteProgram, getNextDay, getPrograms, setNextDay, type Program } from '@/db/programs';
 import { getActiveWorkout, getWorkoutHistory, getWorkSetsBetween, startWorkout } from '@/db/workouts';
 import { useClock } from '@/hooks/use-clock';
 import { useTheme } from '@/hooks/use-theme';
@@ -21,6 +22,7 @@ import { MUSCLES, muscleLabel } from '@/lib/exercises';
 import { countLabel, formatNumber } from '@/lib/format';
 import { formatDuration, formatWorkoutLength, setsPerMuscle } from '@/lib/training';
 import { haptics } from '@/services/haptics';
+import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 /** Weekly hard sets per muscle that research links with growth, roughly. */
 const VOLUME_LOW = 10;
@@ -41,8 +43,9 @@ export default function TrainingScreen() {
       getWorkSetsBetween(database, week[0], week[6]),
     ]);
     return { active, next, programs, history, volume };
-  });
+  }, ['training']);
   const now = useClock(1000, Boolean(data?.active));
+  const hidden = usePendingDeletes();
 
   const start = async (dayId: number | null) => {
     await startWorkout(db, { dayId });
@@ -50,25 +53,36 @@ export default function TrainingScreen() {
     router.push('/workout');
   };
 
+  const pick = (dayId: number) => {
+    haptics.selection();
+    void setNextDay(db, dayId);
+  };
+
+  const removeProgram = (program: Program) =>
+    deleteWithUndo({ key: `program:${program.id}`, title: 'Scheda eliminata', run: () => deleteProgram(db, program.id) });
+
+  const programs = (data?.programs ?? []).filter((p) => !hidden.has(`program:${p.id}`));
   const thisWeek = (data?.history ?? []).filter((w) => w.date >= week[0]);
   const muscles = setsPerMuscle(data?.volume ?? []);
   const trained = MUSCLES.filter((m) => (muscles.get(m.key) ?? 0) > 0).sort(
     (a, b) => (muscles.get(b.key) ?? 0) - (muscles.get(a.key) ?? 0),
   );
+  const next = data?.next && !hidden.has(`program:${data.next.program.id}`) ? data.next : null;
 
   return (
     <ScreenScroll>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon="plus" accessibilityLabel="Nuovo">
-          <Stack.Toolbar.MenuAction icon="list.bullet.rectangle" onPress={() => router.push('/training/new')}>
-            Nuova scheda
-          </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon="figure.strengthtraining.traditional" onPress={() => void start(null)}>
             Allenamento libero
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="list.bullet.rectangle" onPress={() => router.push('/training/new')}>
+            Nuova scheda
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
 
+      {/* The one thing to do here comes first: the workout in progress, or the next one. */}
       {data?.active ? (
         <Card style={[styles.hero, { backgroundColor: theme.accentSoft }]}>
           <AppText variant="footnote" weight="600" tone="accent">
@@ -76,55 +90,78 @@ export default function TrainingScreen() {
           </AppText>
           <AppText variant="title">{data.active.name}</AppText>
           <AppText variant="subhead" tone="textSecondary" numeric>
-            {`Iniziato da ${formatDuration((now - new Date(data.active.startedAt).getTime()) / 1000)}`}
+            {formatDuration((now - new Date(data.active.startedAt).getTime()) / 1000)}
           </AppText>
-          <Button title="Riprendi" onPress={() => router.push('/workout')} />
-        </Card>
-      ) : data?.next ? (
-        <Card style={styles.hero}>
-          <AppText variant="footnote" weight="600" tone="textSecondary">
-            {`PROSSIMO · ${data.next.program.name.toUpperCase()}`}
-          </AppText>
-          <View style={styles.heroTitle}>
-            <AppText variant="title" style={styles.flex}>
-              {data.next.day.name}
-            </AppText>
-            <MenuButton
-              icon="arrow.left.arrow.right"
-              title="Altro giorno"
-              accessibilityLabel="Scegli un altro giorno della scheda"
-              groups={[
-                {
-                  title: 'Inizia un altro giorno',
-                  actions: data.next.program.days.map((d) => ({
-                    label: d.name,
-                    icon: 'figure.strengthtraining.traditional' as const,
-                    checked: d.id === data.next?.day.id,
-                    onPress: () => void start(d.id),
-                  })),
-                },
-              ]}
-            />
+          <View style={styles.heroButton}>
+            <Button title="Riprendi" onPress={() => router.push('/workout')} />
           </View>
-          <AppText variant="subhead" tone="textSecondary">
-            {[countLabel(data.next.day.exerciseCount, 'esercizio', 'esercizi'), data.next.day.muscles.map(muscleLabel).join(', ')]
+        </Card>
+      ) : next ? (
+        <Card style={styles.hero}>
+          <View style={styles.heroTop}>
+            <AppText variant="footnote" weight="600" tone="textSecondary" style={styles.flex} numberOfLines={1}>
+              {`PROSSIMO · ${next.program.name.toUpperCase()}`}
+            </AppText>
+            {next.program.days.length > 1 ? (
+              <MenuButton
+                icon="arrow.left.arrow.right"
+                title="Cambia"
+                accessibilityLabel="Scegli il prossimo giorno"
+                groups={[
+                  {
+                    title: 'Prossimo allenamento',
+                    actions: next.program.days.map((d) => ({
+                      label: d.name,
+                      icon: 'figure.strengthtraining.traditional' as const,
+                      checked: d.id === next.day.id,
+                      onPress: () => pick(d.id),
+                    })),
+                  },
+                ]}
+              />
+            ) : null}
+          </View>
+          <AppText variant="title">{next.day.name}</AppText>
+          <AppText variant="subhead" tone="textSecondary" numberOfLines={2}>
+            {[countLabel(next.day.exerciseCount, 'esercizio', 'esercizi'), next.day.muscles.map(muscleLabel).join(', ')]
               .filter(Boolean)
               .join(' · ')}
           </AppText>
-          <Button title={`Inizia ${data.next.day.name}`} onPress={() => void start(data.next?.day.id ?? null)} />
-          <Button title="Allenamento libero" variant="plain" compact onPress={() => void start(null)} />
+          <View style={styles.heroButton}>
+            <Button title="Inizia" onPress={() => void start(next.day.id)} />
+          </View>
         </Card>
       ) : data ? (
         <Card style={styles.hero}>
           <Icon name="list.bullet.rectangle.portrait" size={28} tone="accent" />
-          <AppText variant="title2">Crea la tua scheda</AppText>
+          <AppText variant="title2">Crea una scheda</AppText>
           <AppText variant="subhead" tone="textSecondary">
-            Parti da un modello collaudato, come Push Pull Legs, o scrivi la tua. Poi qui troverai ogni volta il prossimo
-            allenamento, con i carichi dell’ultima volta.
+            Da un modello, come Push Pull Legs, o da zero.
           </AppText>
-          <Button title="Nuova scheda" onPress={() => router.push('/training/new')} />
-          <Button title="Allenamento libero" variant="plain" compact onPress={() => void start(null)} />
+          <View style={styles.heroButton}>
+            <Button title="Nuova scheda" onPress={() => router.push('/training/new')} />
+            <Button title="Allenamento libero" variant="plain" compact onPress={() => void start(null)} />
+          </View>
         </Card>
+      ) : null}
+
+      {(data?.history ?? []).length > 0 ? (
+        <>
+          <SectionTitle>Recenti</SectionTitle>
+          <ListGroup>
+            {(data?.history ?? []).slice(0, 3).map((w) => (
+              <Row
+                key={w.id}
+                title={w.name}
+                subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
+                  (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,
+                )} · ${countLabel(w.workSets, 'serie', 'serie')}`}
+                onPress={() => router.push({ pathname: '/training/session', params: { id: w.id } })}
+              />
+            ))}
+            <Row title="Tutti gli allenamenti" onPress={() => router.push('/training/history')} />
+          </ListGroup>
+        </>
       ) : null}
 
       <SectionTitle>Questa settimana</SectionTitle>
@@ -160,47 +197,37 @@ export default function TrainingScreen() {
           })
         ) : (
           <AppText variant="subhead" tone="textSecondary">
-            Qui vedrai le serie allenanti di ogni muscolo nella settimana.
+            Nessuna serie questa settimana.
           </AppText>
         )}
       </Card>
-      <SectionFooter>
-        {`Serie per muscolo, riscaldamenti esclusi. Per crescere ne servono indicativamente ${VOLUME_LOW}–${VOLUME_HIGH} a settimana: in arancione i muscoli sotto ${VOLUME_LOW}.`}
-      </SectionFooter>
+      <SectionFooter>{`Serie allenanti per muscolo. Obiettivo: ${VOLUME_LOW}–${VOLUME_HIGH} a settimana.`}</SectionFooter>
 
       <SectionTitle>Schede</SectionTitle>
       <ListGroup>
-        {(data?.programs ?? []).map((p) => (
-          <Row
-            key={p.id}
-            title={p.name}
-            subtitle={`${countLabel(p.days.length, 'giorno', 'giorni')}${p.active ? ' · in uso' : ''}`}
-            icon={<Icon name={p.active ? 'checkmark.circle.fill' : 'list.bullet.rectangle'} size={20} tone={p.active ? 'accent' : 'textSecondary'} />}
-            onPress={() => router.push({ pathname: '/training/program', params: { id: p.id } })}
-          />
+        {programs.map((p) => (
+          <SwipeToDelete key={p.id} onDelete={() => removeProgram(p)}>
+            <Row
+              title={p.name}
+              subtitle={`${countLabel(p.days.length, 'giorno', 'giorni')}${p.active ? ' · in uso' : ''}`}
+              icon={
+                <Icon
+                  name={p.active ? 'checkmark.circle.fill' : 'list.bullet.rectangle'}
+                  size={20}
+                  tone={p.active ? 'accent' : 'textSecondary'}
+                />
+              }
+              onPress={() => router.push({ pathname: '/training/program', params: { id: p.id } })}
+            />
+          </SwipeToDelete>
         ))}
         <ActionRow label="Nuova scheda" onPress={() => router.push('/training/new')} />
       </ListGroup>
 
-      <SectionTitle>Recenti</SectionTitle>
+      <SectionTitle>Libreria</SectionTitle>
       <ListGroup>
-        {(data?.history ?? []).slice(0, 3).map((w) => (
-          <Row
-            key={w.id}
-            title={w.name}
-            subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
-              (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,
-            )} · ${countLabel(w.workSets, 'serie', 'serie')}`}
-            onPress={() => router.push({ pathname: '/training/session', params: { id: w.id } })}
-          />
-        ))}
         <Row
-          title="Tutto lo storico"
-          icon={<Icon name="calendar" size={18} tone="accent" />}
-          onPress={() => router.push('/training/history')}
-        />
-        <Row
-          title="Libreria esercizi"
+          title="Esercizi"
           icon={<Icon name="books.vertical" size={18} tone="accent" />}
           onPress={() => router.push('/training/exercises')}
         />
@@ -211,8 +238,9 @@ export default function TrainingScreen() {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  hero: { gap: Spacing.sm },
-  heroTitle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  hero: { gap: Spacing.xs },
+  heroTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 32 },
+  heroButton: { marginTop: Spacing.md, gap: Spacing.xs },
   week: { gap: Spacing.md },
   muscle: { gap: Spacing.xs },
   muscleTop: { flexDirection: 'row', alignItems: 'center' },

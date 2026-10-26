@@ -24,8 +24,8 @@ export default function RemindersScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
   const [permission, setPermission] = useState<'granted' | 'denied' | 'unknown'>('unknown');
-  const { data } = useLiveQuery('reminders', (database) => getSetting(database, 'reminders'));
-  const { data: restAlert } = useLiveQuery('rest-alert', (database) => getSetting(database, 'restAlert'));
+  const { data } = useLiveQuery('reminders', (database) => getSetting(database, 'reminders'), ['settings']);
+  const { data: restAlert } = useLiveQuery('rest-alert', (database) => getSetting(database, 'restAlert'), ['settings']);
 
   useEffect(() => {
     let cancelled = false;
@@ -56,7 +56,7 @@ export default function RemindersScreen() {
     setPermission(granted ? 'granted' : 'denied');
     if (granted) apply();
     else
-      Alert.alert('Notifiche disattivate', 'Attivale in Impostazioni → Macro → Notifiche.', [
+      Alert.alert('Notifiche disattivate', 'Attivale in Impostazioni → Fuel → Notifiche.', [
         { text: 'Annulla', style: 'cancel' },
         { text: 'Apri Impostazioni', onPress: () => void Linking.openSettings() },
       ]);
@@ -110,7 +110,7 @@ export default function RemindersScreen() {
         <ListGroup>
           <Row
             title="Notifiche disattivate"
-            subtitle="Attivale in Impostazioni → Macro → Notifiche"
+            subtitle="Attivale in Impostazioni → Fuel → Notifiche"
             icon={<Icon name="bell.slash.fill" size={20} tone="danger" />}
             onPress={() => void Linking.openSettings()}
           />
@@ -144,8 +144,7 @@ export default function RemindersScreen() {
         />
       </ListGroup>
       <SectionFooter>
-        Le notifiche sono tutte sul telefono: nessun server. Quando rinnovi l’app con AltStore la data di scadenza si
-        aggiorna da sola.
+        Notifiche solo locali, senza server.
       </SectionFooter>
 
       <SectionTitle>Allenamento · fine del recupero</SectionTitle>
@@ -158,8 +157,7 @@ export default function RemindersScreen() {
         onChange={(value) => void setSetting(db, 'restAlert', value)}
       />
       <SectionFooter>
-        Con l’app aperta il telefono vibra due volte e la barra del timer lo dice. Con lo schermo spento arriva una
-        notifica: silenziosa, oppure con il suono di sistema, che in modalità silenziosa diventa solo una vibrazione.
+        A schermo spento arriva una notifica. In modalità silenziosa il suono diventa una vibrazione.
       </SectionFooter>
     </ScreenScroll>
   );

@@ -15,7 +15,7 @@ import {
 
 import { exerciseFromRow, type Exercise, type ExerciseRow } from './exercises';
 import { notifyChange } from './live';
-import { moveRow } from './ordering';
+import { moveRow, setOrder } from './ordering';
 import { DEFAULT_PLAN, getDay } from './programs';
 
 export type WorkoutSet = LoggedSet & {
@@ -171,7 +171,7 @@ export async function startWorkout(
     const previous = await getLastSets(db, planned.exercise.id, startedAt);
     await insertSets(db, inserted.lastInsertRowId, planned.sets, targetsOf(suggestionFor(planned.exercise, planned, previous)));
   }
-  notifyChange();
+  notifyChange('training', 'settings');
   return workoutId;
 }
 
@@ -199,10 +199,12 @@ export async function getWorkout(db: SQLiteDatabase, id: number): Promise<Workou
      WHERE we.workout_id = ? ORDER BY s.position, s.id`,
     id,
   );
+  // Last time's sets of every exercise, read together rather than one after the other.
+  const previousSets = await Promise.all(exerciseRows.map((r) => getLastSets(db, r.id, row.started_at)));
   const exercises: WorkoutExercise[] = [];
-  for (const r of exerciseRows) {
+  for (const [index, r] of exerciseRows.entries()) {
     const exercise = exerciseFromRow(r);
-    const previous = await getLastSets(db, exercise.id, row.started_at);
+    const previous = previousSets[index];
     const sets = setRows.filter((s) => s.workout_exercise_id === r.we_id).map(setFromRow);
     const plan = {
       sets: sets.length || DEFAULT_PLAN.sets,
@@ -253,13 +255,17 @@ export async function addWorkoutExercise(db: SQLiteDatabase, workoutId: number, 
   const previous = await getLastSets(db, exerciseId, workout.started_at);
   const count = previous.filter((s) => s.type !== 'warmup').length || DEFAULT_PLAN.sets;
   await insertSets(db, inserted.lastInsertRowId, count, targetsOf(suggestionFor(exerciseFromRow(exercise), { ...DEFAULT_PLAN, sets: count }, previous)));
-  notifyChange();
+  notifyChange('training');
   return inserted.lastInsertRowId;
 }
 
 export async function removeWorkoutExercise(db: SQLiteDatabase, workoutExerciseId: number): Promise<void> {
   await db.runAsync('DELETE FROM workout_exercises WHERE id = ?', workoutExerciseId);
-  notifyChange();
+  notifyChange('training');
+}
+
+export function reorderWorkoutExercises(db: SQLiteDatabase, ids: readonly number[]): Promise<void> {
+  return setOrder(db, 'workout_exercises', ids);
 }
 
 export function moveWorkoutExercise(db: SQLiteDatabase, workoutExerciseId: number, direction: -1 | 1): Promise<void> {
@@ -269,7 +275,7 @@ export function moveWorkoutExercise(db: SQLiteDatabase, workoutExerciseId: numbe
 /** The rest after each set of this exercise in this workout. */
 export async function setWorkoutExerciseRest(db: SQLiteDatabase, workoutExerciseId: number, seconds: number): Promise<void> {
   await db.runAsync('UPDATE workout_exercises SET rest_seconds = ? WHERE id = ?', seconds, workoutExerciseId);
-  notifyChange();
+  notifyChange('training');
 }
 
 /** Swaps the exercise (e.g. the machine is taken), keeping the sets already done. */
@@ -279,7 +285,7 @@ export async function replaceWorkoutExercise(db: SQLiteDatabase, workoutExercise
     'UPDATE workout_sets SET target_weight = NULL, target_reps = NULL WHERE workout_exercise_id = ? AND done = 0',
     workoutExerciseId,
   );
-  notifyChange();
+  notifyChange('training');
 }
 
 /** Adds a set after the last one, suggesting the same load and reps. */
@@ -295,7 +301,7 @@ export async function addSet(db: SQLiteDatabase, workoutExerciseId: number): Pro
     { weight: last?.weight ?? last?.target_weight ?? null, reps: last?.reps ?? last?.target_reps ?? null },
     (last?.position ?? -1) + 1,
   );
-  notifyChange();
+  notifyChange('training');
 }
 
 export type SetFields = Partial<Pick<LoggedSet, 'type' | 'weight' | 'reps' | 'seconds' | 'rir' | 'done'>>;
@@ -315,7 +321,7 @@ export async function updateSet(db: SQLiteDatabase, setId: number, fields: SetFi
     next.done ? (current.done === 1 ? current.done_at : new Date().toISOString()) : null,
     setId,
   );
-  notifyChange();
+  notifyChange('training');
 }
 
 export async function setSetType(db: SQLiteDatabase, setId: number, type: SetType): Promise<void> {
@@ -324,12 +330,12 @@ export async function setSetType(db: SQLiteDatabase, setId: number, type: SetTyp
 
 export async function deleteSet(db: SQLiteDatabase, setId: number): Promise<void> {
   await db.runAsync('DELETE FROM workout_sets WHERE id = ?', setId);
-  notifyChange();
+  notifyChange('training');
 }
 
 export async function updateWorkoutNotes(db: SQLiteDatabase, id: number, notes: string): Promise<void> {
   await db.runAsync('UPDATE workouts SET notes = ? WHERE id = ?', notes.trim() === '' ? null : notes.trim(), id);
-  notifyChange();
+  notifyChange('training');
 }
 
 /**
@@ -350,17 +356,17 @@ export async function finishWorkout(db: SQLiteDatabase, id: number, now = new Da
   const left = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM workout_exercises WHERE workout_id = ?', id);
   if ((left?.n ?? 0) === 0) {
     await db.runAsync('DELETE FROM workouts WHERE id = ?', id);
-    notifyChange();
+    notifyChange('training', 'settings');
     return false;
   }
   await db.runAsync('UPDATE workouts SET ended_at = ? WHERE id = ?', now.toISOString(), id);
-  notifyChange();
+  notifyChange('training', 'settings');
   return true;
 }
 
 export async function deleteWorkout(db: SQLiteDatabase, id: number): Promise<void> {
   await db.runAsync('DELETE FROM workouts WHERE id = ?', id);
-  notifyChange();
+  notifyChange('training', 'settings');
 }
 
 export type WorkoutSummary = {

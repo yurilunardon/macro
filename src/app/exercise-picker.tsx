@@ -27,6 +27,7 @@ export default function ExercisePickerScreen() {
   const { names } = useExerciseNames();
   const { data } = useLiveQuery(`exercise-picker:${query}:${muscle ?? ''}`, (database) =>
     searchExercises(database, { query, muscle }),
+    ['training', 'settings'],
   );
 
   const pick = async (exercise: Exercise) => {
@@ -76,7 +77,7 @@ export default function ExercisePickerScreen() {
       {data && data.length === 0 ? (
         <View style={styles.empty}>
           <AppText tone="textSecondary" align="center">
-            Nessun esercizio trovato. Puoi crearlo tu con il nome che usi in palestra.
+            Nessun risultato. Puoi creare l’esercizio.
           </AppText>
         </View>
       ) : null}

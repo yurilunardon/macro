@@ -1,13 +1,15 @@
 import { Link, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
+import { useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, Card, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
+import { ActionRow, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
+import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
-import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
+import { SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
@@ -16,9 +18,9 @@ import {
   deleteDay,
   deleteProgram,
   getProgram,
-  moveDay,
   renameDay,
   renameProgram,
+  reorderDays,
   setActiveProgram,
   type DaySummary,
 } from '@/db/programs';
@@ -26,6 +28,13 @@ import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
 import { countLabel } from '@/lib/format';
 import { haptics } from '@/services/haptics';
+import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
+
+const ROW_HEIGHT = 60;
+
+function daySummary(day: DaySummary): string {
+  return [countLabel(day.exerciseCount, 'esercizio', 'esercizi'), day.muscles.map(muscleLabel).join(', ')].filter(Boolean).join(' · ');
+}
 
 /** A program: its days in the order they rotate, and whether it is the one in use. */
 export default function ProgramScreen() {
@@ -34,7 +43,9 @@ export default function ProgramScreen() {
   const theme = useTheme();
   const params = useLocalSearchParams<{ id?: string }>();
   const id = Number(params.id);
-  const { data: program } = useLiveQuery(`program:${id}`, (database) => getProgram(database, id));
+  const { data: program } = useLiveQuery(`program:${id}`, (database) => getProgram(database, id), ['training']);
+  const hidden = usePendingDeletes();
+  const [reordering, setReordering] = useState(false);
 
   if (program === undefined) {
     return (
@@ -43,18 +54,20 @@ export default function ProgramScreen() {
       </View>
     );
   }
-  if (program === null) {
+  if (program === null || hidden.has(`program:${program.id}`)) {
     return (
       <View style={styles.center}>
-        <AppText tone="textSecondary">Scheda eliminata.</AppText>
+        <AppText tone="textSecondary">Scheda eliminata</AppText>
       </View>
     );
   }
 
-  const prompt = (title: string, message: string, initial: string, onSave: (name: string) => void) =>
+  const days = program.days.filter((d) => !hidden.has(`day:${d.id}`));
+
+  const prompt = (title: string, initial: string, onSave: (name: string) => void) =>
     Alert.prompt(
       title,
-      message,
+      undefined,
       [
         { text: 'Annulla', style: 'cancel' },
         {
@@ -70,49 +83,49 @@ export default function ProgramScreen() {
     );
 
   const newDay = () =>
-    prompt('Nuovo giorno', 'Es. Push, Upper A, Gambe.', '', async (name) => {
+    prompt('Nuovo giorno', '', async (name) => {
       const dayId = await addDay(db, program.id, name);
       haptics.success();
       router.push({ pathname: '/training/day', params: { id: dayId } });
     });
 
-  const remove = async () => {
-    const ok = await confirmDestructive({
-      title: `Eliminare «${program.name}»?`,
-      message: 'Gli allenamenti già fatti restano nello storico.',
-      action: 'Elimina',
-    });
-    if (!ok) return;
-    await deleteProgram(db, program.id);
+  const remove = () => {
+    deleteWithUndo({ key: `program:${program.id}`, title: 'Scheda eliminata', run: () => deleteProgram(db, program.id) });
     router.back();
   };
 
-  const confirmDay = (day: DaySummary) => () =>
-    confirmDestructive({ title: `Eliminare «${day.name}»?`, message: 'Gli allenamenti già fatti restano nello storico.', action: 'Elimina' });
+  const removeDay = (day: DaySummary) =>
+    deleteWithUndo({ key: `day:${day.id}`, title: `${day.name} eliminato`, run: () => deleteDay(db, day.id) });
 
   return (
     <ScreenScroll>
-      <Stack.Screen options={{ title: program.name }} />
+      <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="ellipsis.circle" accessibilityLabel="Azioni sulla scheda">
-          <Stack.Toolbar.MenuAction
-            icon="pencil"
-            onPress={() => prompt('Rinomina la scheda', '', program.name, (name) => void renameProgram(db, program.id, name))}>
-            Rinomina
-          </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
-            Elimina scheda
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
+        {reordering ? (
+          <Stack.Toolbar.Button variant="done" onPress={() => setReordering(false)}>
+            Fine
+          </Stack.Toolbar.Button>
+        ) : (
+          <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sulla scheda">
+            <Stack.Toolbar.MenuAction icon="arrow.up.arrow.down" disabled={days.length < 2} onPress={() => setReordering(true)}>
+              Riordina i giorni
+            </Stack.Toolbar.MenuAction>
+            <Stack.Toolbar.MenuAction icon="trash" destructive onPress={remove}>
+              Elimina scheda
+            </Stack.Toolbar.MenuAction>
+          </Stack.Toolbar.Menu>
+        )}
       </Stack.Toolbar>
 
+      <EditableTitle value={program.name} accessibilityLabel="Nome della scheda" onChange={(name) => void renameProgram(db, program.id, name)} />
+
       {program.active ? (
-        <Card style={[styles.status, { backgroundColor: theme.accentSoft }]}>
-          <Icon name="checkmark.circle.fill" size={20} tone="accent" />
-          <AppText variant="subhead" style={styles.flex}>
-            È la scheda in uso: il prossimo allenamento parte da qui.
+        <View style={styles.status}>
+          <Icon name="checkmark.circle.fill" size={17} tone="accent" />
+          <AppText variant="subhead" weight="600" tone="accent">
+            Scheda in uso
           </AppText>
-        </Card>
+        </View>
       ) : (
         <Button
           title="Usa questa scheda"
@@ -125,65 +138,69 @@ export default function ProgramScreen() {
       )}
 
       <SectionTitle>Giorni</SectionTitle>
-      <ListGroup>
-        {program.days.map((day, index) => (
-          <SwipeToDelete key={day.id} confirm={confirmDay(day)} onDelete={() => void deleteDay(db, day.id)}>
-            <Link href={{ pathname: '/training/day', params: { id: day.id } }} asChild>
-              <Link.Trigger>
-                <Pressable accessibilityRole="button" accessibilityHint="Tieni premuto per spostarlo o rinominarlo">
-                  {({ pressed }) => (
-                    <View style={[styles.day, pressed && { backgroundColor: theme.cardPressed }]}>
-                      <View style={[styles.number, { backgroundColor: theme.track }]}>
-                        <AppText variant="subhead" weight="700" numeric>
-                          {String(index + 1)}
-                        </AppText>
+      {reordering ? (
+        <SortableList
+          items={days}
+          keyOf={(day) => String(day.id)}
+          rowHeight={ROW_HEIGHT}
+          onReorder={(keys) => void reorderDays(db, keys.map(Number))}
+          renderRow={(day) => (
+            <View>
+              <AppText numberOfLines={1}>{day.name}</AppText>
+              <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                {daySummary(day)}
+              </AppText>
+            </View>
+          )}
+        />
+      ) : (
+        <ListGroup>
+          {days.map((day, index) => (
+            <SwipeToDelete key={day.id} onDelete={() => removeDay(day)}>
+              <Link href={{ pathname: '/training/day', params: { id: day.id } }} asChild>
+                <Link.Trigger>
+                  <Pressable accessibilityRole="button">
+                    {({ pressed }) => (
+                      <View style={[styles.day, pressed && { backgroundColor: theme.cardPressed }]}>
+                        <View style={[styles.number, { backgroundColor: theme.fill }]}>
+                          <AppText variant="subhead" weight="700" numeric>
+                            {String(index + 1)}
+                          </AppText>
+                        </View>
+                        <View style={styles.flex}>
+                          <AppText numberOfLines={1}>{day.name}</AppText>
+                          <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                            {daySummary(day)}
+                          </AppText>
+                        </View>
+                        <Icon name="chevron.right" size={13} tone="textTertiary" weight="semibold" />
                       </View>
-                      <View style={styles.flex}>
-                        <AppText>{day.name}</AppText>
-                        <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                          {[countLabel(day.exerciseCount, 'esercizio', 'esercizi'), day.muscles.map(muscleLabel).join(', ')]
-                            .filter(Boolean)
-                            .join(' · ')}
-                        </AppText>
-                      </View>
-                      <Icon name="chevron.right" size={13} tone="textTertiary" weight="semibold" />
-                    </View>
-                  )}
-                </Pressable>
-              </Link.Trigger>
-              <Link.Menu>
-                <Link.MenuAction
-                  icon="pencil"
-                  onPress={() => prompt('Rinomina il giorno', '', day.name, (name) => void renameDay(db, day.id, name))}>
-                  Rinomina
-                </Link.MenuAction>
-                {index > 0 ? (
-                  <Link.MenuAction icon="arrow.up" onPress={() => void moveDay(db, day.id, -1)}>
-                    Sposta prima
+                    )}
+                  </Pressable>
+                </Link.Trigger>
+                <Link.Menu>
+                  <Link.MenuAction
+                    icon="pencil"
+                    onPress={() => prompt('Rinomina giorno', day.name, (name) => void renameDay(db, day.id, name))}>
+                    Rinomina
                   </Link.MenuAction>
-                ) : null}
-                {index < program.days.length - 1 ? (
-                  <Link.MenuAction icon="arrow.down" onPress={() => void moveDay(db, day.id, 1)}>
-                    Sposta dopo
+                  <Link.MenuAction icon="arrow.up.arrow.down" onPress={() => setReordering(true)}>
+                    Riordina
                   </Link.MenuAction>
-                ) : null}
-                <Link.MenuAction
-                  icon="trash"
-                  destructive
-                  onPress={async () => {
-                    if (await confirmDay(day)()) void deleteDay(db, day.id);
-                  }}>
-                  Elimina
-                </Link.MenuAction>
-              </Link.Menu>
-            </Link>
-          </SwipeToDelete>
-        ))}
-        <ActionRow label="Aggiungi giorno" onPress={newDay} />
-      </ListGroup>
+                  <Link.MenuAction icon="trash" destructive onPress={() => removeDay(day)}>
+                    Elimina
+                  </Link.MenuAction>
+                </Link.Menu>
+              </Link>
+            </SwipeToDelete>
+          ))}
+          <ActionRow label="Aggiungi giorno" onPress={newDay} />
+        </ListGroup>
+      )}
       <SectionFooter>
-        I giorni si alternano in quest’ordine: dopo l’ultimo si riparte dal primo, comunque tu distribuisca gli
-        allenamenti nella settimana.
+        {reordering
+          ? 'Tieni premuto un giorno e trascinalo.'
+          : 'I giorni si alternano in quest’ordine, poi si riparte dal primo.'}
       </SectionFooter>
     </ScreenScroll>
   );
@@ -192,14 +209,14 @@ export default function ProgramScreen() {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1 },
-  status: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  status: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2, paddingHorizontal: Spacing.xs },
   day: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
-    minHeight: 56,
+    minHeight: ROW_HEIGHT,
   },
   number: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
 });

@@ -6,7 +6,8 @@ import { nextInRotation } from '@/lib/training';
 
 import { exerciseFromRow, type Exercise, type ExerciseRow } from './exercises';
 import { notifyChange } from './live';
-import { moveRow } from './ordering';
+import { moveRow, setOrder } from './ordering';
+import { getSetting, setSetting } from './settings';
 
 /** An exercise as planned in a day of a program: how many sets, in what rep range. */
 export type PlannedExercise = {
@@ -75,7 +76,7 @@ export async function createProgram(db: SQLiteDatabase, name: string): Promise<n
     (existing?.n ?? 0) === 0 ? 1 : 0,
     new Date().toISOString(),
   );
-  notifyChange();
+  notifyChange('training');
   return result.lastInsertRowId;
 }
 
@@ -117,13 +118,13 @@ export async function createProgramFromTemplate(db: SQLiteDatabase, template: Pr
       }
     }
   });
-  notifyChange();
+  notifyChange('training');
   return programId;
 }
 
 export async function renameProgram(db: SQLiteDatabase, id: number, name: string): Promise<void> {
   await db.runAsync('UPDATE programs SET name = ? WHERE id = ?', name.trim(), id);
-  notifyChange();
+  notifyChange('training');
 }
 
 /** Deletes a program and its days. Workouts already done stay in the history. */
@@ -134,12 +135,12 @@ export async function deleteProgram(db: SQLiteDatabase, id: number): Promise<voi
     `UPDATE programs SET active = 1 WHERE id = (SELECT id FROM programs ORDER BY created_at DESC LIMIT 1)
      AND NOT EXISTS (SELECT 1 FROM programs WHERE active = 1)`,
   );
-  notifyChange();
+  notifyChange('training');
 }
 
 export async function setActiveProgram(db: SQLiteDatabase, id: number): Promise<void> {
   await db.runAsync('UPDATE programs SET active = CASE WHEN id = ? THEN 1 ELSE 0 END', id);
-  notifyChange();
+  notifyChange('training');
 }
 
 export async function addDay(db: SQLiteDatabase, programId: number, name: string): Promise<number> {
@@ -153,18 +154,18 @@ export async function addDay(db: SQLiteDatabase, programId: number, name: string
     name.trim(),
     (last?.p ?? -1) + 1,
   );
-  notifyChange();
+  notifyChange('training');
   return result.lastInsertRowId;
 }
 
 export async function renameDay(db: SQLiteDatabase, dayId: number, name: string): Promise<void> {
   await db.runAsync('UPDATE program_days SET name = ? WHERE id = ?', name.trim(), dayId);
-  notifyChange();
+  notifyChange('training');
 }
 
 export async function deleteDay(db: SQLiteDatabase, dayId: number): Promise<void> {
   await db.runAsync('DELETE FROM program_days WHERE id = ?', dayId);
-  notifyChange();
+  notifyChange('training');
 }
 
 export function moveDay(db: SQLiteDatabase, dayId: number, direction: -1 | 1): Promise<void> {
@@ -173,6 +174,15 @@ export function moveDay(db: SQLiteDatabase, dayId: number, direction: -1 | 1): P
 
 export function moveDayExercise(db: SQLiteDatabase, id: number, direction: -1 | 1): Promise<void> {
   return moveRow(db, 'day_exercises', 'day_id', id, direction);
+}
+
+/** Saves the days of a program in the order they were dragged into. */
+export function reorderDays(db: SQLiteDatabase, dayIds: readonly number[]): Promise<void> {
+  return setOrder(db, 'program_days', dayIds);
+}
+
+export function reorderDayExercises(db: SQLiteDatabase, ids: readonly number[]): Promise<void> {
+  return setOrder(db, 'day_exercises', ids);
 }
 
 type PlannedRow = ExerciseRow & {
@@ -241,7 +251,7 @@ export async function addDayExercise(
     plan.restSeconds,
     plan.note,
   );
-  notifyChange();
+  notifyChange('training');
   return result.lastInsertRowId;
 }
 
@@ -255,25 +265,37 @@ export async function updateDayExercise(db: SQLiteDatabase, id: number, plan: Pl
     plan.note && plan.note.trim() !== '' ? plan.note.trim() : null,
     id,
   );
-  notifyChange();
+  notifyChange('training');
 }
 
 export async function removeDayExercise(db: SQLiteDatabase, id: number): Promise<void> {
   await db.runAsync('DELETE FROM day_exercises WHERE id = ?', id);
-  notifyChange();
+  notifyChange('training');
 }
 
 /** The day of the active program to do next: the one after the last finished workout. */
 export async function getNextDay(db: SQLiteDatabase): Promise<{ program: Program; day: DaySummary } | null> {
   const program = (await getPrograms(db)).find((p) => p.active);
   if (!program || program.days.length === 0) return null;
-  const last = await db.getFirstAsync<{ day_id: number }>(
-    `SELECT w.day_id FROM workouts w JOIN program_days d ON d.id = w.day_id
-     WHERE d.program_id = ? AND w.ended_at IS NOT NULL ORDER BY w.started_at DESC LIMIT 1`,
-    program.id,
-  );
+  const [last, chosen] = await Promise.all([
+    db.getFirstAsync<{ day_id: number; started_at: string }>(
+      `SELECT w.day_id, w.started_at FROM workouts w JOIN program_days d ON d.id = w.day_id
+       WHERE d.program_id = ? AND w.ended_at IS NOT NULL ORDER BY w.started_at DESC LIMIT 1`,
+      program.id,
+    ),
+    getSetting(db, 'nextDay'),
+  ]);
+  // A day picked by hand stays next until a workout of this program starts after the choice.
+  const picked = chosen && (!last || last.started_at < chosen.chosenAt) ? program.days.find((d) => d.id === chosen.dayId) : undefined;
+  if (picked) return { program, day: picked };
   const ids = program.days.map((d) => d.id);
   const nextId = nextInRotation(ids, last?.day_id ?? null);
   const day = program.days.find((d) => d.id === nextId);
   return day ? { program, day } : null;
+}
+
+/** Makes a day the next workout, without starting it. */
+export async function setNextDay(db: SQLiteDatabase, dayId: number, now = new Date()): Promise<void> {
+  await setSetting(db, 'nextDay', { dayId, chosenAt: now.toISOString() });
+  notifyChange('training');
 }

@@ -48,13 +48,13 @@ export function ProgressBar({ value, target, color, height = 6 }: ProgressBarPro
 type CalorieRingProps = { eaten: number; target: number; size?: number };
 
 /**
- * Ring filled by eaten / target, with "eaten / goal" in the middle. Its colour says how close
- * the day is to the goal; it fills and changes colour smoothly when food is added or the day
- * changes.
+ * Ring filled by eaten / target, with the calories left in the middle. Its colour says how
+ * close the day is to the goal; it fills and changes colour smoothly when food is added or the
+ * day changes.
  */
-export function CalorieRing({ eaten, target, size = 156 }: CalorieRingProps) {
+export function CalorieRing({ eaten, target, size = 136 }: CalorieRingProps) {
   const theme = useTheme();
-  const stroke = 14;
+  const stroke = 13;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const r = ratio(eaten, target);
@@ -98,11 +98,11 @@ export function CalorieRing({ eaten, target, size = 156 }: CalorieRingProps) {
         />
       </Svg>
       <View style={styles.ringCenter} pointerEvents="none">
-        <AppText variant="title" numeric>
-          {formatKcal(eaten)}
+        <AppText variant="title" numeric tone={over ? 'danger' : 'text'}>
+          {formatKcal(left)}
         </AppText>
-        <AppText variant="subhead" tone="textSecondary" numeric>
-          {`/ ${formatKcal(target)} kcal`}
+        <AppText variant="footnote" tone="textSecondary">
+          {over ? 'kcal in più' : 'kcal rimaste'}
         </AppText>
       </View>
     </View>
