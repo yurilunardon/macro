@@ -1,4 +1,5 @@
 import Constants from 'expo-constants';
+import * as Updates from 'expo-updates';
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
@@ -227,6 +228,12 @@ export default function SettingsScreen() {
           onPress={() => void Linking.openURL('https://fdc.nal.usda.gov')}
         />
         <Row title="Versione" detail={Constants.expoConfig?.version ?? '—'} />
+        {Updates.createdAt && !Updates.isEmbeddedLaunch ? (
+          <Row
+            title="Ultimo aggiornamento"
+            detail={Updates.createdAt.toLocaleString('it-IT', { day: 'numeric', month: 'short', hour: '2-digit', minute: '2-digit' })}
+          />
+        ) : null}
       </ListGroup>
     </ScreenScroll>
   );

@@ -6,6 +6,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
 import { NotificationSync } from '@/components/notification-sync';
 import { ToastHost } from '@/components/toast';
+import { UpdateCheck } from '@/components/update-check';
 import { TAB_STACK_OPTIONS } from '@/constants/navigation';
 import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
@@ -74,6 +75,7 @@ export default function RootLayout() {
               />
             </Stack>
             <NotificationSync />
+            <UpdateCheck />
             <ToastHost />
           </SQLiteProvider>
         </Suspense>
