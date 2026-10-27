@@ -35,6 +35,9 @@ import { mealForTime } from '@/lib/meals';
 import { formatExpiry, type ExpiryStatus } from '@/lib/provisioning';
 import { haptics } from '@/services/haptics';
 
+/** UIBarButtonItem's width: passed through to the native button, though not in the props' type. */
+const WIDE: object = { width: 64 };
+
 /** Days kept in the pager on either side of the day the app was opened on: two years. */
 const RANGE = 730;
 
@@ -209,10 +212,10 @@ export default function NutritionScreen() {
           Oggi
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
-      {/* Scanning is the quickest way to log food: the one button on the right, tinted. */}
+      {/* Scanning is the quickest way to log food: the one button on the right, wider than an icon. */}
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button
-          variant="prominent"
+          {...WIDE}
           icon="barcode.viewfinder"
           accessibilityLabel="Scansiona codice a barre"
           onPress={() => router.push({ pathname: '/add/scan', params: { meal: mealForTime(), date } })}

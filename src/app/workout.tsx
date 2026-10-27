@@ -19,8 +19,8 @@ import Animated, {
   withDelay,
   withRepeat,
   withTiming,
-  ZoomIn,
-  ZoomOut,
+  type ExitAnimationsValues,
+  type LayoutAnimation,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
@@ -41,7 +41,7 @@ import { SetTypeMenu } from '@/components/set-type-menu';
 import { editButton } from '@/components/edit-button';
 import { FoldChevron } from '@/components/fold-chevron';
 import { Jiggle } from '@/components/jiggle';
-import { SwipeToDelete, useSwipeReveal } from '@/components/swipe-to-delete';
+import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Radius, Spacing } from '@/constants/theme';
 import { restFor, updateExerciseOptions } from '@/db/exercises';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
@@ -110,8 +110,8 @@ export default function WorkoutScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { names } = useExerciseNames();
-  // "Modifica", as in Clock: exercises wobble and can be dragged or removed, sets and notes show
-  // a red ⊖, and what logs the workout (ticks, "Aggiungi serie", menus) steps aside until ✓.
+  // "Modifica", as apps on the Home Screen: the exercises fold to their names, wobble, and can be
+  // dragged or removed. Only the exercises change; sets are deleted with a swipe at any time.
   const [editing, setEditing] = useState(false);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   // The order just dragged into, shown until the saved order comes back from the database.
@@ -261,22 +261,15 @@ export default function WorkoutScreen() {
         </Stack.Toolbar>
 
         {workout.notes ? (
-          <NoteRow
-            text={workout.notes}
-            icon="note.text"
-            editing={editing}
-            onPress={editNotes}
-            onRemove={() => void updateWorkoutNotes(db, workout.id, '')}
-            style={styles.notes}
-          />
+          <NoteRow text={workout.notes} icon="note.text" onPress={editNotes} style={styles.notes} />
         ) : null}
 
         {/* Rows already there when the screen opens appear with it; new sets slide in. */}
         <LayoutAnimationConfig skipEntering>
           {/*
-            Hold an exercise to move it: all of them start to wobble, as apps on the Home Screen,
-            the one held follows the finger, the others make room and the page scrolls at its
-            edges. ✓ ends the editing.
+            Hold an exercise's name, or tap "Modifica": all of them fold and wobble, as apps on the
+            Home Screen. Then one can be dragged: it follows the finger, the others make room and
+            the page scrolls at its edges. ✓, or a tap outside them, ends the editing.
           */}
           <Sortable.Grid
             data={exercises}
@@ -299,7 +292,9 @@ export default function WorkoutScreen() {
             itemExiting={EXERCISE_OUT}
             dimensionsAnimationType="worklet"
             hapticsEnabled
-            onDragStart={() => setEditing(true)}
+            // Dragging only once folded: a tall exercise under the finger was hard to place, and
+            // out of edit mode a hold never fights the swipes on the sets.
+            sortEnabled={editing}
             onDragEnd={({ data: ordered }) => {
               if (ordered === exercises) return;
               setLocalOrder(ordered.map((ex) => ex.id));
@@ -315,7 +310,8 @@ export default function WorkoutScreen() {
                   currentSetId={currentSetId}
                   names={names(ex.exercise)}
                   editing={editing}
-                  collapsed={foldedIds.has(ex.id)}
+                  collapsed={editing || foldedIds.has(ex.id)}
+                  onEdit={() => setEditing(true)}
                   onFold={(value) => fold([[ex.id, value]])}
                   onCompleted={() => onCompleted(ex.id)}
                   onSetDone={onSetDone}
@@ -343,40 +339,11 @@ export default function WorkoutScreen() {
   );
 }
 
-/** A note on the workout or an exercise: a tap changes it; in edit mode a red ⊖ removes it at once. */
-function NoteRow({
-  text,
-  icon,
-  editing,
-  onPress,
-  onRemove,
-  style,
-}: {
-  text: string;
-  icon: 'note.text' | 'pin.fill';
-  editing: boolean;
-  onPress: () => void;
-  onRemove: () => void;
-  style: StyleProp<ViewStyle>;
-}) {
+/** A note on the workout or an exercise: a tap changes or deletes it. */
+function NoteRow({ text, icon, onPress, style }: { text: string; icon: 'note.text' | 'pin.fill'; onPress: () => void; style: StyleProp<ViewStyle> }) {
   return (
-    <Pressable onPress={editing ? undefined : onPress} accessibilityRole="button" accessibilityHint="Modifica o elimina la nota" style={style}>
-      {editing ? (
-        <Animated.View entering={MINUS_IN} exiting={MINUS_OUT}>
-          <Pressable
-            onPress={() => {
-              haptics.light();
-              onRemove();
-            }}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Elimina la nota">
-            <Icon name="minus.circle.fill" size={18} tone="danger" />
-          </Pressable>
-        </Animated.View>
-      ) : (
-        <Icon name={icon} size={icon === 'pin.fill' ? 12 : 15} tone={icon === 'pin.fill' ? 'warning' : 'textSecondary'} />
-      )}
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Modifica o elimina la nota" style={style}>
+      <Icon name={icon} size={icon === 'pin.fill' ? 12 : 15} tone={icon === 'pin.fill' ? 'warning' : 'textSecondary'} />
       <AppText variant="footnote" tone={icon === 'pin.fill' ? 'text' : 'textSecondary'} style={styles.flex}>
         {text}
       </AppText>
@@ -388,8 +355,11 @@ type ExerciseBlockProps = {
   item: WorkoutExercise;
   currentSetId: number | null;
   names: { title: string; subtitle: string | null };
+  /** Edit mode: folded, and only to drag or remove. */
   editing: boolean;
   collapsed: boolean;
+  /** Held on its name: edit mode starts. */
+  onEdit: () => void;
   onFold: (collapsed: boolean) => void;
   /** Its last set was just ticked. */
   onCompleted: () => void;
@@ -402,7 +372,7 @@ const folded = new Set<number>();
 /** The load suggested from last time, once taken, by exercise of the workout. */
 const taken = new Map<number, number>();
 
-function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, onFold, onCompleted, onSetDone, onRemove }: ExerciseBlockProps) {
+function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, onEdit, onFold, onCompleted, onSetDone, onRemove }: ExerciseBlockProps) {
   const db = useSQLiteContext();
   // A set deleted is gone at once, with "Annulla" for a few seconds, as every row in the app.
   const hidden = usePendingDeletes();
@@ -459,7 +429,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
 
   // Folded with the set to do now inside, the exercise is picked out as that set would be.
   const currentIndex = item.sets.findIndex((set) => set.id === currentSetId);
-  const holdsCurrent = collapsed && currentIndex >= 0 && !editing;
+  const holdsCurrent = collapsed && currentIndex >= 0;
 
   const editNote = () =>
     editText({
@@ -472,18 +442,22 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
   return (
     <View style={styles.exercise}>
       <ListGroup layout={BLOCK_LAYOUT}>
-        <View style={[styles.exerciseHeader, editing && styles.exerciseHeaderEditing]}>
-          {holdsCurrent ? (
+        <View style={styles.exerciseHeader}>
+          {holdsCurrent && !editing ? (
             <Animated.View entering={CURRENT_IN} exiting={SETS_OUT} pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.fill }]} />
           ) : null}
           <Pressable
+            // In edit mode the whole block is the sortable list's, to drag.
+            disabled={editing}
             onPress={() => {
               haptics.selection();
               onFold(!collapsed);
             }}
-            // Holding the title starts dragging the exercise: the press must not fold it too.
-            onLongPress={() => {}}
-            delayLongPress={250}
+            onLongPress={() => {
+              haptics.medium();
+              onEdit();
+            }}
+            delayLongPress={350}
             accessibilityRole="button"
             accessibilityState={{ expanded: !collapsed }}
             accessibilityHint={collapsed ? 'Mostra le serie' : 'Nascondi le serie'}
@@ -507,48 +481,41 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
             </View>
             <FoldChevron open={!collapsed} />
           </Pressable>
-          {editing ? null : (
-            <MenuButton
-              icon="ellipsis.circle"
-              accessibilityLabel={`Opzioni per ${names.title}`}
-              groups={[
-                {
-                  actions: [
-                    {
-                      label: exercise.trackRir ? 'Nascondi colonna RIR' : 'Mostra colonna RIR',
-                      icon: 'gauge.with.dots.needle.33percent',
-                      onPress: () => void updateExerciseOptions(db, exercise.id, { trackRir: !exercise.trackRir }),
-                    },
-                    { label: exercise.note ? 'Modifica nota fissa' : 'Aggiungi nota fissa', icon: 'pin', onPress: editNote },
-                  ],
-                },
-                {
-                  actions: [
-                    {
-                      label: 'Sostituisci esercizio',
-                      icon: 'arrow.triangle.2.circlepath',
-                      onPress: () => router.push({ pathname: '/exercise-picker', params: { target: 'replace', id: item.id } }),
-                    },
-                    { label: 'Elimina esercizio', icon: 'trash', destructive: true, onPress: onRemove },
-                  ],
-                },
-              ]}
-            />
-          )}
+          {/* Still there in edit mode, so nothing moves; only the drag takes the block then. */}
+          <MenuButton
+            inert={editing}
+            icon="ellipsis.circle"
+            accessibilityLabel={`Opzioni per ${names.title}`}
+            groups={[
+              {
+                actions: [
+                  {
+                    label: exercise.trackRir ? 'Nascondi colonna RIR' : 'Mostra colonna RIR',
+                    icon: 'gauge.with.dots.needle.33percent',
+                    onPress: () => void updateExerciseOptions(db, exercise.id, { trackRir: !exercise.trackRir }),
+                  },
+                  { label: exercise.note ? 'Modifica nota fissa' : 'Aggiungi nota fissa', icon: 'pin', onPress: editNote },
+                ],
+              },
+              {
+                actions: [
+                  {
+                    label: 'Sostituisci esercizio',
+                    icon: 'arrow.triangle.2.circlepath',
+                    onPress: () => router.push({ pathname: '/exercise-picker', params: { target: 'replace', id: item.id } }),
+                  },
+                  { label: 'Elimina esercizio', icon: 'trash', destructive: true, onPress: onRemove },
+                ],
+              },
+            ]}
+          />
         </View>
         {collapsed ? null : (
         <Animated.View entering={SETS_IN} exiting={SETS_OUT}>
         {exercise.note ? (
-          <NoteRow
-            text={exercise.note}
-            icon="pin.fill"
-            editing={editing}
-            onPress={editNote}
-            onRemove={() => void updateExerciseOptions(db, exercise.id, { note: '' })}
-            style={styles.noteRow}
-          />
+          <NoteRow text={exercise.note} icon="pin.fill" onPress={editNote} style={styles.noteRow} />
         ) : null}
-        {advice && !editing ? (
+        {advice ? (
           <View style={styles.adviceRow}>
             <Icon
               name={advice.direction === 'up' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'}
@@ -577,7 +544,6 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
           </View>
         ) : null}
         <View style={styles.tableHead}>
-          {editing ? <View style={styles.colMinus} /> : null}
           <AppText variant="caption" tone="textSecondary" weight="600" style={styles.colSet}>
             SERIE
           </AppText>
@@ -603,19 +569,18 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
               RIR
             </AppText>
           ) : null}
-          {editing ? null : <View style={styles.colCheck} />}
+          <View style={styles.colCheck} />
         </View>
         {item.sets.map((set, index) => {
           const badge = set.type === 'warmup' ? 'R' : set.type === 'drop' ? 'D' : set.type === 'failure' ? 'C' : String(++ordinal);
-          const current = set.id === currentSetId && !editing;
+          const current = set.id === currentSetId;
           const divided = index > 0;
           return (
-            <Animated.View key={set.id} entering={FadeIn.duration(200)} exiting={SET_OUT} layout={BLOCK_LAYOUT}>
+            <Animated.View key={set.id} entering={FadeIn.duration(200)} exiting={SET_OUT} layout={BLOCK_LAYOUT} style={styles.setSlot}>
             <SwipeToDelete collapse={false} onDelete={() => removeSet(set.id)}>
                 <SetRow
                   set={set}
                   current={current}
-                  editing={editing}
                   badge={badge}
                   previous={item.previous[index]}
                   prefill={prefill(index)}
@@ -635,15 +600,13 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
             </Animated.View>
           );
         })}
-        {editing ? null : (
-          // Adding a set and the rest after each one: what is changed most while training.
-          <Animated.View layout={BLOCK_LAYOUT} style={styles.exerciseFooter}>
-            <View style={styles.flex}>
-              <ActionRow label="Aggiungi serie" symbol="plus" onPress={() => void addSet(db, item.id)} />
-            </View>
-            <RestPicker value={rest} onChange={(seconds) => void setWorkoutExerciseRest(db, item.id, seconds)} />
-          </Animated.View>
-        )}
+        {/* Adding a set and the rest after each one: what is changed most while training. */}
+        <Animated.View layout={BLOCK_LAYOUT} style={styles.exerciseFooter}>
+          <View style={styles.flex}>
+            <ActionRow label="Aggiungi serie" symbol="plus" onPress={() => void addSet(db, item.id)} />
+          </View>
+          <RestPicker value={rest} onChange={(seconds) => void setWorkoutExerciseRest(db, item.id, seconds)} />
+        </Animated.View>
         </Animated.View>
         )}
       </ListGroup>
@@ -659,8 +622,6 @@ type SetRowProps = {
   set: WorkoutSet;
   /** The set to do now. */
   current: boolean;
-  /** Edit mode: the values are locked and a red ⊖ takes the place of the tick. */
-  editing: boolean;
   badge: string;
   previous: LoggedSet | undefined;
   /** What an untouched set starts from: last time's values, or the load suggested for today. */
@@ -683,7 +644,6 @@ type SetRowProps = {
 function SetRow({
   set,
   current,
-  editing,
   badge,
   previous,
   prefill,
@@ -696,8 +656,6 @@ function SetRow({
   onDelete,
 }: SetRowProps) {
   const theme = useTheme();
-  // The ⊖ of edit mode slides the row open on its "Elimina" button, as in Clock.
-  const askDelete = useSwipeReveal();
   // A set not touched yet starts from what was done last time, so most sets are just a tick.
   const touched = set.done || set.weight !== null || set.reps !== null || set.seconds !== null;
   const start = touched ? set : prefill;
@@ -799,7 +757,7 @@ function SetRow({
       keyboardType="decimal-pad"
       inputAccessoryViewButtonLabel="Fine"
       selectTextOnFocus
-      editable={!set.done && !editing}
+      editable={!set.done}
       accessibilityLabel={label}
       style={[
         styles.input,
@@ -829,23 +787,8 @@ function SetRow({
     <View style={set.done && { backgroundColor: `${theme.accent}1F` }}>
     {divided ? <View style={[styles.setDivider, { backgroundColor: theme.separator }]} /> : null}
     <Animated.View style={[styles.setRow, shakeStyle]}>
-      {/* In edit mode the red ⊖ comes in on the left, as in iOS lists, and slides the row open. */}
-      {editing ? (
-        <Animated.View entering={MINUS_IN} exiting={MINUS_OUT} style={styles.colMinus}>
-          <Pressable
-            onPress={() => {
-              haptics.selection();
-              askDelete();
-            }}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Elimina la serie">
-            <Icon name="minus.circle.fill" size={22} tone="danger" />
-          </Pressable>
-        </Animated.View>
-      ) : null}
-      {/* The set to do now: its number in a green circle, as today in the week strip, and its
-          tick ringed in green. Nothing else changes, so the eye goes straight to it. */}
+      {/* The set to do now: its number in a green circle, as today in the week strip. Only that
+          changes, so the eye goes straight to it. */}
       <View style={styles.colSet}>
         {current ? (
           <Animated.View entering={CURRENT_IN} pointerEvents="none" style={[styles.currentBadge, { backgroundColor: theme.accent }]} />
@@ -864,25 +807,20 @@ function SetRow({
         </>
       )}
       {trackRir ? <View style={styles.colRir}>{field(rir, setRir, '–', 'Ripetizioni in riserva')}</View> : null}
-      {/* In edit mode the tick steps aside and the values move over, as rows do in iOS lists. */}
-      {editing ? null : (
-        <Pressable
-          onPress={tick}
-          hitSlop={6}
-          accessibilityRole="checkbox"
-          accessibilityState={{ checked: set.done }}
-          accessibilityLabel={set.done ? 'Serie fatta, tocca per riaprirla' : 'Segna la serie come fatta'}
-          style={({ pressed }) => [
-            styles.colCheck,
-            styles.check,
-            set.done
-              ? { backgroundColor: theme.accent }
-              : { borderWidth: 2, borderColor: current ? theme.accent : theme.separator, backgroundColor: theme.card },
-            pressed && { opacity: 0.6 },
-          ]}>
-          <Icon name="checkmark" size={15} weight="bold" color={set.done ? theme.onAccent : current ? theme.accent : theme.textTertiary} />
-        </Pressable>
-      )}
+      <Pressable
+        onPress={tick}
+        hitSlop={6}
+        accessibilityRole="checkbox"
+        accessibilityState={{ checked: set.done }}
+        accessibilityLabel={set.done ? 'Serie fatta, tocca per riaprirla' : 'Segna la serie come fatta'}
+        style={({ pressed }) => [
+          styles.colCheck,
+          styles.check,
+          set.done ? { backgroundColor: theme.accent } : { borderWidth: 2, borderColor: theme.separator, backgroundColor: theme.card },
+          pressed && { opacity: 0.6 },
+        ]}>
+        <Icon name="checkmark" size={15} weight="bold" color={set.done ? theme.onAccent : theme.textTertiary} />
+      </Pressable>
     </Animated.View>
     </View>
   );
@@ -896,8 +834,8 @@ function FinishPill({ onPress, bottom }: { onPress: () => void; bottom: number }
   const theme = useTheme();
   const label = (
     <>
-      <Icon name="flag.checkered" size={15} tone="danger" weight="semibold" />
-      <AppText weight="600" tone="danger">
+      <Icon name="flag.checkered" size={18} tone="danger" weight="semibold" />
+      <AppText variant="headline" tone="danger">
         Termina allenamento
       </AppText>
     </>
@@ -1098,15 +1036,25 @@ const REST_IN = FadeInDown.springify().damping(18).stiffness(180);
 const REST_OUT = FadeOutDown.duration(320);
 const DONE_IN = FadeIn.duration(250);
 const CURRENT_IN = FadeIn.duration(260);
-const MINUS_IN = ZoomIn.duration(180);
-const MINUS_OUT = ZoomOut.duration(140);
 const FLAG_IN = FadeIn.duration(220);
-const SETS_IN = FadeIn.duration(200).delay(60);
-const SETS_OUT = FadeOut.duration(120);
+// Folding and unfolding: the sets fade across most of the card's resize, so the two read as one.
+const SETS_IN = FadeIn.duration(220).delay(80);
+const SETS_OUT = FadeOut.duration(200);
 // The same timing react-native-sortables moves the exercises with (withTiming's default), so a
 // card that grows or shrinks and the cards below it that make room move as one.
 const BLOCK_LAYOUT = LinearTransition.duration(300).easing(Easing.inOut(Easing.quad));
-const SET_OUT = FadeOut.duration(200);
+const COLLAPSE = { duration: 300, easing: Easing.inOut(Easing.quad) };
+/**
+ * A set deleted closes its gap while the rows under it move up, on their curve, as in Mail: the
+ * red of the swipe shrinks away instead of lingering under the rows sliding over it.
+ */
+const SET_OUT = (values: ExitAnimationsValues): LayoutAnimation => {
+  'worklet';
+  return {
+    initialValues: { height: values.currentHeight, opacity: 1 },
+    animations: { height: withTiming(0, COLLAPSE), opacity: withTiming(0, COLLAPSE) },
+  };
+};
 const EXERCISE_IN = FadeIn.duration(250);
 const EXERCISE_OUT = FadeOut.duration(200);
 const SKIPPED_IN = FadeInDown.duration(220).withInitialValues({ transform: [{ translateY: 10 }] });
@@ -1187,10 +1135,11 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     minHeight: 60,
   },
-  exerciseHeaderEditing: { paddingRight: Spacing.md },
   exerciseTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingRight: Spacing.xs },
   noteRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, minHeight: 36 },
   tableHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+  // Clips a deleted set as it closes.
+  setSlot: { overflow: 'hidden' },
   setDivider: { position: 'absolute', top: 0, left: Spacing.md + 44, right: Spacing.md, height: StyleSheet.hairlineWidth, opacity: 0.6 },
   // On the top right corner of the reps box.
   flag: { position: 'absolute', top: -8, right: -9 },
@@ -1201,7 +1150,6 @@ const styles = StyleSheet.create({
   colInput: { width: 62, textAlign: 'center' },
   colRir: { width: 44, textAlign: 'center' },
   colCheck: { width: 40 },
-  colMinus: { width: 24, alignItems: 'center' },
   input: {
     height: 40,
     borderRadius: Radius.sm,
@@ -1220,7 +1168,7 @@ const styles = StyleSheet.create({
   restSlot: { position: 'absolute', left: Spacing.md, right: Spacing.md },
   pillSlot: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
   pressed: { opacity: 0.6 },
-  pill: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, height: 48, paddingHorizontal: Spacing.xl, borderRadius: 24 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, height: 56, paddingHorizontal: Spacing.xl + Spacing.sm, borderRadius: 28 },
   restTimeRow: { alignSelf: 'flex-start', transformOrigin: 'left center' },
   bump: { position: 'absolute', left: 84, top: 0, width: 64 },
   restBar: {

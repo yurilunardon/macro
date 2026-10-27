@@ -1,4 +1,4 @@
-import { Link, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { NativeTabs } from 'expo-router/native-tabs';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -12,17 +12,15 @@ import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDuration, workoutProgress } from '@/lib/training';
-import { endWorkout } from '@/services/end-workout';
-import { restTimer, useRestTimer } from '@/services/rest-timer';
+import { useRestTimer } from '@/services/rest-timer';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
-import { WorkoutPeek } from './workout-peek';
 
 /**
  * The workout in progress, above the tab bar like the mini player in Music: a ring of the sets
- * done (or of the rest left), what to do now and the time. Tapping it brings the workout back;
- * holding it shows where the workout is at, with a menu to skip the rest or end it.
+ * done (or of the rest left), what to do now and the time. Tapping it brings the workout back,
+ * and that is all it does: no preview or menu on a hold.
  */
 export function WorkoutAccessory({ id, name, startedAt }: { id: number; name: string; startedAt: string }) {
   const db = useSQLiteContext();
@@ -49,62 +47,36 @@ export function WorkoutAccessory({ id, name, startedAt }: { id: number; name: st
       ? `${names(current.exercise).title} · serie ${progress.current.set + 1} di ${current.sets.length}`
       : 'Allenamento in corso';
 
-  const end = async () => {
-    if ((await endWorkout(db, id, { confirm: true })) === 'finished') {
-      router.push({ pathname: '/workout-summary', params: { id } });
-    }
-  };
-
   return (
-    <Link href="/workout" asChild>
-      <Link.Trigger>
-        <Pressable
-          accessibilityRole="button"
-          accessibilityLabel={`${name}, ${ready ? 'recupero finito' : resting ? `recupero ${time}` : `in corso da ${time}`}. Apri l’allenamento`}
-          onPressIn={() => void prefetchLiveQuery(db, ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS)}
-          style={styles.row}>
-          <Ring fraction={fraction} color={resting ? theme.warning : theme.accent} track={theme.track}>
-            <Icon name={resting ? 'timer' : 'figure.strengthtraining.traditional'} size={15} tone={resting ? 'warning' : 'accent'} />
-          </Ring>
-          {placement === 'inline' ? (
-            <AppText variant="headline" numeric style={ready && { color: theme.accent }}>
-              {time}
+    <Pressable
+      onPress={() => router.push('/workout')}
+      accessibilityRole="button"
+      accessibilityLabel={`${name}, ${ready ? 'recupero finito' : resting ? `recupero ${time}` : `in corso da ${time}`}. Apri l’allenamento`}
+      onPressIn={() => void prefetchLiveQuery(db, ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS)}
+      style={styles.row}>
+      <Ring fraction={fraction} color={resting ? theme.warning : theme.accent} track={theme.track}>
+        <Icon name={resting ? 'timer' : 'figure.strengthtraining.traditional'} size={15} tone={resting ? 'warning' : 'accent'} />
+      </Ring>
+      {placement === 'inline' ? (
+        <AppText variant="headline" numeric style={ready && { color: theme.accent }}>
+          {time}
+        </AppText>
+      ) : (
+        <>
+          <View style={styles.flex}>
+            <AppText variant="headline" numberOfLines={1}>
+              {name}
             </AppText>
-          ) : (
-            <>
-              <View style={styles.flex}>
-                <AppText variant="headline" numberOfLines={1}>
-                  {name}
-                </AppText>
-                <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                  {line}
-                </AppText>
-              </View>
-              <AppText numeric style={[styles.time, { color: ready ? theme.accent : resting ? theme.warning : theme.text }]}>
-                {time}
-              </AppText>
-            </>
-          )}
-        </Pressable>
-      </Link.Trigger>
-      <Link.Preview style={styles.preview}>
-        <WorkoutPeek workout={workout ?? null} startedAt={startedAt} />
-      </Link.Preview>
-      <Link.Menu>
-        {resting ? (
-          <Link.MenuAction icon="forward.end" onPress={() => restTimer.stop()}>
-            Salta recupero
-          </Link.MenuAction>
-        ) : ready ? (
-          <Link.MenuAction icon="play.fill" onPress={() => restTimer.stop()}>
-            Vai
-          </Link.MenuAction>
-        ) : null}
-        <Link.MenuAction icon="flag.checkered" destructive onPress={() => void end()}>
-          Termina allenamento
-        </Link.MenuAction>
-      </Link.Menu>
-    </Link>
+            <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+              {line}
+            </AppText>
+          </View>
+          <AppText numeric style={[styles.time, { color: ready ? theme.accent : resting ? theme.warning : theme.text }]}>
+            {time}
+          </AppText>
+        </>
+      )}
+    </Pressable>
   );
 }
 
@@ -145,5 +117,4 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   time: { fontSize: 20, lineHeight: 24, fontWeight: '600', fontVariant: ['tabular-nums'] },
   ring: { width: RING, height: RING, alignItems: 'center', justifyContent: 'center' },
-  preview: { width: 340, height: 360 },
 });

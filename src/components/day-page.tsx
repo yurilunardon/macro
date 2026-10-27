@@ -39,9 +39,13 @@ import { toast } from './toast';
  */
 const GLASS_CARDS = isLiquidGlassAvailable();
 
-/** The glass behind a card's content, filling it, when GLASS_CARDS is on. */
+/**
+ * The glass behind a card's content, filling it, when GLASS_CARDS is on. Tinted with half the
+ * card's colour, so it stays quiet: glass, but not louder than the food in it.
+ */
 function GlassBackground() {
-  return <GlassView pointerEvents="none" glassEffectStyle="regular" style={styles.glass} />;
+  const theme = useTheme();
+  return <GlassView pointerEvents="none" glassEffectStyle="regular" tintColor={`${theme.card}80`} style={styles.glass} />;
 }
 
 const FADE_IN = FadeIn.duration(180);
@@ -193,8 +197,10 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
   // Until its data is there the day stays empty, then fades in: never a half-filled page.
   if (!data) return <View style={styles.loading} />;
 
+  // Glass must not be faded in: drawn under a parent that is not opaque, UIKit puts it in place
+  // with a jump in size.
   return (
-    <Animated.View entering={FADE_IN}>
+    <Animated.View entering={GLASS_CARDS ? undefined : FADE_IN}>
       {data.plan.isDefault ? (
         <Pressable onPress={() => router.navigate('/settings/goals')} accessibilityRole="button">
           <Card style={[styles.banner, { backgroundColor: theme.accentSoft }]}>
@@ -324,8 +330,10 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                     </AppText>
                   ) : null}
                 </Pressable>
+                {count > 0 ? menu : null}
                 {/* Adding is the one thing done to every meal, many times a day: always in sight,
-                    folded or not. The sheet grows out of the + and shrinks back into it. */}
+                    folded or not, and in the same place on every card, the last on the right. The
+                    sheet grows out of the + and shrinks back into it. */}
                 {interactive ? (
                   <Link href={{ pathname: '/add', params: { meal: meal.key, date } }} asChild>
                     <Link.Trigger withAppleZoom>
@@ -341,7 +349,6 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                 ) : (
                   <View style={styles.headerButton}>{addIcon}</View>
                 )}
-                {count > 0 ? menu : null}
               </View>
               {open && (foldable || canCopy) ? (
               <Animated.View entering={ROWS_IN} exiting={ROWS_OUT}>
@@ -456,7 +463,8 @@ const styles = StyleSheet.create({
     alignItems: 'center',
     gap: Spacing.xs,
     paddingLeft: Spacing.lg,
-    paddingRight: Spacing.xs,
+    // The + is drawn in a 40-wide button: this puts its circle as far from the edge as the title.
+    paddingRight: Spacing.sm,
     paddingVertical: Spacing.md,
   },
   mealTitle: { flex: 1, gap: 2 },
