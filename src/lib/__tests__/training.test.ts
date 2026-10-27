@@ -8,10 +8,12 @@ import {
   formatDuration,
   formatSet,
   formatWorkoutLength,
+  muscleShare,
   nextInRotation,
   setsPerMuscle,
   suggestNext,
   tonnage,
+  workoutProgress,
   type LoggedSet,
 } from '../training';
 
@@ -99,6 +101,34 @@ describe('volume', () => {
     expect(totals.get('chest')).toBe(3);
     expect(totals.get('triceps')).toBe(3.5);
     expect(totals.get('shoulders')).toBe(1.5);
+  });
+
+  it('gives one muscle its share of an exercise', () => {
+    const bench = { muscle: 'chest' as const, secondary: ['triceps' as const] };
+    expect(muscleShare(bench, 'chest')).toBe(1);
+    expect(muscleShare(bench, 'triceps')).toBe(0.5);
+    expect(muscleShare(bench, 'back')).toBe(0);
+  });
+});
+
+describe('workoutProgress', () => {
+  it('counts ticked sets and volume, and points at the first set still to do', () => {
+    const progress = workoutProgress([
+      { sets: [set(80, 10), set(80, 8)] },
+      { sets: [set(40, 12), set(40, null, { done: false }), set(40, null, { done: false })] },
+      { sets: [set(20, null, { done: false })] },
+    ]);
+    expect(progress).toEqual({ done: 3, total: 6, volume: 1920, exercisesDone: 1, current: { exercise: 1, set: 1 } });
+    expect(workoutProgress([{ sets: [set(80, 10)] }]).current).toBeNull();
+  });
+
+  it('follows the last set ticked when one is skipped, then goes back for it', () => {
+    const ticked = (weight: number, doneAt: string) => ({ ...set(weight, 10), doneAt });
+    const open = (weight: number) => ({ ...set(weight, null, { done: false }), doneAt: null });
+    const skipped = [{ sets: [ticked(80, '1'), open(80)] }, { sets: [ticked(40, '2'), open(40)] }];
+    expect(workoutProgress(skipped).current).toEqual({ exercise: 1, set: 1 });
+    skipped[1].sets[1] = ticked(40, '3');
+    expect(workoutProgress(skipped).current).toEqual({ exercise: 0, set: 1 });
   });
 });
 

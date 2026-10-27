@@ -12,7 +12,7 @@ export default function TabsLayout() {
     <NativeTabs tintColor={theme.accent}>
       {active ? (
         <NativeTabs.BottomAccessory>
-          <WorkoutAccessory name={active.name} startedAt={active.startedAt} />
+          <WorkoutAccessory id={active.id} name={active.name} startedAt={active.startedAt} />
         </NativeTabs.BottomAccessory>
       ) : null}
       <NativeTabs.Trigger name="(diary)">

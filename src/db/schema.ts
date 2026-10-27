@@ -242,6 +242,10 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE exercises ADD COLUMN name_en TEXT;
   `,
+  // 8: a program opened from a template is a draft until it is added to the user's own.
+  `
+  ALTER TABLE programs ADD COLUMN draft INTEGER NOT NULL DEFAULT 0;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -265,6 +269,8 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
     });
     version = next;
   }
+  // A template only looked at when the app was closed is not kept.
+  await db.runAsync('DELETE FROM programs WHERE draft = 1');
   await seedGenericFoods(db);
   await seedExercises(db);
   if (process.env.EXPO_PUBLIC_SAMPLE_DATA === '1') {

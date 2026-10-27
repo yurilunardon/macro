@@ -26,7 +26,8 @@ export type ProgramDay = { id: number; programId: number; name: string; exercise
 
 export type DaySummary = { id: number; name: string; exerciseCount: number; muscles: Muscle[] };
 
-export type Program = { id: number; name: string; active: boolean; days: DaySummary[] };
+/** A draft is a template being looked at: it is not listed until added to the user's programs. */
+export type Program = { id: number; name: string; active: boolean; draft: boolean; days: DaySummary[] };
 
 export type PlanFields = Pick<PlannedExercise, 'sets' | 'repMin' | 'repMax' | 'restSeconds' | 'note'>;
 
@@ -35,10 +36,11 @@ export const DEFAULT_PLAN: PlanFields = { sets: 3, repMin: 8, repMax: 12, restSe
 const EXERCISE_COLUMNS =
   'e.id, e.ref, e.name, e.name_en, e.muscle, e.secondary, e.equipment, e.kind, e.track_rir, e.rest_seconds, e.note';
 
-/** Every program, the active one first, with a summary of its days. */
-export async function getPrograms(db: SQLiteDatabase): Promise<Program[]> {
-  const programs = await db.getAllAsync<{ id: number; name: string; active: number }>(
-    'SELECT id, name, active FROM programs ORDER BY active DESC, created_at DESC, id DESC',
+/** Every program, the active one first, with a summary of its days. Drafts only if asked. */
+export async function getPrograms(db: SQLiteDatabase, { drafts = false }: { drafts?: boolean } = {}): Promise<Program[]> {
+  const programs = await db.getAllAsync<{ id: number; name: string; active: number; draft: number }>(
+    `SELECT id, name, active, draft FROM programs ${drafts ? '' : 'WHERE draft = 0'}
+     ORDER BY active DESC, created_at DESC, id DESC`,
   );
   const days = await db.getAllAsync<{ id: number; program_id: number; name: string; muscles: string | null; n: number }>(
     `SELECT d.id, d.program_id, d.name, COUNT(x.id) AS n,
@@ -52,6 +54,7 @@ export async function getPrograms(db: SQLiteDatabase): Promise<Program[]> {
     id: p.id,
     name: p.name,
     active: p.active === 1,
+    draft: p.draft === 1,
     days: days
       .filter((d) => d.program_id === p.id)
       .map((d) => ({
@@ -64,12 +67,12 @@ export async function getPrograms(db: SQLiteDatabase): Promise<Program[]> {
 }
 
 export async function getProgram(db: SQLiteDatabase, id: number): Promise<Program | null> {
-  return (await getPrograms(db)).find((p) => p.id === id) ?? null;
+  return (await getPrograms(db, { drafts: true })).find((p) => p.id === id) ?? null;
 }
 
 /** The first program becomes the active one: its next day is offered on the training page. */
 export async function createProgram(db: SQLiteDatabase, name: string): Promise<number> {
-  const existing = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM programs');
+  const existing = await db.getFirstAsync<{ n: number }>('SELECT COUNT(*) AS n FROM programs WHERE draft = 0');
   const result = await db.runAsync(
     'INSERT INTO programs (name, active, created_at) VALUES (?, ?, ?)',
     name.trim(),
@@ -80,16 +83,26 @@ export async function createProgram(db: SQLiteDatabase, name: string): Promise<n
   return result.lastInsertRowId;
 }
 
-/** Copies a template into a new program, made active. Unknown exercises are skipped. */
-export async function createProgramFromTemplate(db: SQLiteDatabase, template: ProgramTemplate): Promise<number> {
+/**
+ * Copies a template into a new program, made active. Unknown exercises are skipped. As a
+ * `draft` it is only there to be looked at and changed: it touches nothing else until added
+ * with addDraft, and is dropped with discardDraft.
+ */
+export async function createProgramFromTemplate(
+  db: SQLiteDatabase,
+  template: ProgramTemplate,
+  { draft = false }: { draft?: boolean } = {},
+): Promise<number> {
   const refs = await db.getAllAsync<{ id: number; ref: string }>('SELECT id, ref FROM exercises WHERE ref IS NOT NULL');
   const idByRef = new Map(refs.map((r) => [r.ref, r.id]));
   let programId = 0;
   await db.withExclusiveTransactionAsync(async (tx) => {
-    await tx.runAsync('UPDATE programs SET active = 0');
+    if (!draft) await tx.runAsync('UPDATE programs SET active = 0');
     const program = await tx.runAsync(
-      'INSERT INTO programs (name, active, created_at) VALUES (?, 1, ?)',
+      'INSERT INTO programs (name, active, draft, created_at) VALUES (?, ?, ?, ?)',
       template.name,
+      draft ? 0 : 1,
+      draft ? 1 : 0,
       new Date().toISOString(),
     );
     programId = program.lastInsertRowId;
@@ -127,12 +140,41 @@ export async function renameProgram(db: SQLiteDatabase, id: number, name: string
   notifyChange('training');
 }
 
+/** Adds a draft to the user's programs; it is put in use if no other is. */
+export async function addDraft(db: SQLiteDatabase, id: number): Promise<void> {
+  await db.runAsync(
+    `UPDATE programs SET draft = 0, created_at = ?,
+       active = NOT EXISTS (SELECT 1 FROM programs WHERE active = 1 AND draft = 0)
+     WHERE id = ?`,
+    new Date().toISOString(),
+    id,
+  );
+  notifyChange('training');
+}
+
+export async function discardDraft(db: SQLiteDatabase, id: number): Promise<void> {
+  await db.runAsync('DELETE FROM programs WHERE id = ? AND draft = 1', id);
+  notifyChange('training');
+}
+
+/** Everything that can be changed in a program, as text: two equal ones mean nothing changed. */
+export async function programSnapshot(db: SQLiteDatabase, id: number): Promise<string> {
+  const rows = await db.getAllAsync<Record<string, unknown>>(
+    `SELECT p.name AS program, d.id AS day, d.name, d.position AS dp, x.exercise_id, x.position AS xp,
+       x.sets, x.rep_min, x.rep_max, x.rest_seconds, x.note
+     FROM programs p LEFT JOIN program_days d ON d.program_id = p.id LEFT JOIN day_exercises x ON x.day_id = d.id
+     WHERE p.id = ? ORDER BY d.position, d.id, x.position, x.id`,
+    id,
+  );
+  return JSON.stringify(rows);
+}
+
 /** Deletes a program and its days. Workouts already done stay in the history. */
 export async function deleteProgram(db: SQLiteDatabase, id: number): Promise<void> {
   await db.runAsync('DELETE FROM programs WHERE id = ?', id);
   // Keep one program active if any is left.
   await db.runAsync(
-    `UPDATE programs SET active = 1 WHERE id = (SELECT id FROM programs ORDER BY created_at DESC LIMIT 1)
+    `UPDATE programs SET active = 1 WHERE id = (SELECT id FROM programs WHERE draft = 0 ORDER BY created_at DESC LIMIT 1)
      AND NOT EXISTS (SELECT 1 FROM programs WHERE active = 1)`,
   );
   notifyChange('training');

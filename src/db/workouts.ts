@@ -23,6 +23,8 @@ export type WorkoutSet = LoggedSet & {
   /** Suggested load and reps, shown greyed in the empty fields. */
   targetWeight: number | null;
   targetReps: number | null;
+  /** When it was ticked. */
+  doneAt: string | null;
 };
 
 export type WorkoutExercise = {
@@ -74,6 +76,7 @@ function setFromRow(row: SetRow): WorkoutSet {
     done: row.done === 1,
     targetWeight: row.target_weight,
     targetReps: row.target_reps,
+    doneAt: row.done_at,
   };
 }
 
@@ -435,20 +438,34 @@ export async function getExerciseHistory(db: SQLiteDatabase, exerciseId: number)
 
 /**
  * Exercises of this workout whose best estimated 1RM beats every earlier session: the records
- * to celebrate at the end.
+ * to celebrate at the end, with the best before.
  */
-export async function getRecords(db: SQLiteDatabase, workoutId: number): Promise<{ exercise: Exercise; oneRepMax: number }[]> {
+export async function getRecords(
+  db: SQLiteDatabase,
+  workoutId: number,
+): Promise<{ exercise: Exercise; oneRepMax: number; previous: number }[]> {
   const workout = await getWorkout(db, workoutId);
   if (!workout) return [];
-  const records: { exercise: Exercise; oneRepMax: number }[] = [];
+  const records: { exercise: Exercise; oneRepMax: number; previous: number }[] = [];
   for (const ex of workout.exercises) {
     const now = bestOneRepMax(ex.sets);
     if (now === null) continue;
     const earlier = (await getExerciseHistory(db, ex.exercise.id)).filter((s) => s.startedAt < workout.startedAt);
     const before = Math.max(0, ...earlier.map((s) => s.oneRepMax ?? 0));
-    if (earlier.length > 0 && now > before) records.push({ exercise: ex.exercise, oneRepMax: now });
+    if (earlier.length > 0 && before > 0 && now > before) records.push({ exercise: ex.exercise, oneRepMax: now, previous: before });
   }
   return records;
+}
+
+/** The last finished workout of the same day of the program before this one, to compare with. */
+export async function getPreviousOfSameDay(db: SQLiteDatabase, workoutId: number): Promise<Workout | null> {
+  const row = await db.getFirstAsync<{ id: number }>(
+    `SELECT p.id FROM workouts w JOIN workouts p ON p.day_id = w.day_id
+     WHERE w.id = ? AND p.id != w.id AND p.ended_at IS NOT NULL AND p.started_at < w.started_at
+     ORDER BY p.started_at DESC LIMIT 1`,
+    workoutId,
+  );
+  return row ? getWorkout(db, row.id) : null;
 }
 
 /** Work sets per exercise between two dates, with their muscles, for the weekly volume. */
@@ -470,4 +487,22 @@ export async function getWorkSetsBetween(
     const exercise = exerciseFromRow(r);
     return { muscle: exercise.muscle, secondary: exercise.secondary, count: r.n };
   });
+}
+
+/** Work sets of finished workouts between two dates, per exercise and day: for one muscle's details. */
+export async function getWorkSetsByDay(
+  db: SQLiteDatabase,
+  from: DateKey,
+  to: DateKey,
+): Promise<{ date: DateKey; exercise: Exercise; count: number }[]> {
+  const rows = await db.getAllAsync<ExerciseRow & { date: string; n: number }>(
+    `SELECT ${EXERCISE_COLUMNS}, w.date, COUNT(s.id) AS n
+     FROM workout_sets s JOIN workout_exercises we ON we.id = s.workout_exercise_id
+       JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
+     WHERE w.ended_at IS NOT NULL AND w.date BETWEEN ? AND ? AND s.done = 1 AND s.type != 'warmup'
+     GROUP BY e.id, w.date ORDER BY w.date`,
+    from,
+    to,
+  );
+  return rows.map((r) => ({ date: r.date, exercise: exerciseFromRow(r), count: r.n }));
 }

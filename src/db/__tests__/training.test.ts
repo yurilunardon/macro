@@ -11,13 +11,18 @@ import { deleteExercise, insertExercise, searchExercises, seedExercises, updateE
 import {
   addDay,
   addDayExercise,
+  addDraft,
   createProgram,
   createProgramFromTemplate,
   deleteProgram,
+  discardDraft,
   getDay,
   getNextDay,
+  getProgram,
   getPrograms,
   moveDayExercise,
+  programSnapshot,
+  renameProgram,
 } from '../programs';
 import { migrateDatabase } from '../schema';
 import { setSetting } from '../settings';
@@ -27,6 +32,7 @@ import {
   finishWorkout,
   getActiveWorkout,
   getExerciseHistory,
+  getPreviousOfSameDay,
   getRecords,
   getWorkSetsBetween,
   getWorkout,
@@ -88,6 +94,25 @@ describe('exercise library', () => {
 });
 
 describe('programs', () => {
+  it('keeps a template being looked at out of the list until added, and can drop it', async () => {
+    const mine = await createProgramFromTemplate(db, ppl);
+    const draft = await createProgramFromTemplate(db, ppl, { draft: true });
+    expect((await getPrograms(db)).map((p) => p.id)).toEqual([mine]);
+    const before = await programSnapshot(db, draft);
+    await renameProgram(db, draft, 'PPL mia');
+    expect(await programSnapshot(db, draft)).not.toBe(before);
+    await addDraft(db, draft);
+    expect((await getPrograms(db)).map((p) => [p.id, p.active])).toEqual([
+      [mine, true],
+      [draft, false],
+    ]);
+    const other = await createProgramFromTemplate(db, ppl, { draft: true });
+    await discardDraft(db, other);
+    await discardDraft(db, mine);
+    expect(await getProgram(db, other)).toBeNull();
+    expect(await getProgram(db, mine)).not.toBeNull();
+  });
+
   it('copies a template, active, with its days and planned exercises', async () => {
     const id = await createProgramFromTemplate(db, ppl);
     const [program] = await getPrograms(db);
@@ -147,7 +172,11 @@ describe('workouts', () => {
 
     await updateSet(db, bench.sets[0].id, { weight: 85, reps: 8, done: true });
     await finishWorkout(db, secondId, new Date('2026-10-29T18:00:00Z'));
-    expect((await getRecords(db, secondId)).map((r) => [r.exercise.name, r.oneRepMax])).toEqual([['Panca piana con bilanciere', expect.closeTo(107.67, 1)]]);
+    expect((await getRecords(db, secondId)).map((r) => [r.exercise.name, r.oneRepMax, r.previous])).toEqual([
+      ['Panca piana con bilanciere', expect.closeTo(107.67, 1), expect.closeTo(106.67, 1)],
+    ]);
+    expect((await getPreviousOfSameDay(db, secondId))?.id).toBe(firstId);
+    expect(await getPreviousOfSameDay(db, firstId)).toBeNull();
 
     const history = await getWorkoutHistory(db);
     expect(history.map((w) => [w.name, w.workSets])).toEqual([

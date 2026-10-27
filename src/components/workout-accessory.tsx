@@ -1,59 +1,139 @@
-import { useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { NativeTabs } from 'expo-router/native-tabs';
+import { useSQLiteContext } from 'expo-sqlite';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Svg, { Circle } from 'react-native-svg';
 
 import { Spacing } from '@/constants/theme';
+import { useLiveQuery } from '@/db/live';
+import { getWorkout } from '@/db/workouts';
 import { useClock } from '@/hooks/use-clock';
-import { formatDuration } from '@/lib/training';
-import { useRestTimer } from '@/services/rest-timer';
+import { useExerciseNames } from '@/hooks/use-exercise-names';
+import { useTheme } from '@/hooks/use-theme';
+import { formatDuration, workoutProgress } from '@/lib/training';
+import { endWorkout } from '@/services/end-workout';
+import { restTimer, useRestTimer } from '@/services/rest-timer';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
+import { WorkoutPeek } from './workout-peek';
 
 /**
- * The workout in progress, above the tab bar like the mini player in Music: elapsed time, or the
- * rest countdown while resting. Tapping it brings the workout back.
+ * The workout in progress, above the tab bar like the mini player in Music: a ring of the sets
+ * done (or of the rest left), what to do now and the time. Tapping it brings the workout back;
+ * holding it shows where the workout is at, with a menu to skip the rest or end it.
  */
-export function WorkoutAccessory({ name, startedAt }: { name: string; startedAt: string }) {
+export function WorkoutAccessory({ id, name, startedAt }: { id: number; name: string; startedAt: string }) {
+  const db = useSQLiteContext();
   const router = useRouter();
+  const theme = useTheme();
+  const { names } = useExerciseNames();
   const placement = NativeTabs.BottomAccessory.usePlacement();
   const rest = useRestTimer();
   const now = useClock(1000);
+  const { data: workout } = useLiveQuery(`accessory:${id}`, (database) => getWorkout(database, id), ['training']);
   const resting = rest !== null && rest.endsAt > now;
-  const elapsed = (now - new Date(startedAt).getTime()) / 1000;
-  const time = resting ? formatDuration((rest.endsAt - now) / 1000) : formatDuration(elapsed);
+  const left = resting ? (rest.endsAt - now) / 1000 : 0;
+  const time = resting ? formatDuration(left) : formatDuration((now - new Date(startedAt).getTime()) / 1000);
+  const progress = workoutProgress(workout?.exercises ?? []);
+  const current = progress.current && workout ? workout.exercises[progress.current.exercise] : null;
+  const fraction = resting ? left / rest.total : progress.total > 0 ? progress.done / progress.total : 0;
+  const line = resting
+    ? 'Recupero'
+    : current && progress.current
+      ? `${names(current.exercise).title} · serie ${progress.current.set + 1} di ${current.sets.length}`
+      : 'Allenamento in corso';
+
+  const end = async () => {
+    if ((await endWorkout(db, id, { confirm: true })) === 'finished') {
+      router.push({ pathname: '/workout-summary', params: { id } });
+    }
+  };
 
   return (
-    <Pressable
-      onPress={() => router.push('/workout')}
-      accessibilityRole="button"
-      accessibilityLabel={`${name}, ${resting ? `recupero ${time}` : `in corso da ${time}`}. Apri l’allenamento`}
-      style={styles.row}>
-      <Icon name={resting ? 'timer' : 'figure.strengthtraining.traditional'} size={18} tone={resting ? 'warning' : 'accent'} />
-      {placement === 'inline' ? (
-        <AppText variant="subhead" weight="600" numeric>
-          {time}
-        </AppText>
-      ) : (
-        <>
-          <View style={styles.flex}>
-            <AppText variant="subhead" weight="600" numberOfLines={1}>
-              {name}
+    <Link href="/workout" asChild>
+      <Link.Trigger>
+        <Pressable
+          accessibilityRole="button"
+          accessibilityLabel={`${name}, ${resting ? `recupero ${time}` : `in corso da ${time}`}. Apri l’allenamento`}
+          style={styles.row}>
+          <Ring fraction={fraction} color={resting ? theme.warning : theme.accent} track={theme.track}>
+            <Icon name={resting ? 'timer' : 'figure.strengthtraining.traditional'} size={15} tone={resting ? 'warning' : 'accent'} />
+          </Ring>
+          {placement === 'inline' ? (
+            <AppText variant="headline" numeric>
+              {time}
             </AppText>
-            <AppText variant="caption" tone="textSecondary" numberOfLines={1}>
-              {resting ? 'Recupero' : 'Allenamento in corso'}
-            </AppText>
-          </View>
-          <AppText variant="headline" numeric tone={resting ? 'warning' : 'text'}>
-            {time}
-          </AppText>
-        </>
-      )}
-    </Pressable>
+          ) : (
+            <>
+              <View style={styles.flex}>
+                <AppText variant="headline" numberOfLines={1}>
+                  {name}
+                </AppText>
+                <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                  {line}
+                </AppText>
+              </View>
+              <AppText numeric style={[styles.time, { color: resting ? theme.warning : theme.text }]}>
+                {time}
+              </AppText>
+            </>
+          )}
+        </Pressable>
+      </Link.Trigger>
+      <Link.Preview style={styles.preview}>
+        <WorkoutPeek workout={workout ?? null} startedAt={startedAt} />
+      </Link.Preview>
+      <Link.Menu>
+        {resting ? (
+          <Link.MenuAction icon="forward.end" onPress={() => restTimer.stop()}>
+            Salta recupero
+          </Link.MenuAction>
+        ) : null}
+        <Link.MenuAction icon="flag.checkered" destructive onPress={() => void end()}>
+          Termina allenamento
+        </Link.MenuAction>
+      </Link.Menu>
+    </Link>
+  );
+}
+
+const RING = 32;
+const STROKE = 3;
+
+/** A thin ring filled clockwise from the top, around a symbol. */
+function Ring({ fraction, color, track, children }: { fraction: number; color: string; track: string; children: React.ReactNode }) {
+  const radius = (RING - STROKE) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const f = Math.max(0, Math.min(1, fraction));
+  return (
+    <View style={styles.ring}>
+      <Svg width={RING} height={RING} style={StyleSheet.absoluteFill}>
+        <Circle cx={RING / 2} cy={RING / 2} r={radius} stroke={track} strokeWidth={STROKE} fill="none" />
+        {f > 0 ? (
+          <Circle
+            cx={RING / 2}
+            cy={RING / 2}
+            r={radius}
+            stroke={color}
+            strokeWidth={STROKE}
+            fill="none"
+            strokeLinecap="round"
+            strokeDasharray={`${circumference} ${circumference}`}
+            strokeDashoffset={circumference * (1 - f)}
+            transform={`rotate(-90 ${RING / 2} ${RING / 2})`}
+          />
+        ) : null}
+      </Svg>
+      {children}
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
-  row: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.lg },
+  row: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.md },
   flex: { flex: 1 },
+  time: { fontSize: 20, lineHeight: 24, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  ring: { width: RING, height: RING, alignItems: 'center', justifyContent: 'center' },
+  preview: { width: 340, height: 360 },
 });

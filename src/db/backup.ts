@@ -107,7 +107,8 @@ export async function readBackup(db: SQLiteDatabase): Promise<BackupData> {
     day_types: await db.getAllAsync<DayTypeRow>('SELECT date, type FROM day_types ORDER BY date'),
     measurements: await db.getAllAsync<MeasurementRow>('SELECT date, kind, value FROM measurements ORDER BY date, kind'),
     exercises: await db.getAllAsync<ExerciseRow>(select(EXERCISE_COLUMNS, 'exercises', 'id')),
-    programs: await db.getAllAsync<ProgramRow>(select(PROGRAM_COLUMNS, 'programs', 'id')),
+    // A template being looked at is not one of the user's programs; its days are dropped with it.
+    programs: await db.getAllAsync<ProgramRow>(select(PROGRAM_COLUMNS, 'programs WHERE draft = 0', 'id')),
     program_days: await db.getAllAsync<ProgramDayRow>(select(PROGRAM_DAY_COLUMNS, 'program_days', 'id')),
     day_exercises: await db.getAllAsync<DayExerciseRow>(select(DAY_EXERCISE_COLUMNS, 'day_exercises', 'id')),
     workouts: await db.getAllAsync<WorkoutRow>(select(WORKOUT_COLUMNS, 'workouts', 'id')),

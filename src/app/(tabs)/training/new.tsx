@@ -5,7 +5,6 @@ import { Alert } from 'react-native';
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
-import { toast } from '@/components/toast';
 import { createProgram, createProgramFromTemplate } from '@/db/programs';
 import { countLabel } from '@/lib/format';
 import { PROGRAM_TEMPLATES, type ProgramTemplate } from '@/lib/templates';
@@ -16,11 +15,10 @@ export default function NewProgramScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
 
+  // A template opens as a preview: it becomes one of the user's programs only when added.
   const fromTemplate = async (template: ProgramTemplate) => {
-    const id = await createProgramFromTemplate(db, template);
-    haptics.success();
-    toast.show(`${template.name} in uso`, 'checkmark.circle.fill');
-    router.replace({ pathname: '/training/program', params: { id } });
+    const id = await createProgramFromTemplate(db, template, { draft: true });
+    router.push({ pathname: '/training/program', params: { id } });
   };
 
   const empty = () =>

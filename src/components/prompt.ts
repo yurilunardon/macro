@@ -82,3 +82,43 @@ export function confirmDestructive({ title, message, action }: ConfirmOptions): 
     );
   });
 }
+
+type ChooseOptions = {
+  title: string;
+  message?: string;
+  /** The choices, top to bottom; "Annulla" is added at the end. */
+  actions: readonly { label: string; destructive?: boolean }[];
+};
+
+/** The sheet from the bottom with a few choices. Resolves to the index chosen, null for "Annulla". */
+export function choose({ title, message, actions }: ChooseOptions): Promise<number | null> {
+  return new Promise((resolve) => {
+    const destructive = actions.findIndex((a) => a.destructive);
+    if (Platform.OS === 'ios') {
+      ActionSheetIOS.showActionSheetWithOptions(
+        {
+          title,
+          message,
+          options: [...actions.map((a) => a.label), 'Annulla'],
+          destructiveButtonIndex: destructive >= 0 ? destructive : undefined,
+          cancelButtonIndex: actions.length,
+        },
+        (index) => resolve(index < actions.length ? index : null),
+      );
+      return;
+    }
+    Alert.alert(
+      title,
+      message,
+      [
+        ...actions.map((a, index) => ({
+          text: a.label,
+          style: a.destructive ? ('destructive' as const) : ('default' as const),
+          onPress: () => resolve(index),
+        })),
+        { text: 'Annulla', style: 'cancel' as const, onPress: () => resolve(null) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(null) },
+    );
+  });
+}

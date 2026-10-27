@@ -1,6 +1,8 @@
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
+import { useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
+import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -22,13 +24,11 @@ import { useToday } from '@/hooks/use-today';
 import { formatDayTitle, weekOf } from '@/lib/dates';
 import { MUSCLES, muscleLabel } from '@/lib/exercises';
 import { countLabel, formatNumber } from '@/lib/format';
-import { dayIcon, formatDuration, formatWorkoutLength, setsPerMuscle } from '@/lib/training';
+import { dayIcon, formatDuration, formatWorkoutLength, setsPerMuscle, WEEKLY_SETS } from '@/lib/training';
 import { endWorkout } from '@/services/end-workout';
 import { haptics } from '@/services/haptics';
 
-/** Weekly hard sets per muscle that research links with growth, roughly. */
-const VOLUME_LOW = 10;
-const VOLUME_HIGH = 20;
+const { low: VOLUME_LOW, high: VOLUME_HIGH } = WEEKLY_SETS;
 
 export default function TrainingScreen() {
   const db = useSQLiteContext();
@@ -47,18 +47,22 @@ export default function TrainingScreen() {
     return { active, next, programs, history, volume };
   }, ['training']);
   const now = useClock(1000, Boolean(data?.active));
+  // While the workout sheet rises, this page stays as it was; the card changes once covered.
+  const [starting, setStarting] = useState(false);
 
   const start = async (dayId: number | null) => {
+    setStarting(true);
     await startWorkout(db, { dayId });
     haptics.success();
     router.push('/workout');
+    setTimeout(() => setStarting(false), 700);
   };
 
   const endActive = async () => {
     if (!data?.active) return;
     const id = data.active.id;
     if ((await endWorkout(db, id, { confirm: true })) === 'finished') {
-      router.push({ pathname: '/training/session', params: { id, done: '1' } });
+      router.push({ pathname: '/workout-summary', params: { id } });
     }
   };
 
@@ -97,8 +101,9 @@ export default function TrainingScreen() {
       </Stack.Toolbar>
 
       {/* The one thing to do here comes first: the workout in progress, or the next one. */}
-      {data?.active ? (
+      {data?.active && !starting ? (
         // The workout keeps running: the whole card opens it, and it can be ended from here.
+        <Animated.View key="active" entering={HERO_IN} exiting={HERO_OUT}>
         <Pressable onPress={() => router.push('/workout')} accessibilityRole="button" accessibilityHint="Apre l’allenamento">
           {({ pressed }) => (
             <Card style={[styles.hero, pressed && styles.pressed]}>
@@ -130,7 +135,9 @@ export default function TrainingScreen() {
             </Card>
           )}
         </Pressable>
+        </Animated.View>
       ) : next ? (
+        <Animated.View key="next" entering={HERO_IN} exiting={HERO_OUT}>
         <Card style={styles.hero}>
           <View style={styles.heroTop}>
             <AppText variant="footnote" weight="600" tone="textSecondary" style={styles.flex} numberOfLines={1}>
@@ -170,6 +177,7 @@ export default function TrainingScreen() {
             <Button title="Inizia" onPress={() => void start(next.day.id)} />
           </View>
         </Card>
+        </Animated.View>
       ) : data ? (
         <Card style={styles.hero}>
           <Icon name="list.bullet.rectangle.portrait" size={28} tone="accent" />
@@ -184,6 +192,7 @@ export default function TrainingScreen() {
         </Card>
       ) : null}
 
+      <Animated.View layout={HERO_LAYOUT}>
       {(data?.history ?? []).length > 0 ? (
         <>
           <SectionTitle>Recenti</SectionTitle>
@@ -218,7 +227,12 @@ export default function TrainingScreen() {
           trained.map((m) => {
             const sets = muscles.get(m.key) ?? 0;
             return (
-              <View key={m.key} style={styles.muscle}>
+              <Pressable
+                key={m.key}
+                onPress={() => router.push({ pathname: '/training/muscle', params: { muscle: m.key } })}
+                accessibilityRole="button"
+                accessibilityLabel={`${m.label}: ${formatNumber(sets, 1)} serie. Dettagli`}
+                style={({ pressed }) => [styles.muscle, pressed && styles.pressed]}>
                 <View style={styles.muscleTop}>
                   <AppText variant="subhead" style={styles.flex}>
                     {m.label}
@@ -226,6 +240,7 @@ export default function TrainingScreen() {
                   <AppText variant="subhead" tone="textSecondary" numeric>
                     {`${formatNumber(sets, sets % 1 === 0 ? 0 : 1)} serie`}
                   </AppText>
+                  <Icon name="chevron.right" size={12} tone="textTertiary" weight="semibold" />
                 </View>
                 <ProgressBar
                   value={sets}
@@ -233,7 +248,7 @@ export default function TrainingScreen() {
                   color={sets >= VOLUME_LOW ? theme.accent : theme.warning}
                   height={5}
                 />
-              </View>
+              </Pressable>
             );
           })
         ) : (
@@ -259,6 +274,7 @@ export default function TrainingScreen() {
           onPress={() => router.push('/training/exercises')}
         />
       </ListGroup>
+      </Animated.View>
     </ScreenScroll>
   );
 }
@@ -272,5 +288,11 @@ const styles = StyleSheet.create({
   heroButton: { marginTop: Spacing.md, gap: Spacing.xs },
   week: { gap: Spacing.md },
   muscle: { gap: Spacing.xs },
-  muscleTop: { flexDirection: 'row', alignItems: 'center' },
+  muscleTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
 });
+
+// The card of the next workout and the one of the workout in progress cross-fade into each
+// other, and what is below slides to its new place instead of jumping.
+const HERO_IN = FadeIn.duration(260);
+const HERO_OUT = FadeOut.duration(160);
+const HERO_LAYOUT = LinearTransition.duration(260);

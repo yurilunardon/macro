@@ -124,6 +124,56 @@ export function setsPerMuscle(
   return totals;
 }
 
+export type WorkoutProgress = {
+  done: number;
+  total: number;
+  /** Kg × reps of the work sets ticked so far. */
+  volume: number;
+  exercisesDone: number;
+  /**
+   * The set to do now: the first one not ticked after the last one ticked, so skipping ahead to
+   * another exercise moves it along; then any left behind.
+   */
+  current: { exercise: number; set: number } | null;
+};
+
+/** Where a workout is at, from its exercises in order. */
+export function workoutProgress(
+  exercises: readonly { sets: readonly (LoggedSet & { doneAt?: string | null })[] }[],
+): WorkoutProgress {
+  let done = 0;
+  let total = 0;
+  let exercisesDone = 0;
+  const ticked: LoggedSet[] = [];
+  const flat: { exercise: number; set: number; done: boolean; doneAt: string }[] = [];
+  for (const [e, ex] of exercises.entries()) {
+    total += ex.sets.length;
+    for (const [i, set] of ex.sets.entries()) {
+      if (set.done) {
+        done += 1;
+        ticked.push(set);
+      }
+      flat.push({ exercise: e, set: i, done: set.done, doneAt: set.doneAt ?? '' });
+    }
+    if (ex.sets.length > 0 && ex.sets.every((set) => set.done)) exercisesDone += 1;
+  }
+  let last = -1;
+  flat.forEach((s, i) => {
+    if (s.done && (last < 0 || s.doneAt > flat[last].doneAt)) last = i;
+  });
+  const next = flat.find((s, i) => i > last && !s.done) ?? flat.find((s) => !s.done);
+  return { done, total, volume: tonnage(ticked), exercisesDone, current: next ? { exercise: next.exercise, set: next.set } : null };
+}
+
+/** Weekly hard sets per muscle that research links with growth, roughly. */
+export const WEEKLY_SETS = { low: 10, high: 20 } as const;
+
+/** How much a set of an exercise counts for a muscle: 1 as its main one, ½ as a secondary one. */
+export function muscleShare(exercise: { muscle: Muscle; secondary: readonly Muscle[] }, muscle: Muscle): number {
+  if (exercise.muscle === muscle) return 1;
+  return exercise.secondary.includes(muscle) ? 0.5 : 0;
+}
+
 /** In a rotation of days (Push, Pull, Legs…), the one after the last done, or the first. */
 export function nextInRotation<T>(days: readonly T[], lastDone: T | null): T | null {
   if (days.length === 0) return null;

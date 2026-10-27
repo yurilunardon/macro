@@ -1,6 +1,6 @@
-import { Link, Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Link, Stack, useLocalSearchParams, usePreventRemove, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
@@ -9,17 +9,21 @@ import { ActionRow, ListGroup, SectionFooter, SectionTitle } from '@/components/
 import { DayBadge } from '@/components/day-badge';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
-import { confirmDestructive } from '@/components/prompt';
+import { choose, confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
+import { toast } from '@/components/toast';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
 import {
   addDay,
+  addDraft,
   deleteDay,
   deleteProgram,
+  discardDraft,
   getProgram,
+  programSnapshot,
   renameDay,
   renameProgram,
   reorderDays,
@@ -48,6 +52,43 @@ export default function ProgramScreen() {
   const { data: program } = useLiveQuery(`program:${id}`, (database) => getProgram(database, id), ['training']);
   const hidden = usePendingDeletes();
   const [reordering, setReordering] = useState(false);
+
+  // A template opened from "Nuova scheda" is only being looked at: going back leaves nothing
+  // behind, unless it was changed, and then it asks whether to keep it.
+  const draft = program?.draft === true;
+  const original = useRef<string | null>(null);
+  useEffect(() => {
+    if (draft && original.current === null) void programSnapshot(db, id).then((snapshot) => (original.current = snapshot));
+  }, [db, id, draft]);
+  // Leaving is let through once decided; the effect runs after the prevention is lifted.
+  const [leave, setLeave] = useState<(() => void) | null>(null);
+  usePreventRemove(draft && leave === null, ({ repeat }) => {
+    void (async () => {
+      const changed = original.current !== null && (await programSnapshot(db, id)) !== original.current;
+      let keep = false;
+      if (changed) {
+        const choice = await choose({
+          title: 'Aggiungere la scheda alle tue?',
+          message: 'L’hai modificata.',
+          actions: [{ label: 'Aggiungi alle mie schede' }, { label: 'Elimina modifiche', destructive: true }],
+        });
+        if (choice === null) return;
+        keep = choice === 0;
+      }
+      if (keep) {
+        await addDraft(db, id);
+        toast.show('Aggiunta alle tue schede', 'checkmark.circle.fill');
+      }
+      setLeave(() => () => {
+        repeat();
+        // Dropped once the screen is gone, so it does not empty while sliding away.
+        if (!keep) setTimeout(() => void discardDraft(db, id), 800);
+      });
+    })();
+  });
+  useEffect(() => {
+    leave?.();
+  }, [leave]);
 
   if (program === undefined) {
     return (
@@ -118,16 +159,33 @@ export default function ProgramScreen() {
             <Stack.Toolbar.MenuAction icon="arrow.up.arrow.down" disabled={days.length < 2} onPress={() => setReordering(true)}>
               Riordina i giorni
             </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
-              Elimina scheda
-            </Stack.Toolbar.MenuAction>
+            {program.draft ? null : (
+              <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
+                Elimina scheda
+              </Stack.Toolbar.MenuAction>
+            )}
           </Stack.Toolbar.Menu>
         )}
       </Stack.Toolbar>
 
       <EditableTitle value={program.name} accessibilityLabel="Nome della scheda" onChange={(name) => void renameProgram(db, program.id, name)} />
 
-      {program.active ? (
+      {program.draft ? (
+        <>
+          <Button
+            title="Aggiungi alle mie schede"
+            icon={<Icon name="plus" size={16} tone="onAccent" weight="semibold" />}
+            onPress={() => {
+              haptics.success();
+              void addDraft(db, program.id);
+              toast.show('Aggiunta alle tue schede', 'checkmark.circle.fill');
+            }}
+          />
+          <AppText variant="footnote" tone="textSecondary" style={styles.draftNote}>
+            Anteprima: se torni indietro non viene salvata.
+          </AppText>
+        </>
+      ) : program.active ? (
         <View style={styles.status}>
           <Icon name="checkmark.circle.fill" size={17} tone="accent" />
           <AppText variant="subhead" weight="600" tone="accent">
@@ -213,6 +271,7 @@ export default function ProgramScreen() {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1 },
+  draftNote: { paddingHorizontal: Spacing.xs },
   status: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2, paddingHorizontal: Spacing.xs },
   day: {
     flexDirection: 'row',

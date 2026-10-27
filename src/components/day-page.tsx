@@ -2,15 +2,7 @@ import { Link, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { memo, useEffect, useRef } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
-import Animated, {
-  Easing,
-  FadeIn,
-  FadeOut,
-  LinearTransition,
-  useAnimatedStyle,
-  useSharedValue,
-  withSpring,
-} from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { getDayPlan, getTrainingSettings, setDayType } from '@/db/days';
 import { copyEntry, copyMeal, deleteEntry, deleteMealEntries, getEntriesForDate, moveEntry, type Entry } from '@/db/entries';
@@ -30,6 +22,7 @@ import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 import { AppText } from './app-text';
 import { Card, ListGroup } from './card';
+import { FoldChevron } from './fold-chevron';
 import { Icon } from './icon';
 import { MenuButton } from './menu-button';
 import { MacroBars } from './nutrient-grid';
@@ -308,7 +301,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                   <View style={styles.mealName}>
                     <Icon name={meal.symbol} size={17} tone="textSecondary" />
                     <AppText variant="headline">{meal.label}</AppText>
-                    <Chevron open={open} />
+                    <FoldChevron open={open} />
                   </View>
                   {count > 0 ? (
                     <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
@@ -405,20 +398,6 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
     </Animated.View>
   );
 });
-
-/** Points down when the meal is open, right when folded, turning between the two. */
-function Chevron({ open }: { open: boolean }) {
-  const turn = useSharedValue(open ? 0 : -90);
-  useEffect(() => {
-    turn.set(withSpring(open ? 0 : -90, { duration: 300, dampingRatio: 1 }));
-  }, [open, turn]);
-  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.get()}deg` }] }));
-  return (
-    <Animated.View style={style}>
-      <Icon name="chevron.down" size={12} weight="semibold" tone="textTertiary" />
-    </Animated.View>
-  );
-}
 
 /** "435 kcal" on one line, the number leading. */
 function Kcal({ value }: { value: number }) {

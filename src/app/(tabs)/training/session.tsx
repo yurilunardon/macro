@@ -11,20 +11,17 @@ import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
 import { deleteWorkout, getRecords, getWorkout } from '@/db/workouts';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
-import { useTheme } from '@/hooks/use-theme';
 import { formatLongDate } from '@/lib/dates';
 import { countLabel, formatNumber } from '@/lib/format';
 import { formatSet, formatWorkoutLength, isWorkSet, SET_TYPES, tonnage } from '@/lib/training';
 
-/** A finished workout: totals, records and every set. Opened right after "Fine" with a summary on top. */
+/** A finished workout: totals, records and every set. */
 export default function SessionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const theme = useTheme();
   const { names } = useExerciseNames();
-  const params = useLocalSearchParams<{ id?: string; done?: string }>();
+  const params = useLocalSearchParams<{ id?: string }>();
   const id = Number(params.id);
-  const justDone = params.done === '1';
   const { data } = useLiveQuery(`session:${id}`, async (database) => {
     const [workout, records] = await Promise.all([getWorkout(database, id), getRecords(database, id)]);
     return { workout, records };
@@ -69,16 +66,6 @@ export default function SessionScreen() {
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
-
-      {justDone ? (
-        <Card style={[styles.done, { backgroundColor: theme.accentSoft }]}>
-          <Icon name="checkmark.seal.fill" size={28} tone="accent" />
-          <AppText variant="title2">Allenamento completato</AppText>
-          <AppText variant="subhead" tone="textSecondary">
-            Carichi salvati per la prossima volta.
-          </AppText>
-        </Card>
-      ) : null}
 
       <Card style={styles.card}>
         <AppText variant="subhead" tone="textSecondary">
@@ -151,7 +138,6 @@ function Stat({ label, value }: { label: string; value: string }) {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1 },
-  done: { gap: Spacing.xs, marginBottom: Spacing.md },
   card: { gap: Spacing.md },
   stats: { flexDirection: 'row', gap: Spacing.md },
   record: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.lg, minHeight: 48 },
