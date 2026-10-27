@@ -29,8 +29,8 @@ const SECONDS = Array.from({ length: 60 / REST_STEP }, (_, i) => i * REST_STEP);
 
 /**
  * The rest after each set, as a small pill: tapping it opens a popover with a minutes and a
- * seconds wheel, as in the Timer of Clock, for any rest rather than a few presets. The new
- * rest is kept when the popover closes.
+ * seconds wheel, as in the Timer of Clock, for any rest rather than a few presets. The pill
+ * follows the wheels as they turn, and each value is kept as soon as it is picked.
  */
 export function RestPicker({ value, onChange }: RestPickerProps) {
   const theme = useTheme();
@@ -39,16 +39,23 @@ export function RestPicker({ value, onChange }: RestPickerProps) {
   const [minutes, setMinutes] = useState(Math.floor(value / 60));
   const [seconds, setSeconds] = useState(Math.round((value % 60) / REST_STEP) * REST_STEP);
 
+  // No rest at all would end it the moment a set is ticked: the shortest is one step.
+  const total = Math.max(REST_STEP, minutes * 60 + seconds);
+  const shown = open ? total : value;
+
   const present = (next: boolean) => {
     if (next) {
       setMinutes(Math.floor(value / 60));
       setSeconds(Math.round((value % 60) / REST_STEP) * REST_STEP);
-    } else {
-      // No rest at all would end it the moment a set is ticked: the shortest is one step.
-      const total = Math.max(REST_STEP, minutes * 60 + seconds);
-      if (total !== value) onChange(total);
     }
     setOpen(next);
+  };
+
+  const pick = (m: number, s: number) => {
+    setMinutes(m);
+    setSeconds(s);
+    const next = Math.max(REST_STEP, m * 60 + s);
+    if (next !== value) onChange(next);
   };
 
   return (
@@ -56,7 +63,7 @@ export function RestPicker({ value, onChange }: RestPickerProps) {
       <View style={[styles.pill, { backgroundColor: theme.fill }]}>
         <Icon name="timer" size={13} tone="textSecondary" />
         <AppText variant="subhead" weight="600" numeric>
-          {formatDuration(value)}
+          {formatDuration(shown)}
         </AppText>
       </View>
       <Host style={StyleSheet.absoluteFill} colorScheme={scheme === 'dark' ? 'dark' : 'light'}>
@@ -82,7 +89,7 @@ export function RestPicker({ value, onChange }: RestPickerProps) {
               <HStack spacing={0}>
                 <Picker
                   selection={minutes}
-                  onSelectionChange={setMinutes}
+                  onSelectionChange={(m) => pick(m, seconds)}
                   modifiers={[pickerStyle('wheel'), frame({ width: 110, height: 150 })]}>
                   {MINUTES.map((m) => (
                     <Text key={m} modifiers={[tag(m)]}>
@@ -92,7 +99,7 @@ export function RestPicker({ value, onChange }: RestPickerProps) {
                 </Picker>
                 <Picker
                   selection={seconds}
-                  onSelectionChange={setSeconds}
+                  onSelectionChange={(s) => pick(minutes, s)}
                   modifiers={[pickerStyle('wheel'), frame({ width: 110, height: 150 })]}>
                   {SECONDS.map((s) => (
                     <Text key={s} modifiers={[tag(s)]}>

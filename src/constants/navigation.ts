@@ -21,3 +21,13 @@ export const TAB_STACK_OPTIONS: NativeStackNavigationOptions = {
 
 /** For the first screen of each tab. */
 export const LARGE_TITLE: NativeStackNavigationOptions = { headerLargeTitleEnabled: true };
+
+/**
+ * The search bar of the exercise lists. It goes in the layout, so iOS has it in the bar from the
+ * first frame of the push: added by the screen once open, it showed up for a moment without its
+ * glass. The screen then only adds what to do with the text.
+ */
+export const EXERCISE_SEARCH = {
+  placeholder: 'Cerca: panca, squat, curl…',
+  hideWhenScrolling: false,
+} satisfies NativeStackNavigationOptions['headerSearchBarOptions'];

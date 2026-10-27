@@ -153,7 +153,7 @@ export default function ProgramScreen() {
       <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
         <EditButton editing={editing} disabled={days.length === 0} onChange={setEditing} />
-        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sulla scheda" hidden={program.draft}>
+        <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sulla scheda" hidden={program.draft}>
           <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
             Elimina scheda
           </Stack.Toolbar.MenuAction>

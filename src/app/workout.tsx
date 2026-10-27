@@ -10,6 +10,7 @@ import Animated, {
   FadeOutDown,
   Keyframe,
   LayoutAnimationConfig,
+  LinearTransition,
   useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
@@ -238,7 +239,7 @@ export default function WorkoutScreen() {
         </Stack.Toolbar>
         <Stack.Toolbar placement="right">
           <EditButton editing={editing} onChange={setEditing} />
-          <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
+          <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
             <Stack.Toolbar.MenuAction icon="flag.checkered" onPress={() => void finish()}>
               Termina allenamento
             </Stack.Toolbar.MenuAction>
@@ -287,6 +288,11 @@ export default function WorkoutScreen() {
             // The block stays where it was grabbed instead of jumping to centre on the finger,
             // which threw tall exercises far above or below it.
             enableActiveItemSnap={false}
+            // Exercises added or removed fade, and the list's height follows them instead of
+            // jumping, so what is under it slides too.
+            itemEntering={EXERCISE_IN}
+            itemExiting={EXERCISE_OUT}
+            dimensionsAnimationType="worklet"
             hapticsEnabled
             onDragStart={() => setEditing(true)}
             onDragEnd={({ data: ordered }) => {
@@ -460,7 +466,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
 
   return (
     <View style={styles.exercise}>
-      <ListGroup>
+      <ListGroup layout={BLOCK_LAYOUT}>
         <View style={styles.exerciseHeader}>
           {holdsCurrent ? (
             <Animated.View entering={CURRENT_IN} exiting={SETS_OUT} pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.fill }]} />
@@ -602,7 +608,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
           // No line touches the set to do now: its soft fill is enough of an edge.
           const divided = index > 0 && !current && (item.sets[index - 1].id !== currentSetId || editing);
           return (
-            <Animated.View key={set.id} entering={FadeIn.duration(200)}>
+            <Animated.View key={set.id} entering={FadeIn.duration(200)} exiting={SET_OUT} layout={BLOCK_LAYOUT}>
             <SwipeToDelete onDelete={() => removeSet(set.id)}>
                 <SetRow
                   set={set}
@@ -629,12 +635,12 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
         })}
         {editing ? null : (
           // Adding a set and the rest after each one: what is changed most while training.
-          <View style={styles.exerciseFooter}>
+          <Animated.View layout={BLOCK_LAYOUT} style={styles.exerciseFooter}>
             <View style={styles.flex}>
               <ActionRow label="Aggiungi serie" symbol="plus" onPress={() => void addSet(db, item.id)} />
             </View>
             <RestPicker value={rest} onChange={(seconds) => void setWorkoutExerciseRest(db, item.id, seconds)} />
-          </View>
+          </Animated.View>
         )}
         </Animated.View>
         )}
@@ -1057,6 +1063,12 @@ const MINUS_OUT = ZoomOut.duration(140);
 const FLAG_IN = FadeIn.duration(220);
 const SETS_IN = FadeIn.duration(200).delay(60);
 const SETS_OUT = FadeOut.duration(120);
+// The same timing react-native-sortables moves the exercises with (withTiming's default), so a
+// card that grows or shrinks and the cards below it that make room move as one.
+const BLOCK_LAYOUT = LinearTransition.duration(300).easing(Easing.inOut(Easing.quad));
+const SET_OUT = FadeOut.duration(150);
+const EXERCISE_IN = FadeIn.duration(250);
+const EXERCISE_OUT = FadeOut.duration(200);
 const SKIPPED_IN = FadeInDown.duration(220).withInitialValues({ transform: [{ translateY: 10 }] });
 const FLOAT_UP = new Keyframe({
   0: { opacity: 0, transform: [{ translateY: 6 }] },
@@ -1117,7 +1129,9 @@ function RestButton({
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
-  title: { alignItems: 'center', maxWidth: 220 },
+  // Narrow enough to leave room for ⌄ on the left and "Modifica" and ⋯ on the right: a wider
+  // title makes iOS fold "Modifica" away into an overflow menu.
+  title: { alignItems: 'center', maxWidth: 140 },
   titleTime: { fontSize: 22, lineHeight: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
   notes: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   exercise: {},

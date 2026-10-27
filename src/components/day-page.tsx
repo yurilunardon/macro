@@ -242,6 +242,8 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
         const mealTotals = sumNutrients(mealEntries.map((e) => e.totals));
         const count = mealEntries.length;
         const canCopy = count === 0 && data?.yesterdayMeals.has(meal.key);
+        // An empty meal has nothing to fold: its title adds to it, as the + beside it.
+        const foldable = count > 0;
         const open = !collapsed.has(meal.key);
         const menu = (
           <MenuButton
@@ -250,10 +252,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
             accessibilityLabel={`Azioni per ${meal.label.toLowerCase()}`}
             groups={[
               {
-                actions: [
-                  { label: 'Aggiungi alimento', icon: 'plus.circle', onPress: () => openAdd(meal.key) },
-                  { label: 'Scansiona codice a barre', icon: 'barcode.viewfinder', onPress: () => openAdd(meal.key, true) },
-                ],
+                actions: [{ label: 'Scansiona codice a barre', icon: 'barcode.viewfinder', onPress: () => openAdd(meal.key, true) }],
               },
               {
                 actions: [
@@ -281,8 +280,12 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                       ]
                     : [],
               },
-            ]}
-          />
+            ]}>
+            {/* Grey, so the + beside it reads as the meal's main action. */}
+            <View style={styles.headerButton}>
+              <Icon name="ellipsis.circle" size={22} tone="textSecondary" />
+            </View>
+          </MenuButton>
         );
         return (
           // The card follows its content's size smoothly, and the cards below follow it, when a
@@ -291,17 +294,21 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
               <View style={styles.mealHeader}>
                 <Pressable
                   onPress={() => {
+                    if (!foldable) {
+                      openAdd(meal.key);
+                      return;
+                    }
                     haptics.selection();
                     toggleMeal(db, meal.key);
                   }}
                   accessibilityRole="button"
-                  accessibilityState={{ expanded: open }}
-                  accessibilityHint={open ? 'Tocca per chiudere' : 'Tocca per aprire'}
+                  accessibilityState={foldable ? { expanded: open } : undefined}
+                  accessibilityHint={foldable ? (open ? 'Tocca per chiudere' : 'Tocca per aprire') : 'Tocca per aggiungere'}
                   style={styles.mealTitle}>
                   <View style={styles.mealName}>
                     <Icon name={meal.symbol} size={17} tone="textSecondary" />
                     <AppText variant="headline">{meal.label}</AppText>
-                    <FoldChevron open={open} />
+                    {foldable ? <FoldChevron open={open} /> : null}
                   </View>
                   {count > 0 ? (
                     <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
@@ -313,9 +320,18 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                     </AppText>
                   ) : null}
                 </Pressable>
+                {/* Adding is the one thing done to every meal, many times a day: always in sight, folded or not. */}
+                <Pressable
+                  onPress={() => openAdd(meal.key)}
+                  hitSlop={4}
+                  accessibilityRole="button"
+                  accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}
+                  style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
+                  <Icon name="plus.circle.fill" size={24} tone="accent" />
+                </Pressable>
                 {menu}
               </View>
-              {open ? (
+              {open && (foldable || canCopy) ? (
               <Animated.View entering={ROWS_IN} exiting={ROWS_OUT}>
               <View style={[styles.divider, { backgroundColor: theme.separator }]} />
               <ListGroup>
@@ -365,18 +381,8 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                   </SwipeToDelete>
                 );
               })}
-              <View style={styles.addRow}>
-                <Pressable
-                  onPress={() => openAdd(meal.key)}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}
-                  style={({ pressed }) => [styles.add, pressed && styles.pressed]}>
-                  <Icon name="plus.circle.fill" size={20} tone="accent" />
-                  <AppText tone="accent" weight="600">
-                    Aggiungi
-                  </AppText>
-                </Pressable>
-                {canCopy ? (
+              {canCopy ? (
+                <View style={styles.addRow}>
                   <Pressable
                     onPress={() => void copyFromYesterday(meal.key)}
                     accessibilityRole="button"
@@ -387,8 +393,8 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                       Copia da ieri
                     </AppText>
                   </Pressable>
-                ) : null}
-              </View>
+                </View>
+              ) : null}
               </ListGroup>
               </Animated.View>
               ) : null}
@@ -441,8 +447,8 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   entryText: { flex: 1, gap: 1 },
-  addRow: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
-  add: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, minHeight: 48 },
+  headerButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
+  addRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, minHeight: 52 },
   copy: {
     flexDirection: 'row',
     alignItems: 'center',

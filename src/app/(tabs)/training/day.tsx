@@ -93,7 +93,7 @@ export default function DayScreen() {
       <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
         <EditButton editing={editing} disabled={exercises.length === 0} onChange={setEditing} />
-        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sul giorno">
+        <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sul giorno">
           <Stack.Toolbar.MenuAction icon="trash" destructive onPress={remove}>
             Elimina giorno
           </Stack.Toolbar.MenuAction>

@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 
-import { LARGE_TITLE, TAB_STACK_OPTIONS } from '@/constants/navigation';
+import { EXERCISE_SEARCH, LARGE_TITLE, TAB_STACK_OPTIONS } from '@/constants/navigation';
 
 export const unstable_settings = { anchor: 'index' };
 
@@ -12,7 +12,7 @@ export default function TrainingLayout() {
       <Stack.Screen name="programs" options={{ title: 'Schede' }} />
       <Stack.Screen name="program" options={{ title: 'Scheda' }} />
       <Stack.Screen name="day" options={{ title: 'Giorno' }} />
-      <Stack.Screen name="exercises" options={{ title: 'Esercizi' }} />
+      <Stack.Screen name="exercises" options={{ title: 'Esercizi', headerSearchBarOptions: EXERCISE_SEARCH }} />
       <Stack.Screen name="exercise" options={{ title: 'Esercizio' }} />
       <Stack.Screen name="history" options={{ title: 'Storico' }} />
       <Stack.Screen name="muscle" options={{ title: 'Muscolo' }} />

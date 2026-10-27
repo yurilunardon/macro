@@ -51,6 +51,7 @@ export default function NutritionScreen() {
   const today = useToday();
   const expiry = useAppExpiry();
   const { width } = useWindowDimensions();
+  const theme = useTheme();
 
   // The days are pages of a native paging scroll view, as in Calendar and Photos: the system
   // moves them under the finger and can be flicked through as fast as the hand goes. The pages
@@ -197,9 +198,12 @@ export default function NutritionScreen() {
     settle(day);
   };
 
+  // As in Calendar, the date belongs to the page: dragging, the days on either side come in with
+  // theirs.
   const renderDay = ({ item }: ListRenderItemInfo<DateKey>) => (
     <View style={[styles.page, { width }]}>
       <View onLayout={(event) => onPageLayout(item, event.nativeEvent.layout.height)}>
+        <DayHeading date={item} today={today} />
         <DayPage date={item} today={today} interactive={item === interactiveDay} onReady={onReady} />
       </View>
     </View>
@@ -227,8 +231,6 @@ export default function NutritionScreen() {
     if (ok) await Promise.all(MEALS.map((m) => deleteMealEntries(db, date, m.key)));
   };
 
-  const relative = Math.abs(daysBetween(today, date)) <= 1 ? formatDayTitle(date, today) : formatDaySubtitle(date, today);
-
   return (
     <ScreenScroll>
       {/* As in Calendar: always in the bar, dimmed while today is on screen. */}
@@ -238,7 +240,7 @@ export default function NutritionScreen() {
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sul giorno">
+        <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sul giorno">
           <Stack.Toolbar.MenuAction
             icon="doc.on.doc"
             disabled={count === 0}
@@ -250,6 +252,7 @@ export default function NutritionScreen() {
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
         <Stack.Toolbar.Button
+          separateBackground
           icon="barcode.viewfinder"
           accessibilityLabel="Scansiona codice a barre"
           onPress={() => router.push({ pathname: '/add/scan', params: { meal: mealForTime(), date } })}
@@ -259,12 +262,7 @@ export default function NutritionScreen() {
       {expiry && expiry.level !== 'ok' ? <ExpiryBanner status={expiry} /> : null}
 
       <WeekStrip selected={date} today={today} onSelect={goTo} onChangeWeek={(direction) => goTo(addDays(date, direction * 7))} />
-      <AppText variant="subhead" tone="textSecondary" align="center" numberOfLines={1} style={styles.date}>
-        <AppText variant="subhead" weight="600">
-          {formatLongDate(date)}
-        </AppText>
-        {` · ${relative}`}
-      </AppText>
+      <View style={[styles.rule, { backgroundColor: theme.separator }]} />
 
       <FlatList
         ref={list}
@@ -293,6 +291,18 @@ export default function NutritionScreen() {
   );
 }
 
+/** "Lunedì 27 ottobre · Oggi" at the top of a day's page. */
+function DayHeading({ date, today }: { date: DateKey; today: DateKey }) {
+  const relative = Math.abs(daysBetween(today, date)) <= 1 ? formatDayTitle(date, today) : formatDaySubtitle(date, today);
+  return (
+    <AppText variant="subhead" tone="textSecondary" align="center" numberOfLines={1} style={styles.date}>
+      <AppText variant="subhead" weight="600">
+        {formatLongDate(date)}
+      </AppText>
+      {` · ${relative}`}
+    </AppText>
+  );
+}
 
 /** Shown from three days before the app's signature expires. */
 function ExpiryBanner({ status }: { status: ExpiryStatus }) {
@@ -321,8 +331,9 @@ function ExpiryBanner({ status }: { status: ExpiryStatus }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  date: { marginBottom: Spacing.md },
-  // Full width, out of the screen's side margins: each page has its own.
+  date: { paddingTop: Spacing.md, paddingBottom: Spacing.md },
+  // Full width, out of the screen's side margins, as the pages under it.
+  rule: { height: StyleSheet.hairlineWidth, marginHorizontal: -Spacing.lg },
   pager: { marginHorizontal: -Spacing.lg },
   page: { paddingHorizontal: Spacing.lg },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md, borderWidth: 1.5 },

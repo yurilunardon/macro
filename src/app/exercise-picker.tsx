@@ -7,6 +7,7 @@ import { AppText } from '@/components/app-text';
 import { ActionRow, Row } from '@/components/card';
 import { Chip } from '@/components/form';
 import { GroupedList } from '@/components/grouped-list';
+import { EXERCISE_SEARCH } from '@/constants/navigation';
 import { Spacing } from '@/constants/theme';
 import { applyPick, isPickerTarget, type PickerTarget } from '@/db/exercise-picks';
 import { searchExercises, type Exercise } from '@/db/exercises';
@@ -45,8 +46,7 @@ export default function ExercisePickerScreen() {
         options={{
           title: target === 'replace' ? 'Sostituisci esercizio' : 'Aggiungi esercizio',
           headerSearchBarOptions: {
-            placeholder: 'Cerca: panca, squat, curl…',
-            hideWhenScrolling: false,
+            ...EXERCISE_SEARCH,
             onChangeText: (event) => setQuery(event.nativeEvent.text),
           },
         }}

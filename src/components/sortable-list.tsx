@@ -26,6 +26,7 @@ const LIFT_DELAY = 180;
 
 const ASK_IN = FadeIn.duration(160);
 const ASK_OUT = FadeOut.duration(120);
+const ROW_OUT = FadeOut.duration(150);
 
 const lift = haptics.medium;
 const tick = haptics.selection;
@@ -60,10 +61,17 @@ export function SortableList<T>({ items, keyOf, rowHeight, renderRow, onReorder,
   const signature = keys.join('|');
   const positions = useSharedValue<Positions>(positionsOf(keys));
 
+  // The list is as tall as its rows; with one more or less it grows or shrinks along with the
+  // rows sliding into place, so what is under it follows instead of jumping.
+  const height = useSharedValue(rowHeight * items.length);
+  const heightStyle = useAnimatedStyle(() => ({ height: height.get() }));
+
   // New data (another row, or the saved order coming back) resets the positions.
   useEffect(() => {
-    positions.set(positionsOf(signature === '' ? [] : signature.split('|')));
-  }, [signature, positions]);
+    const next = signature === '' ? [] : signature.split('|');
+    positions.set(positionsOf(next));
+    height.set(withSpring(rowHeight * next.length, SETTLE));
+  }, [signature, positions, height, rowHeight]);
 
   const drop = () => {
     const order = Object.entries(positions.get())
@@ -73,7 +81,7 @@ export function SortableList<T>({ items, keyOf, rowHeight, renderRow, onReorder,
   };
 
   return (
-    <View style={[styles.list, { height: rowHeight * items.length, backgroundColor: theme.card }]}>
+    <Animated.View style={[styles.list, { backgroundColor: theme.card }, heightStyle]}>
       {items.map((item) => {
         const key = keyOf(item);
         return (
@@ -94,7 +102,7 @@ export function SortableList<T>({ items, keyOf, rowHeight, renderRow, onReorder,
           </SortableRow>
         );
       })}
-    </View>
+    </Animated.View>
   );
 }
 
@@ -173,7 +181,7 @@ function SortableRow({ id, positions, rowHeight, count, onDrop, asking, onAsk, o
 
   return (
     <GestureDetector gesture={pan}>
-      <Animated.View style={[styles.row, { height: rowHeight, backgroundColor: theme.card }, style]}>
+      <Animated.View exiting={ROW_OUT} style={[styles.row, { height: rowHeight, backgroundColor: theme.card }, style]}>
         {onAsk ? (
           <Pressable
             onPress={() => {

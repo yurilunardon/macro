@@ -145,7 +145,7 @@ function DayCircle({ selected, color }: { selected: boolean; color: string }) {
 }
 
 const styles = StyleSheet.create({
-  clip: { overflow: 'hidden', marginBottom: Spacing.lg },
+  clip: { overflow: 'hidden', marginBottom: Spacing.md },
   row: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', gap: 6 },
   slot: { width: CIRCLE, height: CIRCLE, alignItems: 'center', justifyContent: 'center' },

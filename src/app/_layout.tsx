@@ -7,7 +7,7 @@ import { GestureHandlerRootView } from 'react-native-gesture-handler';
 import { NotificationSync } from '@/components/notification-sync';
 import { ToastHost } from '@/components/toast';
 import { UpdateCheck } from '@/components/update-check';
-import { TAB_STACK_OPTIONS } from '@/constants/navigation';
+import { EXERCISE_SEARCH, TAB_STACK_OPTIONS } from '@/constants/navigation';
 import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
@@ -60,7 +60,7 @@ export default function RootLayout() {
               <Stack.Screen name="workout-summary" options={{ presentation: 'fullScreenModal', headerShown: false }} />
               <Stack.Screen
                 name="exercise-picker"
-                options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Esercizi' }}
+                options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Esercizi', headerSearchBarOptions: EXERCISE_SEARCH }}
               />
               <Stack.Screen
                 name="exercise-new"

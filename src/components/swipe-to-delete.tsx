@@ -14,8 +14,8 @@ import { EASE_OUT, project, rubberband } from './motion';
 
 /** Width of the revealed button, as in Mail and Clock. */
 const ACTION_WIDTH = 88;
-/** The red button floats inside the space the row leaves, rounded, as in iOS 26. */
-const INSET = 6;
+/** The red button fills the space the row leaves, top to bottom, rounded on the side it meets the row. */
+const RADIUS = 16;
 /** Past this share of the row, letting go deletes without tapping the button: well past the middle, as in Clock. */
 const FULL_SWIPE = 0.72;
 const SETTLE = { duration: 350, dampingRatio: 1 };
@@ -164,15 +164,15 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina' }
     return c === 0 ? {} : { height: height.get() * (1 - c), opacity: 1 - c };
   });
   const contentStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
-  // The red button fills the space the row leaves, inset and rounded; it grows with the swipe.
+  // The red button fills the space the row leaves and grows with the swipe.
   const actionStyle = useAnimatedStyle(() => {
     const reveal = Math.max(0, -x.get());
-    return { opacity: reveal > 0.5 ? 1 : 0, width: Math.max(0, reveal - INSET * 2) };
+    return { opacity: reveal > 0.5 ? 1 : 0, width: reveal };
   });
   // As in Messages and Mail: the label stays centred in the red button while it grows, and once
   // a full swipe is armed it jumps to the button's leading edge and follows the finger.
   const labelStyle = useAnimatedStyle(() => {
-    const button = Math.max(0, -x.get() - INSET * 2);
+    const button = Math.max(0, -x.get());
     const centred = Math.max(0, (button - ACTION_WIDTH) / 2);
     return { transform: [{ translateX: centred * (1 - armedProgress.get()) }] };
   });
@@ -212,14 +212,15 @@ const styles = StyleSheet.create({
   container: { overflow: 'hidden' },
   action: {
     position: 'absolute',
-    top: INSET,
-    bottom: INSET,
-    right: INSET,
-    borderRadius: 14,
+    top: 0,
+    bottom: 0,
+    right: 0,
+    borderTopLeftRadius: RADIUS,
+    borderBottomLeftRadius: RADIUS,
     borderCurve: 'continuous',
     overflow: 'hidden',
   },
-  label: { position: 'absolute', top: 0, bottom: 0, left: 0, width: ACTION_WIDTH - INSET * 2 },
+  label: { position: 'absolute', top: 0, bottom: 0, left: 0, width: ACTION_WIDTH },
   labelButton: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.xs },
   labelText: { color: '#FFFFFF' },
 });

@@ -6,6 +6,7 @@ import { ScrollView, StyleSheet } from 'react-native';
 import { Row, SectionFooter } from '@/components/card';
 import { Chip } from '@/components/form';
 import { GroupedList } from '@/components/grouped-list';
+import { EXERCISE_SEARCH } from '@/constants/navigation';
 import { Spacing } from '@/constants/theme';
 import { searchExercises } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
@@ -27,14 +28,13 @@ export default function ExercisesScreen() {
       <Stack.Screen
         options={{
           headerSearchBarOptions: {
-            placeholder: 'Cerca: panca, squat, curl…',
-            hideWhenScrolling: false,
+            ...EXERCISE_SEARCH,
             onChangeText: (event) => setQuery(event.nativeEvent.text),
           },
         }}
       />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="textformat" accessibilityLabel="Lingua dei nomi">
+        <Stack.Toolbar.Menu separateBackground icon="textformat" accessibilityLabel="Lingua dei nomi">
           <Stack.Toolbar.MenuAction isOn={language === 'en'} onPress={() => void setSetting(db, 'exerciseNames', 'en')}>
             Nome inglese per primo
           </Stack.Toolbar.MenuAction>
@@ -42,7 +42,7 @@ export default function ExercisesScreen() {
             Nome italiano per primo
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
-        <Stack.Toolbar.Button icon="plus" accessibilityLabel="Nuovo esercizio" onPress={() => router.push('/exercise-new')} />
+        <Stack.Toolbar.Button separateBackground icon="plus" accessibilityLabel="Nuovo esercizio" onPress={() => router.push('/exercise-new')} />
       </Stack.Toolbar>
       <GroupedList
         data={data ?? []}
