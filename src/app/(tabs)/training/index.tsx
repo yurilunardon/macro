@@ -11,11 +11,13 @@ import { DayBadge } from '@/components/day-badge';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { confirmDestructive } from '@/components/prompt';
+import { PressableScale } from '@/components/pressable-scale';
 import { ProgressBar } from '@/components/progress';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
-import { useLiveQuery } from '@/db/live';
+import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
+import { prefetchLiveQuery, useLiveQuery } from '@/db/live';
 import { getNextDay, getPrograms, setNextDay } from '@/db/programs';
 import { deleteWorkout, getActiveWorkout, getWorkoutHistory, getWorkSetsBetween, startWorkout } from '@/db/workouts';
 import { useClock } from '@/hooks/use-clock';
@@ -53,6 +55,8 @@ export default function TrainingScreen() {
   const start = async (dayId: number | null) => {
     setStarting(true);
     await startWorkout(db, { dayId });
+    // The sheet rises with the exercises already in it.
+    await prefetchLiveQuery(db, ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS);
     haptics.success();
     router.push('/workout');
     setTimeout(() => setStarting(false), 700);
@@ -104,9 +108,12 @@ export default function TrainingScreen() {
       {data?.active && !starting ? (
         // The workout keeps running: the whole card opens it, and it can be ended from here.
         <Animated.View key="active" entering={HERO_IN} exiting={HERO_OUT}>
-        <Pressable onPress={() => router.push('/workout')} accessibilityRole="button" accessibilityHint="Apre l’allenamento">
-          {({ pressed }) => (
-            <Card style={[styles.hero, pressed && styles.pressed]}>
+        <PressableScale
+          onPressIn={() => void prefetchLiveQuery(db, ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS)}
+          onPress={() => router.push('/workout')}
+          accessibilityRole="button"
+          accessibilityHint="Apre l’allenamento">
+            <Card style={styles.hero}>
               <View style={styles.heroTop}>
                 <AppText variant="footnote" weight="600" tone="accent" style={styles.flex}>
                   IN CORSO
@@ -133,8 +140,7 @@ export default function TrainingScreen() {
                 />
               </View>
             </Card>
-          )}
-        </Pressable>
+        </PressableScale>
         </Animated.View>
       ) : next ? (
         <Animated.View key="next" entering={HERO_IN} exiting={HERO_OUT}>

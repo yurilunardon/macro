@@ -15,7 +15,10 @@ import Animated, {
   useSharedValue,
   withSequence,
   withSpring,
+  withDelay,
+  withRepeat,
   withTiming,
+  ZoomIn,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
@@ -30,20 +33,19 @@ import { MenuButton } from '@/components/menu-button';
 import { ProgressBar } from '@/components/progress';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
+import { RangeFlag } from '@/components/range-flag';
 import { SetTypeMenu } from '@/components/set-type-menu';
 import { FoldChevron } from '@/components/fold-chevron';
 import { Jiggle } from '@/components/jiggle';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Radius, Spacing } from '@/constants/theme';
 import { restFor, updateExerciseOptions } from '@/db/exercises';
+import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
 import { useLiveQuery } from '@/db/live';
-import { getSetting } from '@/db/settings';
 import {
   addSet,
   deleteSet,
   deleteWorkout,
-  getActiveWorkout,
-  getWorkout,
   removeWorkoutExercise,
   reorderWorkoutExercises,
   setWorkoutExerciseRest,
@@ -57,9 +59,17 @@ import {
 import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
-import { muscleLabel } from '@/lib/exercises';
-import { numberToInput, parseDecimal } from '@/lib/format';
-import { bestOneRepMax, formatDuration, formatSet, workoutProgress, type LoggedSet } from '@/lib/training';
+import { loadIncrement, muscleLabel } from '@/lib/exercises';
+import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
+import {
+  bestOneRepMax,
+  formatDuration,
+  formatSet,
+  progression,
+  workoutProgress,
+  type LoggedSet,
+  type Progression,
+} from '@/lib/training';
 import { haptics } from '@/services/haptics';
 import { endWorkout } from '@/services/end-workout';
 import { restTimer, useRestTimer } from '@/services/rest-timer';
@@ -100,14 +110,12 @@ export default function WorkoutScreen() {
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
   // The order just dragged into, shown until the saved order comes back from the database.
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
-  const { data } = useLiveQuery('workout:active', async (database) => {
-    const active = await getActiveWorkout(database);
-    const [workout, restAlert] = await Promise.all([
-      active ? getWorkout(database, active.id) : Promise.resolve(null),
-      getSetting(database, 'restAlert'),
-    ]);
-    return { workout, sound: restAlert === 'sound' };
-  }, ['training', 'settings']);
+  const { data } = useLiveQuery(ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS);
+  // Ending or cancelling it, the sheet keeps showing the workout while the summary covers it or
+  // it slides away, instead of flashing "Nessun allenamento in corso".
+  const [closing, setClosing] = useState(false);
+  const [shown, setShown] = useState<Workout | null>(null);
+  if (data?.workout && data.workout !== shown) setShown(data.workout);
 
   if (!data) {
     return (
@@ -116,7 +124,7 @@ export default function WorkoutScreen() {
       </View>
     );
   }
-  const workout = data.workout;
+  const workout = data.workout ?? (closing ? shown : null);
   if (!workout) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
@@ -153,12 +161,16 @@ export default function WorkoutScreen() {
   };
 
   const finish = async () => {
+    setClosing(true);
     const result = await endWorkout(db, workout.id);
-    if (!result) return;
-    router.back();
+    if (!result) {
+      setClosing(false);
+      return;
+    }
+    // The summary covers this sheet straight away; closing it closes both.
     if (result === 'finished') router.push({ pathname: '/workout-summary', params: { id: workout.id } });
+    else router.back();
   };
-
 
   const discard = async () => {
     const ok = await confirmDestructive({
@@ -167,6 +179,7 @@ export default function WorkoutScreen() {
       action: 'Annulla allenamento',
     });
     if (!ok) return;
+    setClosing(true);
     await deleteWorkout(db, workout.id);
     restTimer.stop();
     router.back();
@@ -184,8 +197,10 @@ export default function WorkoutScreen() {
       workout.notes ?? '',
     );
 
+  // The scroll view is the first view of the screen, so iOS fades the page under the bar as
+  // everywhere else; wrapped in another view, the title sat right on top of the sets.
   return (
-    <View style={[styles.flex, { backgroundColor: theme.background }]}>
+    <>
       <ScreenScroll animatedRef={scrollRef}>
         {/* While reordering, a tap anywhere outside the exercises ends it, as on the Home Screen. */}
         <View onStartShouldSetResponder={() => reordering} onResponderRelease={() => setReordering(false)}>
@@ -300,7 +315,7 @@ export default function WorkoutScreen() {
         </View>
       </ScreenScroll>
       <RestBar />
-    </View>
+    </>
   );
 }
 
@@ -316,9 +331,12 @@ type ExerciseBlockProps = {
 
 /** Exercises folded by hand or once done, kept while the workout is closed and reopened. */
 const folded = new Map<number, boolean>();
+/** The load suggested from last time, once taken, by exercise of the workout. */
+const taken = new Map<number, number>();
 
 function ExerciseBlock({ item, currentSetId, names, onSetDone, onReorder, onRemove }: ExerciseBlockProps) {
   const db = useSQLiteContext();
+  const theme = useTheme();
   const router = useRouter();
   const { exercise } = item;
   const complete = item.sets.length > 0 && item.sets.every((set) => set.done);
@@ -345,10 +363,29 @@ function ExerciseBlock({ item, currentSetId, names, onSetDone, onReorder, onRemo
   }, [autoFold]);
   const best = bestSet(item.sets);
   const rest = item.restSeconds ?? restFor(exercise);
-  const range =
-    item.repMin !== null && item.repMax !== null ? `${item.repMin}–${item.repMax}${exercise.kind === 'time' ? ' s' : ''}` : null;
+  const plan = item.repMin !== null && item.repMax !== null ? { min: item.repMin, max: item.repMax } : null;
+  const range = plan ? `${plan.min}–${plan.max}${exercise.kind === 'time' ? ' s' : ''}` : null;
   const timed = exercise.kind === 'time';
   let ordinal = 0;
+
+  // Last time against the planned range: all sets at the top means more load today, most of
+  // them under the bottom means less. Taking the suggested weight fills the sets still to do.
+  const advice = complete ? null : progression(item.previous, plan, exercise.kind, loadIncrement(exercise.equipment));
+  const [weight, setWeight] = useState<number | null>(() => taken.get(item.id) ?? null);
+  const takeWeight = (value: number) => {
+    haptics.light();
+    taken.set(item.id, value);
+    setWeight(value);
+  };
+  const prefill = (index: number): LoggedSet | undefined => {
+    const last = item.previous[index];
+    if (weight === null) return last;
+    return last ? { ...last, weight } : { type: 'normal', weight, reps: null, seconds: null, rir: null, done: false };
+  };
+
+  // Folded with the set to do now inside, the exercise keeps the frame of that set and says it.
+  const currentIndex = item.sets.findIndex((set) => set.id === currentSetId);
+  const holdsCurrent = collapsed && currentIndex >= 0;
 
   const editNote = () =>
     Alert.prompt(
@@ -364,6 +401,14 @@ function ExerciseBlock({ item, currentSetId, names, onSetDone, onReorder, onRemo
 
   return (
     <View style={styles.exercise}>
+      {holdsCurrent ? (
+        <Animated.View
+          entering={CURRENT_IN}
+          exiting={SETS_OUT}
+          pointerEvents="none"
+          style={[styles.exerciseRing, { borderColor: `${theme.accent}8C` }]}
+        />
+      ) : null}
       <ListGroup>
         <View style={styles.exerciseHeader}>
           <Pressable
@@ -384,8 +429,10 @@ function ExerciseBlock({ item, currentSetId, names, onSetDone, onReorder, onRemo
               <AppText variant="headline" tone={complete ? 'text' : 'accent'} numberOfLines={collapsed ? 1 : undefined}>
                 {names.title}
               </AppText>
-              <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                {complete && best
+              <AppText variant="footnote" tone={holdsCurrent ? 'accent' : 'textSecondary'} weight={holdsCurrent ? '600' : undefined} numberOfLines={1}>
+                {holdsCurrent
+                  ? `Ora: serie ${currentIndex + 1} di ${item.sets.length}`
+                  : complete && best
                   ? `${item.sets.length === 1 ? '1 serie' : `${item.sets.length} serie`} · migliore ${formatSet(best, exercise.kind)}`
                   : [names.subtitle, range ? `${item.sets.length} × ${range}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
               </AppText>
@@ -440,6 +487,34 @@ function ExerciseBlock({ item, currentSetId, names, onSetDone, onReorder, onRemo
             </AppText>
           </View>
         ) : null}
+        {advice ? (
+          <View style={styles.adviceRow}>
+            <Icon
+              name={advice.direction === 'up' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'}
+              size={20}
+              tone={advice.direction === 'up' ? 'accent' : 'warning'}
+            />
+            <View style={styles.flex}>
+              <AppText variant="subhead" weight="600">
+                {adviceTitle(advice, exercise.kind)}
+              </AppText>
+              <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
+                {`L’ultima volta ${advice.counts.join(', ')} ${timed ? 's' : 'rip'}${plan ? `, obiettivo ${range}` : ''}`}
+              </AppText>
+            </View>
+            {advice.weight !== null && weight !== advice.weight && item.sets.some((set) => !set.done) ? (
+              <Pressable
+                onPress={() => advice.weight !== null && takeWeight(advice.weight)}
+                accessibilityRole="button"
+                accessibilityLabel={`Usa ${formatNumber(advice.weight, 2)} chili nelle serie da fare`}
+                style={({ pressed }) => [styles.adviceButton, { backgroundColor: theme.accentSoft }, pressed && { opacity: 0.6 }]}>
+                <AppText variant="subhead" weight="600" tone="accent">
+                  Usa
+                </AppText>
+              </Pressable>
+            ) : null}
+          </View>
+        ) : null}
         <View style={styles.tableHead}>
           <AppText variant="caption" tone="textSecondary" weight="600" style={styles.colSet}>
             SERIE
@@ -478,6 +553,8 @@ function ExerciseBlock({ item, currentSetId, names, onSetDone, onReorder, onRemo
                 current={set.id === currentSetId}
                 badge={badge}
                 previous={item.previous[index]}
+                prefill={prefill(index)}
+                divided={index > 0}
                 kind={exercise.kind}
                 trackRir={exercise.trackRir}
                 range={item.repMin !== null && item.repMax !== null ? { min: item.repMin, max: item.repMax } : null}
@@ -511,6 +588,10 @@ type SetRowProps = {
   current: boolean;
   badge: string;
   previous: LoggedSet | undefined;
+  /** What an untouched set starts from: last time's values, or the load suggested for today. */
+  prefill: LoggedSet | undefined;
+  /** Every set but the first has a faint line above it. */
+  divided: boolean;
   kind: WorkoutExercise['exercise']['kind'];
   trackRir: boolean;
   /** The planned range of reps (or seconds), to flag a value well outside it. */
@@ -524,15 +605,27 @@ type SetRowProps = {
  * One set: its number (tap for warm-up, drop or failure), what was done last time, the values
  * (already filled in with last time's, to change if needed) and the tick that closes the set.
  */
-function SetRow({ set, current, badge, previous, kind, trackRir, range, onUpdate, onComplete, onDelete }: SetRowProps) {
+function SetRow({ set, current, badge, previous, prefill, divided, kind, trackRir, range, onUpdate, onComplete, onDelete }: SetRowProps) {
   const theme = useTheme();
   // A set not touched yet starts from what was done last time, so most sets are just a tick.
-  const start = set.done || set.weight !== null || set.reps !== null || set.seconds !== null ? set : previous;
+  const touched = set.done || set.weight !== null || set.reps !== null || set.seconds !== null;
+  const start = touched ? set : prefill;
   const [weight, setWeight] = useState(toText(start?.weight));
   const [reps, setReps] = useState(toText(start?.reps, 0));
   const [seconds, setSeconds] = useState(toText(start?.seconds, 0));
   const [rir, setRir] = useState(toText(set.rir, 1));
   const [missing, setMissing] = useState(false);
+  // Taking the suggested load fills the sets not touched yet with it.
+  const startKey = touched ? 'set' : `${prefill?.weight}|${prefill?.reps}|${prefill?.seconds}`;
+  const [seenStart, setSeenStart] = useState(startKey);
+  if (startKey !== seenStart) {
+    setSeenStart(startKey);
+    if (!touched) {
+      setWeight(toText(prefill?.weight));
+      setReps(toText(prefill?.reps, 0));
+      setSeconds(toText(prefill?.seconds, 0));
+    }
+  }
 
   const values = (): SetFields => {
     const r = parseDecimal(reps);
@@ -540,8 +633,9 @@ function SetRow({ set, current, badge, previous, kind, trackRir, range, onUpdate
     return { weight: parseDecimal(weight), reps: r === null ? null : Math.round(r), seconds: s === null ? null : Math.round(s), rir: parseDecimal(rir) };
   };
 
-  // Once a set is ticked, a count outside the planned range (often a typo, 20 for 10) is shown
-  // in orange with one line under it. Warm-ups and drop sets follow their own counts.
+  // Once a set is ticked, a count outside the planned range (often a typo, 20 for 10) turns
+  // orange with a "!" on its corner that says what to do. Warm-ups and drop sets follow their
+  // own counts.
   const counted = kind === 'time' ? set.seconds : set.reps;
   const outside =
     set.done &&
@@ -553,11 +647,19 @@ function SetRow({ set, current, badge, previous, kind, trackRir, range, onUpdate
         ? 'above'
         : 'below'
       : null;
-  const fence = range ? `${range.min}–${range.max}${kind === 'time' ? ' s' : ''}` : '';
-  const advice =
-    outside === 'above'
-      ? `Sopra ${fence}: la prossima volta ${kind === 'time' ? 'rendilo più difficile' : 'più carico'}`
-      : `Sotto ${fence}: la prossima volta ${kind === 'time' ? 'rendilo più facile' : 'meno carico'}`;
+  const flag = outside && range && counted !== null
+    ? {
+        title: `${counted} ${kind === 'time' ? 'secondi' : counted === 1 ? 'ripetizione' : 'ripetizioni'}, ${outside === 'above' ? 'sopra' : 'sotto'} ${range.min}–${range.max}`,
+        message:
+          outside === 'above'
+            ? kind === 'time'
+              ? 'Troppo facile: la prossima volta rendilo più difficile.'
+              : 'Il carico è leggero: la prossima volta aumentalo.'
+            : kind === 'time'
+              ? 'Troppo difficile: la prossima volta rendilo più facile.'
+              : 'Il carico è pesante: la prossima volta riducilo.',
+      }
+    : null;
 
   const tick = () => {
     if (set.done) {
@@ -577,6 +679,7 @@ function SetRow({ set, current, badge, previous, kind, trackRir, range, onUpdate
   };
 
   const field = (value: string, onChange: (text: string) => void, placeholder: string, label: string, flagged = false) => (
+    <>
     <TextInput
       value={value}
       onChangeText={(text) => {
@@ -594,14 +697,36 @@ function SetRow({ set, current, badge, previous, kind, trackRir, range, onUpdate
       style={[
         styles.input,
         { backgroundColor: set.done ? 'transparent' : theme.fill, color: flagged ? theme.warning : theme.text },
+        current && !set.done && { borderColor: `${theme.accent}66`, borderWidth: 1 },
         missing && { borderColor: theme.danger, borderWidth: 1.5 },
       ]}
     />
+    {flagged && flag ? (
+      <Animated.View entering={FLAG_IN} style={styles.flag}>
+        <RangeFlag
+          title={flag.title}
+          message={flag.message}
+          onFix={() => {
+            haptics.selection();
+            onUpdate({ done: false });
+          }}
+        />
+      </Animated.View>
+    ) : null}
+    </>
   );
 
   return (
     <View style={set.done && { backgroundColor: `${theme.accent}1F` }}>
-    {current ? <Animated.View entering={FadeIn.duration(200)} style={[styles.currentMark, { backgroundColor: theme.accent }]} /> : null}
+    {divided ? <View style={[styles.setDivider, { backgroundColor: theme.separator }]} /> : null}
+    {/* The set to do now sits in a soft green frame that moves on as sets are ticked. */}
+    {current ? (
+      <Animated.View
+        entering={CURRENT_IN}
+        pointerEvents="none"
+        style={[styles.currentRing, { borderColor: `${theme.accent}8C`, backgroundColor: `${theme.accent}0D` }]}
+      />
+    ) : null}
     <View style={styles.setRow}>
       <View style={styles.colSet}>
         <SetTypeMenu badge={badge} type={set.type} done={set.done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
@@ -635,35 +760,37 @@ function SetRow({ set, current, badge, previous, kind, trackRir, range, onUpdate
         <Icon name="checkmark" size={15} weight="bold" color={set.done ? theme.onAccent : current ? theme.accent : theme.textTertiary} />
       </Pressable>
     </View>
-    {outside ? (
-      <Animated.View entering={FadeIn.duration(220)} exiting={FadeOut.duration(120)} style={styles.advice}>
-        <Icon name={outside === 'above' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'} size={14} tone="warning" />
-        <AppText variant="footnote" tone="warning" numberOfLines={1} style={styles.flex}>
-          {advice}
-        </AppText>
-      </Animated.View>
-    ) : null}
     </View>
   );
 }
 
 /**
- * The name of the workout with the time under it, in the bar at the top. It ticks on its own:
- * the rest of the screen does not redraw every second, which got in the way of dragging.
+ * The time of the workout, big in the bar at the top, with its name small above it. It ticks on
+ * its own: the rest of the screen does not redraw every second, which got in the way of dragging.
  */
 function WorkoutTitle({ name, startedAt }: { name: string; startedAt: string }) {
+  const theme = useTheme();
   const now = useClock(1000);
   const elapsed = formatDuration((now - new Date(startedAt).getTime()) / 1000);
   return (
     <View style={styles.title} accessible accessibilityRole="header" accessibilityLabel={`${name}, ${elapsed}`}>
-      <AppText variant="headline" numberOfLines={1}>
-        {name}
+      <AppText variant="caption" weight="600" tone="textSecondary" numberOfLines={1}>
+        {name.toUpperCase()}
       </AppText>
-      <AppText variant="footnote" tone="textSecondary" numeric style={styles.titleTime}>
+      <AppText numeric style={[styles.titleTime, { color: theme.accent }]}>
         {elapsed}
       </AppText>
     </View>
   );
+}
+
+/** "Sali a 82,5 kg", "Aggiungi carico", "Rendilo più facile": what last time asks of today. */
+function adviceTitle(advice: Progression, kind: WorkoutExercise['exercise']['kind']): string {
+  const up = advice.direction === 'up';
+  if (advice.weight !== null) return `${up ? 'Sali' : 'Scendi'} a ${formatNumber(advice.weight, 2)} kg`;
+  if (kind === 'time') return up ? 'Rendilo più difficile' : 'Rendilo più facile';
+  if (kind === 'bodyweight') return up ? 'Aggiungi carico' : 'Togli carico o ripetizioni';
+  return up ? 'Aumenta il carico' : 'Riduci il carico';
 }
 
 /** The heaviest set (by estimated 1RM, or reps, or seconds) of an exercise, for its folded line. */
@@ -676,17 +803,14 @@ function bestSet(sets: readonly WorkoutSet[]): WorkoutSet | null {
 
 /**
  * The rest, big at the bottom of the screen: countdown, what comes next, −15 / +15 and skip.
- * When it is over it says so for a few seconds and goes away.
+ * When it is over it turns into "Vai!" and stays, with the phone buzzing, until "Vai" is
+ * pressed or the next set is ticked.
  */
 function RestBar() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const rest = useRestTimer();
   const now = useClock(250, rest !== null);
-  const expired = rest !== null && now - rest.endsAt > 5000;
-  useEffect(() => {
-    if (expired) restTimer.stop();
-  }, [expired]);
 
   // ±15 s: the time gives a little jump and the change floats up from it.
   const pop = useSharedValue(1);
@@ -700,7 +824,8 @@ function RestBar() {
   };
   const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.get() }] }));
 
-  // "Salta": the panel dissolves where it is, shrinking a little as it fades.
+  // "Salta": the bar empties and the time gives way to "Saltato" for a moment, then the panel
+  // dissolves where it is, shrinking a little as it fades.
   const [skipping, setSkipping] = useState(false);
   const fade = useSharedValue(1);
   const fadeStyle = useAnimatedStyle(() => ({
@@ -714,18 +839,21 @@ function RestBar() {
   };
   const skip = () => {
     setSkipping(true);
-    haptics.light();
+    haptics.medium();
     fade.set(
-      withTiming(0, { duration: 280, easing: Easing.out(Easing.quad) }, (finished) => {
-        'worklet';
-        if (finished) scheduleOnRN(done);
-      }),
+      withDelay(
+        750,
+        withTiming(0, { duration: 300, easing: Easing.out(Easing.quad) }, (finished) => {
+          'worklet';
+          if (finished) scheduleOnRN(done);
+        }),
+      ),
     );
   };
 
-  if (!rest || expired) return null;
+  if (!rest) return null;
   const left = (rest.endsAt - now) / 1000;
-  const over = left <= 0;
+  const over = left <= 0 && !skipping;
   // Green with the whole rest ahead, through orange, to red as it runs out.
   const fraction = Math.max(0, Math.min(1, left / rest.total));
   const barColor = over ? theme.accent : fraction > 0.5 ? mix(theme.ringCloser, theme.ringOnTarget, (fraction - 0.5) * 2) : mix(theme.ringFar, theme.ringCloser, fraction * 2);
@@ -736,7 +864,7 @@ function RestBar() {
         <View style={styles.flex}>
           <View>
             <AppText variant="footnote" weight="600" tone={over ? 'accent' : 'textSecondary'}>
-              {over ? 'RECUPERO FINITO' : 'RECUPERO'}
+              {skipping ? 'RECUPERO SALTATO' : over ? 'RECUPERO FINITO' : 'RECUPERO'}
             </AppText>
             {bump ? (
               // Beside the label, in the free space above the buttons.
@@ -748,20 +876,31 @@ function RestBar() {
             ) : null}
           </View>
           <Animated.View style={[styles.restTimeRow, popStyle]}>
-            <AppText numeric style={[styles.restTime, { color: over ? theme.accent : theme.text }]}>
-              {over ? 'Vai!' : formatDuration(Math.max(0, left))}
-            </AppText>
+            {skipping ? (
+              <Animated.View key="skipped" entering={SKIPPED_IN} style={styles.skipped}>
+                <Icon name="forward.end.fill" size={26} tone="textSecondary" />
+                <AppText style={[styles.restTime, { color: theme.textSecondary }]}>Saltato</AppText>
+              </Animated.View>
+            ) : (
+              <AppText numeric style={[styles.restTime, { color: over ? theme.accent : theme.text }]}>
+                {over ? 'Vai!' : formatDuration(Math.max(0, left))}
+              </AppText>
+            )}
           </Animated.View>
         </View>
-        {over ? null : (
+        {over || skipping ? null : (
           <>
-            <RestButton label="−15" accessibilityLabel="Togli 15 secondi" disabled={left <= 15 || skipping} onPress={() => adjust(-15)} />
-            <RestButton label="+15" accessibilityLabel="Aggiungi 15 secondi" disabled={skipping} onPress={() => adjust(15)} />
+            <RestButton label="−15" accessibilityLabel="Togli 15 secondi" disabled={left <= 15} onPress={() => adjust(-15)} />
+            <RestButton label="+15" accessibilityLabel="Aggiungi 15 secondi" onPress={() => adjust(15)} />
           </>
         )}
-        <RestButton label={over ? 'Ok' : 'Salta'} accessibilityLabel={over ? 'Chiudi' : 'Salta il recupero'} onPress={over ? () => restTimer.stop() : skip} prominent />
+        {over ? (
+          <RestButton label="Vai" accessibilityLabel="Inizia la prossima serie" onPress={() => restTimer.stop()} prominent pulse />
+        ) : skipping ? null : (
+          <RestButton label="Salta" accessibilityLabel="Salta il recupero" onPress={skip} prominent />
+        )}
       </View>
-      <ProgressBar value={Math.max(0, left)} target={rest.total} color={barColor} height={6} />
+      <ProgressBar value={skipping ? 0 : Math.max(0, left)} target={rest.total} color={barColor} height={6} />
       <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
         {rest.label}
       </AppText>
@@ -796,31 +935,45 @@ function mix(from: string, to: string, t: number): string {
 const REST_IN = FadeInDown.springify().damping(18).stiffness(180);
 const REST_OUT = FadeOutDown.duration(320);
 const DONE_IN = FadeIn.duration(250);
+const CURRENT_IN = FadeIn.duration(260);
+const FLAG_IN = ZoomIn.springify().damping(14).stiffness(260);
 const SETS_IN = FadeIn.duration(200).delay(60);
 const SETS_OUT = FadeOut.duration(120);
+const SKIPPED_IN = FadeInDown.duration(220).withInitialValues({ transform: [{ translateY: 10 }] });
 const FLOAT_UP = new Keyframe({
   0: { opacity: 0, transform: [{ translateY: 6 }] },
   20: { opacity: 1, transform: [{ translateY: 0 }] },
   100: { opacity: 0, transform: [{ translateY: -26 }] },
 }).duration(850);
 
-/** Round button of the rest bar that sinks under the finger and springs back. */
+/**
+ * Round button of the rest bar that sinks under the finger and springs back. With `pulse` it
+ * beats gently, to be found at a glance when the rest is over.
+ */
 function RestButton({
   label,
   accessibilityLabel,
   onPress,
   prominent = false,
   disabled = false,
+  pulse = false,
 }: {
   label: string;
   accessibilityLabel: string;
   onPress: () => void;
   prominent?: boolean;
   disabled?: boolean;
+  pulse?: boolean;
 }) {
   const theme = useTheme();
   const scale = useSharedValue(1);
-  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
+  const beat = useSharedValue(1);
+  useEffect(() => {
+    if (!pulse) return;
+    beat.set(withRepeat(withSequence(withTiming(1.1, { duration: 450 }), withTiming(1, { duration: 450 })), -1));
+    return () => beat.set(1);
+  }, [pulse, beat]);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() * beat.get() }] }));
   return (
     <Pressable
       disabled={disabled}
@@ -847,9 +1000,23 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
   title: { alignItems: 'center', maxWidth: 220 },
-  titleTime: { marginTop: -1 },
+  titleTime: { fontSize: 22, lineHeight: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
   notes: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   exercise: {},
+  // Around a folded exercise that holds the set to do now.
+  exerciseRing: {
+    position: 'absolute',
+    top: -2,
+    left: -2,
+    right: -2,
+    bottom: -2,
+    borderWidth: 2,
+    borderRadius: Radius.lg + 2,
+    borderCurve: 'continuous',
+    zIndex: 1,
+  },
+  adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
+  adviceButton: { paddingHorizontal: Spacing.md, height: 32, borderRadius: 16, justifyContent: 'center' },
   exerciseHeader: {
     flexDirection: 'row',
     alignItems: 'center',
@@ -862,9 +1029,20 @@ const styles = StyleSheet.create({
   exerciseTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingRight: Spacing.xs },
   noteRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
   tableHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
-  // A bar on the left edge of the set to do now.
-  currentMark: { position: 'absolute', left: 0, top: 8, bottom: 8, width: 4, borderTopRightRadius: 2, borderBottomRightRadius: 2 },
-  advice: { flexDirection: 'row', alignItems: 'center', gap: 6, paddingLeft: 44 + Spacing.md + Spacing.sm, paddingRight: Spacing.md, marginTop: -4, paddingBottom: Spacing.sm },
+  // A soft frame around the set to do now.
+  currentRing: {
+    position: 'absolute',
+    left: 6,
+    right: 6,
+    top: 3,
+    bottom: 3,
+    borderWidth: 1.5,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+  },
+  setDivider: { position: 'absolute', top: 0, left: Spacing.md + 44, right: Spacing.md, height: StyleSheet.hairlineWidth, opacity: 0.6 },
+  // On the top right corner of the reps box.
+  flag: { position: 'absolute', top: -8, right: -9 },
   setRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
   colSet: { width: 44, alignItems: 'center', textAlign: 'center' },
   colPrev: { flex: 1 },
@@ -884,6 +1062,7 @@ const styles = StyleSheet.create({
   footer: { paddingTop: Spacing.xl, gap: Spacing.md },
   dimmed: { opacity: 0.4 },
   bottomSpace: { height: 170 },
+  skipped: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   restDisabled: { opacity: 0.35 },
   restSlot: { position: 'absolute', left: Spacing.md, right: Spacing.md },
   restTimeRow: { alignSelf: 'flex-start', transformOrigin: 'left center' },

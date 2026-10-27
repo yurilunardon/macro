@@ -10,6 +10,7 @@ import {
   formatWorkoutLength,
   muscleShare,
   nextInRotation,
+  progression,
   setsPerMuscle,
   suggestNext,
   tonnage,
@@ -59,6 +60,34 @@ describe('suggestNext', () => {
     expect(suggestNext(plan, [set(null, 9), set(null, 8)], 2.5, 'bodyweight')).toEqual({ kind: 'repeat', weight: null, reps: 9 });
     expect(suggestNext(plan, [set(null, null, { seconds: 40 })], 2.5, 'time')).toEqual({ kind: 'hold', seconds: 45 });
     expect(suggestNext(plan, [], 2.5, 'weight')).toEqual({ kind: 'first' });
+  });
+});
+
+describe('progression', () => {
+  const range = { min: 8, max: 12 };
+
+  it('goes up once every work set reaches the top of the range', () => {
+    expect(progression([set(80, 12), set(80, 13), set(80, 12)], range, 'weight', 2.5)).toEqual({
+      direction: 'up',
+      counts: [12, 13, 12],
+      weight: 82.5,
+    });
+  });
+
+  it('goes down when half or more of the sets fall under the bottom', () => {
+    expect(progression([set(80, 7), set(80, 6), set(80, 8)], range, 'weight', 2.5)).toMatchObject({ direction: 'down', weight: 77.5 });
+  });
+
+  it('says nothing when the sets sit inside the range, or without a range', () => {
+    expect(progression([set(80, 12), set(80, 10), set(80, 7)], range, 'weight', 2.5)).toBeNull();
+    expect(progression([set(80, 14)], null, 'weight', 2.5)).toBeNull();
+    expect(progression([], range, 'weight', 2.5)).toBeNull();
+  });
+
+  it('ignores warm-ups, and only names a weight for loaded exercises', () => {
+    expect(progression([set(40, 5, { type: 'warmup' }), set(80, 12)], range, 'weight', 2.5)).toMatchObject({ direction: 'up' });
+    expect(progression([set(null, 15), set(null, 14)], range, 'bodyweight', 2.5)).toMatchObject({ direction: 'up', weight: null });
+    expect(progression([set(null, null, { seconds: 70 })], { min: 30, max: 60 }, 'time', 2.5)).toMatchObject({ counts: [70] });
   });
 });
 

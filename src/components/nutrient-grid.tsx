@@ -8,6 +8,7 @@ import type { Targets } from '@/lib/goals';
 import type { Nutrients } from '@/lib/nutrition';
 
 import { AppText } from './app-text';
+import { Icon } from './icon';
 import { ProgressBar } from './progress';
 
 export const NUTRIENT_LABELS: Record<BreakdownKey, string> = {
@@ -18,6 +19,11 @@ export const NUTRIENT_LABELS: Record<BreakdownKey, string> = {
 };
 
 const ORDER: readonly BreakdownKey[] = ['protein', 'carbs', 'fat', 'fiber'];
+
+/** Past the goal by more than a rounding: the bar stays full and a "!" says so. */
+export function isOver(value: number, target: number): boolean {
+  return target > 0 && value > target * 1.05;
+}
 
 export function nutrientTarget(key: BreakdownKey, targets: Targets): number {
   return key === 'fiber' ? fiberTarget(targets.kcal) : targets[key];
@@ -41,6 +47,7 @@ export function MacroBars({ totals, targets, onPress }: MacroBarsProps) {
       {ORDER.map((key) => {
         const value = totals[key] ?? 0;
         const target = nutrientTarget(key, targets);
+        const over = isOver(value, target);
         return (
           <Pressable
             key={key}
@@ -48,13 +55,16 @@ export function MacroBars({ totals, targets, onPress }: MacroBarsProps) {
             onPress={() => onPress?.(key)}
             hitSlop={{ top: 4, bottom: 4 }}
             accessibilityRole="button"
-            accessibilityLabel={`${NUTRIENT_LABELS[key]}: ${Math.round(value)} su ${target} grammi`}
+            accessibilityLabel={`${NUTRIENT_LABELS[key]}: ${Math.round(value)} su ${target} grammi${over ? ', oltre l’obiettivo' : ''}`}
             accessibilityHint="Mostra da quali alimenti arrivano"
             style={({ pressed }) => [styles.item, pressed && styles.pressed]}>
             <View style={styles.top}>
-              <AppText variant="footnote" weight="600" style={[styles.flex, { color: theme[key] }]} numberOfLines={1}>
-                {NUTRIENT_LABELS[key]}
-              </AppText>
+              <View style={styles.name}>
+                <AppText variant="footnote" weight="600" style={{ color: theme[key] }} numberOfLines={1}>
+                  {NUTRIENT_LABELS[key]}
+                </AppText>
+                {over ? <Icon name="exclamationmark.circle.fill" size={13} tone="warning" /> : null}
+              </View>
               <AppText variant="footnote" numeric numberOfLines={1}>
                 <AppText variant="footnote" weight="600" numeric>
                   {Math.round(value)}
@@ -73,9 +83,9 @@ export function MacroBars({ totals, targets, onPress }: MacroBarsProps) {
 }
 
 const styles = StyleSheet.create({
-  flex: { flex: 1 },
   list: { flex: 1, gap: Spacing.sm + 2 },
   item: { gap: Spacing.xs },
   pressed: { opacity: 0.5 },
-  top: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.xs },
+  top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  name: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

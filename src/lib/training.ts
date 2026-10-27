@@ -79,6 +79,40 @@ export function suggestNext(plan: Plan, last: readonly LoggedSet[], increment: n
   return { kind: 'repeat', weight: top > 0 ? top : null, reps };
 }
 
+export type Progression = {
+  direction: 'up' | 'down';
+  /** Reps (or seconds) of each work set last time, in order. */
+  counts: number[];
+  /** The load to use now, for exercises with a weight; null when only the reps can change. */
+  weight: number | null;
+};
+
+/**
+ * What the last session says about the load, against the planned range: every work set at the
+ * top of the range or past it means the weight has become light; half or more of them under
+ * the bottom means it was too heavy. Null when it was about right or there is nothing to go by.
+ */
+export function progression(
+  last: readonly LoggedSet[],
+  range: { min: number; max: number } | null,
+  kind: ExerciseKind,
+  increment: number,
+): Progression | null {
+  if (!range) return null;
+  const work = last.filter((s) => s.done && (s.type === 'normal' || s.type === 'failure'));
+  const counts = work.map((s) => (kind === 'time' ? s.seconds : s.reps)).filter((n): n is number => n !== null && n > 0);
+  if (counts.length === 0) return null;
+  const top = Math.max(0, ...work.map((s) => s.weight ?? 0));
+  const loaded = kind === 'weight' && top > 0;
+  if (counts.every((n) => n >= range.max)) {
+    return { direction: 'up', counts, weight: loaded ? roundTo(top + increment, 0.25) : null };
+  }
+  if (counts.filter((n) => n < range.min).length * 2 >= counts.length) {
+    return { direction: 'down', counts, weight: loaded && top > increment ? roundTo(top - increment, 0.25) : null };
+  }
+  return null;
+}
+
 /** "80 kg × 8", "+10 kg × 6" for added weight, "× 12" with the body only, "45 s". */
 export function formatSet(set: Pick<LoggedSet, 'weight' | 'reps' | 'seconds'>, kind: ExerciseKind): string {
   if (kind === 'time') return set.seconds !== null ? `${formatNumber(set.seconds, 0)} s` : '—';

@@ -34,6 +34,32 @@ type LiveState<T> = { data: T | undefined; error: unknown; loading: boolean };
 
 type Result<T> = { token: string; data: T | undefined; error: unknown };
 
+function versionOf(topics: readonly Topic[]): number {
+  return topics.reduce((sum, topic) => sum + versions[topic], 0);
+}
+
+/**
+ * The last result of each query. A screen opened again with nothing written since shows it at
+ * once instead of a spinner; `prefetchLiveQuery` fills it just before a screen opens.
+ */
+const cache = new Map<string, Result<unknown>>();
+
+/** Runs a screen's query ahead, e.g. on the tap that opens it, so it appears with its data. */
+export async function prefetchLiveQuery<T>(
+  db: SQLiteDatabase,
+  key: string,
+  query: (db: SQLiteDatabase) => Promise<T>,
+  topics: readonly Topic[] = ALL_TOPICS,
+): Promise<void> {
+  const token = `${key}#${versionOf(topics)}`;
+  if (cache.get(key)?.token === token) return;
+  try {
+    cache.set(key, { token, data: await query(db), error: undefined });
+  } catch {
+    // The screen runs it again and shows the error.
+  }
+}
+
 /**
  * Runs `query` and re-runs it whenever `key` changes or one of `topics` is written to.
  * `key` must capture every input of `query` (for example the selected date).
@@ -46,15 +72,21 @@ export function useLiveQuery<T>(
 ): LiveState<T> {
   const db = useSQLiteContext();
   // Versions only grow, so their sum changes exactly when one of the topics does.
-  const dataVersion = useSyncExternalStore(subscribe, () => topics.reduce((sum, topic) => sum + versions[topic], 0));
+  const dataVersion = useSyncExternalStore(subscribe, () => versionOf(topics));
   const token = `${key}#${dataVersion}`;
-  const [result, setResult] = useState<Result<T> | null>(null);
+  const [result, setResult] = useState<Result<T> | null>(() => {
+    const cached = cache.get(key);
+    return cached?.token === token ? (cached as Result<T>) : null;
+  });
 
   useEffect(() => {
     let cancelled = false;
     query(db).then(
       (data) => {
-        if (!cancelled) setResult({ token, data, error: undefined });
+        if (cancelled) return;
+        const next = { token, data, error: undefined };
+        cache.set(key, next);
+        setResult(next);
       },
       (error: unknown) => {
         if (!cancelled) setResult((previous) => ({ token, data: previous?.data, error }));

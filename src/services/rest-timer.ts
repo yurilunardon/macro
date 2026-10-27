@@ -47,18 +47,33 @@ async function schedule(): Promise<void> {
   }).catch(() => {});
 }
 
+/** How often the phone buzzes once the rest is over, and for how long at most. */
+const BUZZ_EVERY = 1500;
+const BUZZ_FOR = 3 * 60_000;
+let buzz: ReturnType<typeof setInterval> | undefined;
+
 /**
- * With the app open the phone really vibrates twice at the end (the haptic taps used elsewhere
- * are too light to notice between sets); with it locked the notification takes over.
+ * With the app open the phone really vibrates when the rest is over (the haptic taps used
+ * elsewhere are too light to notice between sets), and keeps vibrating until "Vai" is pressed or
+ * the next set is ticked; with it locked the notification takes over.
  */
 function armFinish(): void {
   clearTimeout(finishTimer);
+  clearInterval(buzz);
+  Vibration.cancel();
   if (!state) return;
   const ending = state;
   finishTimer = setTimeout(() => {
     if (state !== ending) return;
     Vibration.vibrate();
-    setTimeout(() => Vibration.vibrate(), 700);
+    const until = Date.now() + BUZZ_FOR;
+    buzz = setInterval(() => {
+      if (state !== ending || Date.now() > until) {
+        clearInterval(buzz);
+        return;
+      }
+      Vibration.vibrate();
+    }, BUZZ_EVERY);
   }, Math.max(0, ending.endsAt - Date.now()));
 }
 
@@ -90,6 +105,7 @@ export const restTimer = {
     if (left <= 0) return;
     set({ ...state, endsAt: now + left, total: Math.max(state.total, left / 1000) });
   },
+  /** Ends the rest: skipped while it runs, or "Vai" once it is over. */
   stop(): void {
     if (!state) return;
     set(null);

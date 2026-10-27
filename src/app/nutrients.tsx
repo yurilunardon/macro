@@ -5,7 +5,8 @@ import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { Card, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
 import { Segmented } from '@/components/form';
-import { NUTRIENT_LABELS, nutrientTarget } from '@/components/nutrient-grid';
+import { Icon } from '@/components/icon';
+import { isOver, NUTRIENT_LABELS, nutrientTarget } from '@/components/nutrient-grid';
 import { ProgressBar } from '@/components/progress';
 import { Spacing } from '@/constants/theme';
 import { getDayPlan } from '@/db/days';
@@ -70,11 +71,18 @@ export default function NutrientsSheet() {
           <AppText variant="headline" tone="textSecondary">{` / ${target} g`}</AppText>
         </AppText>
         <ProgressBar value={total} target={target} color={theme[key]} height={8} />
-        <AppText variant="footnote" tone="textSecondary">
-          {total >= target
-            ? `Obiettivo raggiunto${total > target ? `, ${formatNumber(total - target, 0)} g in più` : ''}.`
-            : `Ne mancano ${formatNumber(target - total, 0)} g.`}
-        </AppText>
+        {isOver(total, target) ? (
+          <View style={styles.over}>
+            <Icon name="exclamationmark.circle.fill" size={15} tone="warning" />
+            <AppText variant="footnote" tone="warning" weight="600">
+              {`Obiettivo superato di ${formatNumber(total - target, 0)} g.`}
+            </AppText>
+          </View>
+        ) : (
+          <AppText variant="footnote" tone="textSecondary">
+            {total >= target ? 'Obiettivo raggiunto.' : `Ne mancano ${formatNumber(target - total, 0)} g.`}
+          </AppText>
+        )}
       </Card>
 
       <SectionTitle>Da dove arrivano</SectionTitle>
@@ -136,6 +144,7 @@ const styles = StyleSheet.create({
   content: { padding: Spacing.lg, paddingTop: Spacing.xl, paddingBottom: Spacing.xxl * 2, gap: Spacing.md },
   header: { gap: 2, marginBottom: Spacing.xs },
   total: { gap: Spacing.sm },
+  over: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   row: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.sm },
   rowTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   flex: { flex: 1 },

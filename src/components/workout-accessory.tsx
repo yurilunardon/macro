@@ -5,7 +5,8 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
 
 import { Spacing } from '@/constants/theme';
-import { useLiveQuery } from '@/db/live';
+import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
+import { prefetchLiveQuery, useLiveQuery } from '@/db/live';
 import { getWorkout } from '@/db/workouts';
 import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
@@ -33,12 +34,16 @@ export function WorkoutAccessory({ id, name, startedAt }: { id: number; name: st
   const now = useClock(1000);
   const { data: workout } = useLiveQuery(`accessory:${id}`, (database) => getWorkout(database, id), ['training']);
   const resting = rest !== null && rest.endsAt > now;
+  // The rest is over and waits for "Vai", with the phone buzzing.
+  const ready = rest !== null && !resting;
   const left = resting ? (rest.endsAt - now) / 1000 : 0;
-  const time = resting ? formatDuration(left) : formatDuration((now - new Date(startedAt).getTime()) / 1000);
+  const time = ready ? 'Vai!' : resting ? formatDuration(left) : formatDuration((now - new Date(startedAt).getTime()) / 1000);
   const progress = workoutProgress(workout?.exercises ?? []);
   const current = progress.current && workout ? workout.exercises[progress.current.exercise] : null;
   const fraction = resting ? left / rest.total : progress.total > 0 ? progress.done / progress.total : 0;
-  const line = resting
+  const line = ready
+    ? 'Recupero finito'
+    : resting
     ? 'Recupero'
     : current && progress.current
       ? `${names(current.exercise).title} · serie ${progress.current.set + 1} di ${current.sets.length}`
@@ -55,13 +60,14 @@ export function WorkoutAccessory({ id, name, startedAt }: { id: number; name: st
       <Link.Trigger>
         <Pressable
           accessibilityRole="button"
-          accessibilityLabel={`${name}, ${resting ? `recupero ${time}` : `in corso da ${time}`}. Apri l’allenamento`}
+          accessibilityLabel={`${name}, ${ready ? 'recupero finito' : resting ? `recupero ${time}` : `in corso da ${time}`}. Apri l’allenamento`}
+          onPressIn={() => void prefetchLiveQuery(db, ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS)}
           style={styles.row}>
           <Ring fraction={fraction} color={resting ? theme.warning : theme.accent} track={theme.track}>
             <Icon name={resting ? 'timer' : 'figure.strengthtraining.traditional'} size={15} tone={resting ? 'warning' : 'accent'} />
           </Ring>
           {placement === 'inline' ? (
-            <AppText variant="headline" numeric>
+            <AppText variant="headline" numeric style={ready && { color: theme.accent }}>
               {time}
             </AppText>
           ) : (
@@ -74,7 +80,7 @@ export function WorkoutAccessory({ id, name, startedAt }: { id: number; name: st
                   {line}
                 </AppText>
               </View>
-              <AppText numeric style={[styles.time, { color: resting ? theme.warning : theme.text }]}>
+              <AppText numeric style={[styles.time, { color: ready ? theme.accent : resting ? theme.warning : theme.text }]}>
                 {time}
               </AppText>
             </>
@@ -88,6 +94,10 @@ export function WorkoutAccessory({ id, name, startedAt }: { id: number; name: st
         {resting ? (
           <Link.MenuAction icon="forward.end" onPress={() => restTimer.stop()}>
             Salta recupero
+          </Link.MenuAction>
+        ) : ready ? (
+          <Link.MenuAction icon="play.fill" onPress={() => restTimer.stop()}>
+            Vai
           </Link.MenuAction>
         ) : null}
         <Link.MenuAction icon="flag.checkered" destructive onPress={() => void end()}>

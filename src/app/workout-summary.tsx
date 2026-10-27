@@ -69,7 +69,8 @@ export default function WorkoutSummaryScreen() {
     return () => timers.forEach(clearTimeout);
   }, [data]);
 
-  const close = () => router.back();
+  // It may lie over the workout sheet it was ended from: closing goes back past both.
+  const close = () => router.dismissAll();
 
   if (!data) return <View style={[styles.flex, { backgroundColor: theme.background }]} />;
   const { workout, records, previous } = data;
@@ -220,7 +221,7 @@ export default function WorkoutSummaryScreen() {
           variant="plain"
           compact
           onPress={() => {
-            router.back();
+            close();
             router.push({ pathname: '/training/session', params: { id: workout.id } });
           }}
         />

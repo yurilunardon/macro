@@ -28,17 +28,17 @@ const FILL_EASING = cubicBezier(0.23, 1, 0.32, 1);
 
 type ProgressBarProps = { value: number; target: number; color: string; height?: number };
 
+/** Fills up to the target and stays full past it, in its own colour: being over is said beside it. */
 export function ProgressBar({ value, target, color, height = 6 }: ProgressBarProps) {
   const theme = useTheme();
   const r = ratio(value, target);
-  const over = r > 1.05;
   return (
     <View style={[styles.track, { height, backgroundColor: theme.track }]}>
       <Animated.View
         style={[
           styles.fill,
           transitions.fill,
-          { width: `${Math.min(1, r) * 100}%`, backgroundColor: over ? theme.danger : color },
+          { width: `${Math.min(1, r) * 100}%`, backgroundColor: color },
         ]}
       />
     </View>
