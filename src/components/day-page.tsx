@@ -1,14 +1,21 @@
 import { Link, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { memo } from 'react';
+import { memo, useEffect, useRef } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  useAnimatedStyle,
+  useSharedValue,
+  withSpring,
+} from 'react-native-reanimated';
 
 import { getDayPlan, getTrainingSettings, setDayType } from '@/db/days';
 import { copyEntry, copyMeal, deleteEntry, deleteMealEntries, getEntriesForDate, moveEntry, type Entry } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { saveMealFromDiary } from '@/db/saved-meals';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { addDays, weekdayOf, type DateKey } from '@/lib/dates';
 import { countLabel, formatKcal, formatNumber } from '@/lib/format';
@@ -17,6 +24,7 @@ import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
 import { sumNutrients } from '@/lib/nutrition';
 import { QUICK_ADD_NAME } from '@/lib/quick-add';
 import { haptics } from '@/services/haptics';
+import { toggleMeal, useCollapsedMeals } from '@/services/collapsed-meals';
 import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 import { AppText } from './app-text';
@@ -32,6 +40,9 @@ import { toast } from './toast';
 
 
 const FADE_IN = FadeIn.duration(180);
+const MEAL_LAYOUT = LinearTransition.springify().damping(26).stiffness(260);
+const ROWS_IN = FadeIn.duration(220).delay(60);
+const ROWS_OUT = FadeOut.duration(140);
 
 /** "120 g · Barilla", or for a quick entry just that it was typed by hand. */
 function entryDetail(entry: Entry): string | null {
@@ -48,14 +59,17 @@ type DayPageProps = {
    * moves when a day becomes the current one.
    */
   interactive: boolean;
+  /** Called once the day's data is on screen. */
+  onReady?: (date: DateKey) => void;
 };
 
 /** One day of the food diary: summary of the day and its four meals. */
-export const DayPage = memo(function DayPage({ date, today, interactive }: DayPageProps) {
+export const DayPage = memo(function DayPage({ date, today, interactive, onReady }: DayPageProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
   const hidden = usePendingDeletes();
+  const collapsed = useCollapsedMeals(db);
 
   const { data } = useLiveQuery(
     `diary:${date}`,
@@ -75,6 +89,15 @@ export const DayPage = memo(function DayPage({ date, today, interactive }: DayPa
     },
     ['food', 'settings'],
   );
+  const loaded = data !== undefined;
+  // Read through a ref, so a new callback from the screen does not redraw the page.
+  const readyRef = useRef(onReady);
+  useEffect(() => {
+    readyRef.current = onReady;
+  });
+  useEffect(() => {
+    if (loaded) readyRef.current?.(date);
+  }, [loaded, date]);
 
   const entries = (data?.entries ?? []).filter((e) => !hidden.has(`entry:${e.id}`));
   const totals = sumNutrients(entries.map((e) => e.totals));
@@ -224,6 +247,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive }: DayPa
         const mealTotals = sumNutrients(mealEntries.map((e) => e.totals));
         const count = mealEntries.length;
         const canCopy = count === 0 && data?.yesterdayMeals.has(meal.key);
+        const open = !collapsed.has(meal.key);
         const menu = (
           <MenuButton
             inert={!interactive}
@@ -266,13 +290,23 @@ export const DayPage = memo(function DayPage({ date, today, interactive }: DayPa
           />
         );
         return (
-          <View key={meal.key} style={styles.meal}>
-            <ListGroup>
+          // The card follows its content's size smoothly, and the cards below follow it, when a
+          // meal is folded or unfolded.
+          <Animated.View key={meal.key} layout={MEAL_LAYOUT} style={[styles.meal, { backgroundColor: theme.card }]}>
               <View style={styles.mealHeader}>
-                <View style={styles.mealTitle}>
+                <Pressable
+                  onPress={() => {
+                    haptics.selection();
+                    toggleMeal(db, meal.key);
+                  }}
+                  accessibilityRole="button"
+                  accessibilityState={{ expanded: open }}
+                  accessibilityHint={open ? 'Tocca per chiudere' : 'Tocca per aprire'}
+                  style={styles.mealTitle}>
                   <View style={styles.mealName}>
                     <Icon name={meal.symbol} size={17} tone="textSecondary" />
                     <AppText variant="headline">{meal.label}</AppText>
+                    <Chevron open={open} />
                   </View>
                   {count > 0 ? (
                     <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
@@ -283,9 +317,13 @@ export const DayPage = memo(function DayPage({ date, today, interactive }: DayPa
                       <MacroInline totals={mealTotals} />
                     </AppText>
                   ) : null}
-                </View>
+                </Pressable>
                 {menu}
               </View>
+              {open ? (
+              <Animated.View entering={ROWS_IN} exiting={ROWS_OUT}>
+              <View style={[styles.divider, { backgroundColor: theme.separator }]} />
+              <ListGroup>
               {mealEntries.map((entry) => {
                 const row = (pressed: boolean) => (
                   <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
@@ -356,13 +394,29 @@ export const DayPage = memo(function DayPage({ date, today, interactive }: DayPa
                   </Pressable>
                 ) : null}
               </View>
-            </ListGroup>
-          </View>
+              </ListGroup>
+              </Animated.View>
+              ) : null}
+          </Animated.View>
         );
       })}
     </Animated.View>
   );
 });
+
+/** Points down when the meal is open, right when folded, turning between the two. */
+function Chevron({ open }: { open: boolean }) {
+  const turn = useSharedValue(open ? 0 : -90);
+  useEffect(() => {
+    turn.set(withSpring(open ? 0 : -90, { duration: 300, dampingRatio: 1 }));
+  }, [open, turn]);
+  const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${turn.get()}deg` }] }));
+  return (
+    <Animated.View style={style}>
+      <Icon name="chevron.down" size={12} weight="semibold" tone="textTertiary" />
+    </Animated.View>
+  );
+}
 
 /** "435 kcal" on one line, the number leading. */
 function Kcal({ value }: { value: number }) {
@@ -385,7 +439,8 @@ const styles = StyleSheet.create({
   summaryHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 },
   dayType: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2, paddingVertical: Spacing.xs },
   summaryBody: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
-  meal: { marginTop: Spacing.md },
+  meal: { marginTop: Spacing.md, borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },
+  divider: { height: StyleSheet.hairlineWidth, marginLeft: Spacing.lg },
   mealHeader: {
     flexDirection: 'row',
     alignItems: 'center',

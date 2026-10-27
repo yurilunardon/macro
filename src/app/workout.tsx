@@ -1,7 +1,7 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useState } from 'react';
 import Animated, {
   FadeIn,
   FadeInDown,
@@ -11,7 +11,6 @@ import Animated, {
   LayoutAnimationConfig,
   useAnimatedRef,
   useAnimatedStyle,
-  useScrollViewOffset,
   useSharedValue,
   withSequence,
   withSpring,
@@ -19,6 +18,7 @@ import Animated, {
 } from 'react-native-reanimated';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
+import Sortable from 'react-native-sortables';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -29,7 +29,7 @@ import { ProgressBar } from '@/components/progress';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SetTypeMenu } from '@/components/set-type-menu';
-import { JiggleHandle, JiggleList } from '@/components/jiggle-list';
+import { Jiggle } from '@/components/jiggle';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Radius, Spacing } from '@/constants/theme';
 import { restFor, updateExerciseOptions } from '@/db/exercises';
@@ -92,14 +92,11 @@ export default function WorkoutScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
-  const now = useClock(1000);
   const { names } = useExerciseNames();
   const [reordering, setReordering] = useState(false);
   const scrollRef = useAnimatedRef<Animated.ScrollView>();
-  const scrollOffset = useScrollViewOffset(scrollRef);
-  const maxOffset = useSharedValue(0);
-  const viewport = useRef(0);
-  const content = useRef(0);
+  // The order just dragged into, shown until the saved order comes back from the database.
+  const [localOrder, setLocalOrder] = useState<number[] | null>(null);
   const { data } = useLiveQuery('workout:active', async (database) => {
     const active = await getActiveWorkout(database);
     const [workout, restAlert] = await Promise.all([
@@ -128,22 +125,28 @@ export default function WorkoutScreen() {
   }
 
   const allSets = workout.exercises.flatMap((e) => e.sets);
+  const exercises =
+    localOrder && localOrder.length === workout.exercises.length
+      ? localOrder.map((id) => workout.exercises.find((ex) => ex.id === id)).filter((ex) => ex !== undefined)
+      : workout.exercises;
   const doneCount = allSets.filter((s) => s.done).length;
-  const elapsed = (now - new Date(workout.startedAt).getTime()) / 1000;
   const title = (e: WorkoutExercise) => names(e.exercise).title;
 
   const onSetDone = (setId: number, rest: number) => {
     restTimer.start(rest, nextLabel(workout, setId, title), { sound: data.sound });
   };
 
-  // Removing an exercise with sets already ticked loses them, so that asks first.
-  const confirmRemove = async (ex: WorkoutExercise) =>
-    !ex.sets.some((set) => set.done) ||
-    confirmDestructive({
+  const removeExercise = async (ex: WorkoutExercise) => {
+    const done = ex.sets.filter((set) => set.done).length;
+    const ok = await confirmDestructive({
       title: `Eliminare ${title(ex)}?`,
-      message: 'Le serie completate verranno eliminate.',
+      message: done > 0 ? `${done === 1 ? '1 serie completata verrà eliminata' : `${done} serie completate verranno eliminate`}.` : undefined,
       action: 'Elimina esercizio',
     });
+    if (!ok) return;
+    haptics.light();
+    await removeWorkoutExercise(db, ex.id);
+  };
 
   const finish = async () => {
     if (doneCount === 0) {
@@ -200,16 +203,7 @@ export default function WorkoutScreen() {
 
   return (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
-      <ScreenScroll
-        animatedRef={scrollRef}
-        onLayout={(event) => {
-          viewport.current = event.nativeEvent.layout.height;
-          maxOffset.set(content.current - viewport.current);
-        }}
-        onContentSizeChange={(_, height) => {
-          content.current = height;
-          maxOffset.set(content.current - viewport.current);
-        }}>
+      <ScreenScroll animatedRef={scrollRef}>
         <Stack.Screen options={{ title: workout.name }} />
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.down" accessibilityLabel="Riduci: l’allenamento continua" onPress={() => router.back()} />
@@ -246,9 +240,7 @@ export default function WorkoutScreen() {
         </Stack.Toolbar>
 
         {/* While training only the time matters; sets and volume are in the summary at the end. */}
-        <AppText numeric align="center" accessibilityLabel={`Tempo: ${formatDuration(elapsed)}`} style={[styles.clock, { color: theme.text }]}>
-          {formatDuration(elapsed)}
-        </AppText>
+        <ElapsedTime startedAt={workout.startedAt} />
         {doneCount === 0 ? (
           <AppText variant="footnote" tone="textSecondary" align="center" style={styles.howTo}>
             Tocca ✓ a fine serie: parte il recupero.
@@ -266,26 +258,47 @@ export default function WorkoutScreen() {
 
         {/* Rows already there when the screen opens appear with it; new sets slide in. */}
         <LayoutAnimationConfig skipEntering>
-          <JiggleList
-            items={workout.exercises}
-            keyOf={(ex) => String(ex.id)}
-            editing={reordering}
-            onStartEditing={() => setReordering(true)}
-            onReorder={(keys) => void reorderWorkoutExercises(db, keys.map(Number))}
-            confirmRemove={confirmRemove}
-            onRemove={(ex) => void removeWorkoutExercise(db, ex.id)}
-            scroll={{ ref: scrollRef, offset: scrollOffset, maxOffset }}
-            gap={Spacing.lg}
-            renderItem={(ex) => (
-              <ExerciseBlock
-                item={ex}
-                names={names(ex.exercise)}
-                onSetDone={onSetDone}
-                onReorder={() => {
-                  haptics.medium();
-                  setReordering(true);
-                }}
-              />
+          {/*
+            Hold an exercise to move it: all of them start to wobble, as apps on the Home Screen,
+            the one held follows the finger, the others make room and the page scrolls at its
+            edges. "Fine" ends the editing.
+          */}
+          <Sortable.Grid
+            data={exercises}
+            keyExtractor={(ex) => String(ex.id)}
+            columns={1}
+            rowGap={Spacing.lg}
+            scrollableRef={scrollRef}
+            autoScrollActivationOffset={100}
+            dragActivationDelay={300}
+            activeItemScale={1.03}
+            inactiveItemOpacity={1}
+            activeItemShadowOpacity={0.25}
+            overDrag="vertical"
+            hapticsEnabled
+            onDragStart={() => setReordering(true)}
+            onDragEnd={({ data: ordered }) => {
+              if (ordered === exercises) return;
+              setLocalOrder(ordered.map((ex) => ex.id));
+              void reorderWorkoutExercises(
+                db,
+                ordered.map((ex) => ex.id),
+              );
+            }}
+            renderItem={({ item: ex }) => (
+              <Jiggle
+                editing={reordering}
+                inset={0}
+                removeLabel={`Elimina ${title(ex)}`}
+                onRemove={() => void removeExercise(ex)}>
+                <ExerciseBlock
+                  item={ex}
+                  names={names(ex.exercise)}
+                  onSetDone={onSetDone}
+                  onReorder={() => setReordering(true)}
+                  onRemove={() => void removeExercise(ex)}
+                />
+              </Jiggle>
             )}
           />
         </LayoutAnimationConfig>
@@ -312,9 +325,10 @@ type ExerciseBlockProps = {
   onSetDone: (setId: number, rest: number) => void;
   /** Switches the screen to dragging the exercises into another order. */
   onReorder: () => void;
+  onRemove: () => void;
 };
 
-function ExerciseBlock({ item, names, onSetDone, onReorder }: ExerciseBlockProps) {
+function ExerciseBlock({ item, names, onSetDone, onReorder, onRemove }: ExerciseBlockProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const { exercise } = item;
@@ -340,17 +354,14 @@ function ExerciseBlock({ item, names, onSetDone, onReorder }: ExerciseBlockProps
     <View style={styles.exercise}>
       <ListGroup>
         <View style={styles.exerciseHeader}>
-          {/* Held, the name lifts the whole exercise to move it, as an app on the Home Screen. */}
-          <JiggleHandle style={styles.flex}>
-            <View accessible accessibilityHint="Tieni premuto per spostare l’esercizio">
+          <View style={styles.flex} accessible accessibilityHint="Tieni premuto per spostare l’esercizio">
               <AppText variant="headline" tone="accent">
                 {names.title}
               </AppText>
               <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
                 {[names.subtitle, range ? `${item.sets.length} × ${range}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
               </AppText>
-            </View>
-          </JiggleHandle>
+          </View>
           <MenuButton
             icon="ellipsis.circle"
             accessibilityLabel={`Opzioni per ${names.title}`}
@@ -383,7 +394,7 @@ function ExerciseBlock({ item, names, onSetDone, onReorder }: ExerciseBlockProps
                     icon: 'arrow.triangle.2.circlepath',
                     onPress: () => router.push({ pathname: '/exercise-picker', params: { target: 'replace', id: item.id } }),
                   },
-                  { label: 'Elimina esercizio', icon: 'trash', destructive: true, onPress: () => void removeWorkoutExercise(db, item.id) },
+                  { label: 'Elimina esercizio', icon: 'trash', destructive: true, onPress: onRemove },
                 ],
               },
             ]}
@@ -583,6 +594,21 @@ function SetRow({ set, badge, previous, kind, trackRir, range, onUpdate, onCompl
       </Animated.View>
     ) : null}
     </View>
+  );
+}
+
+/**
+ * The time since the start, ticking on its own: the rest of the screen does not redraw every
+ * second, which kept rebuilding every exercise and got in the way of dragging them.
+ */
+function ElapsedTime({ startedAt }: { startedAt: string }) {
+  const theme = useTheme();
+  const now = useClock(1000);
+  const elapsed = formatDuration((now - new Date(startedAt).getTime()) / 1000);
+  return (
+    <AppText numeric align="center" accessibilityLabel={`Tempo: ${elapsed}`} style={[styles.clock, { color: theme.text }]}>
+      {elapsed}
+    </AppText>
   );
 }
 

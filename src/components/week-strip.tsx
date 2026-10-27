@@ -17,7 +17,8 @@ import { AppText } from './app-text';
 import { EASE_OUT, project } from './motion';
 
 const CIRCLE = 36;
-const CIRCLE_SPRING = { duration: 320, dampingRatio: 0.75 };
+// Grows from about half its size with a small overshoot, so the new day is plain to see.
+const CIRCLE_SPRING = { duration: 420, dampingRatio: 0.55 };
 
 const STATUS_TONE = { far: 'ringFar', closer: 'ringCloser', onTarget: 'ringOnTarget', over: 'ringFar' } as const;
 
@@ -130,10 +131,13 @@ function DayCircle({ selected, color }: { selected: boolean; color: string }) {
       first.current = false;
       return;
     }
-    visible.set(selected ? 1 : 0);
     if (selected) {
-      scale.set(0.8);
+      visible.set(0.4);
+      visible.set(withTiming(1, { duration: 120 }));
+      scale.set(0.55);
       scale.set(withSpring(1, CIRCLE_SPRING));
+    } else {
+      visible.set(0);
     }
   }, [selected, visible, scale]);
   const style = useAnimatedStyle(() => ({ opacity: visible.get(), transform: [{ scale: scale.get() }] }));
