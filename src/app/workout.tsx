@@ -2,7 +2,21 @@ import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import Animated, { FadeIn, LayoutAnimationConfig, useAnimatedRef, useScrollViewOffset, useSharedValue } from 'react-native-reanimated';
+import Animated, {
+  FadeIn,
+  FadeInDown,
+  FadeOut,
+  FadeOutDown,
+  Keyframe,
+  LayoutAnimationConfig,
+  useAnimatedRef,
+  useAnimatedStyle,
+  useScrollViewOffset,
+  useSharedValue,
+  withSequence,
+  withSpring,
+  withTiming,
+} from 'react-native-reanimated';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
@@ -42,29 +56,35 @@ import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
-import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
-import { formatDuration, formatSet, tonnage, type LoggedSet } from '@/lib/training';
+import { numberToInput, parseDecimal } from '@/lib/format';
+import { formatDuration, formatSet, type LoggedSet } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 import { restTimer, useRestTimer } from '@/services/rest-timer';
 
 const REST_PRESETS = [60, 90, 120, 150, 180, 240];
 const glass = isLiquidGlassAvailable();
 
-/** "Lat pulldown · serie 3": the first set still to do after `setId`, for the rest timer. */
-function nextSetLabel(workout: Workout, setId: number, title: (e: WorkoutExercise) => string): string | null {
-  let passed = false;
+/**
+ * What comes after the set just ticked, for the rest timer: "Prossima serie: Lat pulldown · 3"
+ * within the same exercise, "Prossimo esercizio: Seated cable row" when it changes.
+ */
+function nextLabel(workout: Workout, setId: number, title: (e: WorkoutExercise) => string): string {
+  let current: WorkoutExercise | null = null;
   for (const ex of workout.exercises) {
     let ordinal = 0;
     for (const set of ex.sets) {
       if (set.type !== 'warmup') ordinal += 1;
       if (set.id === setId) {
-        passed = true;
+        current = ex;
         continue;
       }
-      if (passed && !set.done) return `${title(ex)} · ${set.type === 'warmup' ? 'riscaldamento' : `serie ${ordinal}`}`;
+      if (current && !set.done) {
+        if (ex === current) return `Prossima serie: ${title(ex)} · ${set.type === 'warmup' ? 'riscaldamento' : ordinal}`;
+        return `Prossimo esercizio: ${title(ex)}`;
+      }
     }
   }
-  return null;
+  return 'Ultima serie completata';
 }
 
 /** The workout in progress. Swiping the sheet down keeps it running; it comes back from the bar above the tabs. */
@@ -113,23 +133,17 @@ export default function WorkoutScreen() {
   const title = (e: WorkoutExercise) => names(e.exercise).title;
 
   const onSetDone = (setId: number, rest: number) => {
-    const next = nextSetLabel(workout, setId, title);
-    restTimer.start(rest, next ? `Poi: ${next}` : 'Ultima serie completata', { sound: data.sound });
+    restTimer.start(rest, nextLabel(workout, setId, title), { sound: data.sound });
   };
 
   // Removing an exercise with sets already ticked loses them, so that asks first.
-  const removeExercise = async (ex: WorkoutExercise) => {
-    if (ex.sets.some((set) => set.done)) {
-      const ok = await confirmDestructive({
-        title: `Eliminare ${title(ex)}?`,
-        message: 'Le serie completate verranno eliminate.',
-        action: 'Elimina esercizio',
-      });
-      if (!ok) return;
-    }
-    haptics.light();
-    await removeWorkoutExercise(db, ex.id);
-  };
+  const confirmRemove = async (ex: WorkoutExercise) =>
+    !ex.sets.some((set) => set.done) ||
+    confirmDestructive({
+      title: `Eliminare ${title(ex)}?`,
+      message: 'Le serie completate verranno eliminate.',
+      action: 'Elimina esercizio',
+    });
 
   const finish = async () => {
     if (doneCount === 0) {
@@ -206,33 +220,35 @@ export default function WorkoutScreen() {
               Fine
             </Stack.Toolbar.Button>
           ) : (
-            <>
-              <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Altre azioni">
-                <Stack.Toolbar.MenuAction
-                  icon="arrow.up.arrow.down"
-                  disabled={workout.exercises.length < 2}
-                  onPress={() => setReordering(true)}>
-                  Riordina esercizi
-                </Stack.Toolbar.MenuAction>
-                <Stack.Toolbar.MenuAction icon="note.text" onPress={editNotes}>
-                  {workout.notes ? 'Modifica nota' : 'Aggiungi nota'}
-                </Stack.Toolbar.MenuAction>
-                <Stack.Toolbar.MenuAction icon="xmark.circle" destructive onPress={() => void discard()}>
-                  Annulla allenamento
-                </Stack.Toolbar.MenuAction>
-              </Stack.Toolbar.Menu>
-              <Stack.Toolbar.Button variant="prominent" onPress={() => void finish()}>
-                Termina
-              </Stack.Toolbar.Button>
-            </>
+            <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
+              <Stack.Toolbar.MenuAction icon="flag.checkered" onPress={() => void finish()}>
+                Termina allenamento
+              </Stack.Toolbar.MenuAction>
+              <Stack.Toolbar.MenuAction
+                icon="plus"
+                onPress={() => router.push({ pathname: '/exercise-picker', params: { target: 'workout', id: workout.id } })}>
+                Aggiungi esercizio
+              </Stack.Toolbar.MenuAction>
+              <Stack.Toolbar.MenuAction
+                icon="arrow.up.arrow.down"
+                disabled={workout.exercises.length < 2}
+                onPress={() => setReordering(true)}>
+                Riordina esercizi
+              </Stack.Toolbar.MenuAction>
+              <Stack.Toolbar.MenuAction icon="note.text" onPress={editNotes}>
+                {workout.notes ? 'Modifica nota' : 'Aggiungi nota'}
+              </Stack.Toolbar.MenuAction>
+              <Stack.Toolbar.MenuAction icon="xmark.circle" destructive onPress={() => void discard()}>
+                Annulla allenamento
+              </Stack.Toolbar.MenuAction>
+            </Stack.Toolbar.Menu>
           )}
         </Stack.Toolbar>
 
-        <View style={styles.stats}>
-          <Stat label="Tempo" value={formatDuration(elapsed)} />
-          <Stat label="Serie fatte" value={`${doneCount} di ${allSets.length}`} />
-          <Stat label="Volume" value={`${formatNumber(tonnage(allSets), 0)} kg`} />
-        </View>
+        {/* While training only the time matters; sets and volume are in the summary at the end. */}
+        <AppText numeric align="center" accessibilityLabel={`Tempo: ${formatDuration(elapsed)}`} style={[styles.clock, { color: theme.text }]}>
+          {formatDuration(elapsed)}
+        </AppText>
         {doneCount === 0 ? (
           <AppText variant="footnote" tone="textSecondary" align="center" style={styles.howTo}>
             Tocca ✓ a fine serie: parte il recupero.
@@ -256,7 +272,8 @@ export default function WorkoutScreen() {
             editing={reordering}
             onStartEditing={() => setReordering(true)}
             onReorder={(keys) => void reorderWorkoutExercises(db, keys.map(Number))}
-            onRemove={(ex) => void removeExercise(ex)}
+            confirmRemove={confirmRemove}
+            onRemove={(ex) => void removeWorkoutExercise(db, ex.id)}
             scroll={{ ref: scrollRef, offset: scrollOffset, maxOffset }}
             gap={Spacing.lg}
             renderItem={(ex) => (
@@ -280,24 +297,11 @@ export default function WorkoutScreen() {
             icon={<Icon name="plus" size={16} tone="accent" weight="semibold" />}
             onPress={() => router.push({ pathname: '/exercise-picker', params: { target: 'workout', id: workout.id } })}
           />
-          <Button title="Termina allenamento" onPress={() => void finish()} />
+          <Button title="Termina allenamento" variant="stop" icon={<Icon name="flag.checkered" size={16} tone="danger" weight="semibold" />} onPress={() => void finish()} />
         </View>
         <View style={styles.bottomSpace} />
       </ScreenScroll>
       <RestBar />
-    </View>
-  );
-}
-
-function Stat({ label, value }: { label: string; value: string }) {
-  return (
-    <View style={styles.stat}>
-      <AppText variant="title2" numeric>
-        {value}
-      </AppText>
-      <AppText variant="caption" tone="textSecondary">
-        {label}
-      </AppText>
     </View>
   );
 }
@@ -432,6 +436,7 @@ function ExerciseBlock({ item, names, onSetDone, onReorder }: ExerciseBlockProps
                 previous={item.previous[index]}
                 kind={exercise.kind}
                 trackRir={exercise.trackRir}
+                range={item.repMin !== null && item.repMax !== null ? { min: item.repMin, max: item.repMax } : null}
                 onUpdate={(fields) => void updateSet(db, set.id, fields)}
                 onComplete={async (fields) => {
                   await updateSet(db, set.id, { ...fields, done: true });
@@ -460,6 +465,8 @@ type SetRowProps = {
   previous: LoggedSet | undefined;
   kind: WorkoutExercise['exercise']['kind'];
   trackRir: boolean;
+  /** The planned range of reps (or seconds), to flag a value well outside it. */
+  range: { min: number; max: number } | null;
   onUpdate: (fields: SetFields) => void;
   onComplete: (fields: SetFields) => void;
   onDelete: () => void;
@@ -469,7 +476,7 @@ type SetRowProps = {
  * One set: its number (tap for warm-up, drop or failure), what was done last time, the values
  * (already filled in with last time's, to change if needed) and the tick that closes the set.
  */
-function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, onDelete }: SetRowProps) {
+function SetRow({ set, badge, previous, kind, trackRir, range, onUpdate, onComplete, onDelete }: SetRowProps) {
   const theme = useTheme();
   // A set not touched yet starts from what was done last time, so most sets are just a tick.
   const start = set.done || set.weight !== null || set.reps !== null || set.seconds !== null ? set : previous;
@@ -484,6 +491,12 @@ function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, on
     const s = parseDecimal(seconds);
     return { weight: parseDecimal(weight), reps: r === null ? null : Math.round(r), seconds: s === null ? null : Math.round(s), rir: parseDecimal(rir) };
   };
+
+  // A count outside the planned range is most often a typo (20 for 10): say so beside the set.
+  // Warm-ups and drop sets follow their own counts.
+  const counted = parseDecimal(kind === 'time' ? seconds : reps);
+  const outside =
+    range !== null && counted !== null && (set.type === 'normal' || set.type === 'failure') && (counted > range.max || counted < range.min);
 
   const tick = () => {
     if (set.done) {
@@ -502,7 +515,7 @@ function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, on
     onComplete(filled);
   };
 
-  const field = (value: string, onChange: (text: string) => void, placeholder: string, label: string) => (
+  const field = (value: string, onChange: (text: string) => void, placeholder: string, label: string, warn = false) => (
     <TextInput
       value={value}
       onChangeText={(text) => {
@@ -519,14 +532,16 @@ function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, on
       accessibilityLabel={label}
       style={[
         styles.input,
-        { backgroundColor: set.done ? 'transparent' : theme.fill, color: theme.text },
+        { backgroundColor: set.done ? 'transparent' : theme.fill, color: warn ? theme.warning : theme.text },
+        warn && !set.done && { borderColor: theme.warning, borderWidth: 1.5 },
         missing && { borderColor: theme.danger, borderWidth: 1.5 },
       ]}
     />
   );
 
   return (
-    <View style={[styles.setRow, set.done && { backgroundColor: `${theme.accent}1F` }]}>
+    <View style={set.done && { backgroundColor: `${theme.accent}1F` }}>
+    <View style={styles.setRow}>
       <View style={styles.colSet}>
         <SetTypeMenu badge={badge} type={set.type} done={set.done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
       </View>
@@ -534,11 +549,11 @@ function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, on
         {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
       </AppText>
       {kind === 'time' ? (
-        <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi')}</View>
+        <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi', outside)}</View>
       ) : (
         <>
           <View style={styles.colInput}>{field(weight, setWeight, 'kg', 'Chili')}</View>
-          <View style={styles.colInput}>{field(reps, setReps, 'rip', 'Ripetizioni')}</View>
+          <View style={styles.colInput}>{field(reps, setReps, 'rip', 'Ripetizioni', outside)}</View>
         </>
       )}
       {trackRir ? <View style={styles.colRir}>{field(rir, setRir, '–', 'Ripetizioni in riserva')}</View> : null}
@@ -559,6 +574,15 @@ function SetRow({ set, badge, previous, kind, trackRir, onUpdate, onComplete, on
         <Icon name="checkmark" size={15} weight="bold" color={set.done ? theme.onAccent : theme.textTertiary} />
       </Pressable>
     </View>
+    {outside && range ? (
+      <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(120)} style={styles.warning}>
+        <Icon name="exclamationmark.triangle.fill" size={12} tone="warning" />
+        <AppText variant="caption" weight="600" tone="warning">
+          {`Fuori dalla fascia ${range.min}–${range.max}${kind === 'time' ? ' s' : ''}: è corretto?`}
+        </AppText>
+      </Animated.View>
+    ) : null}
+    </View>
   );
 }
 
@@ -575,6 +599,19 @@ function RestBar() {
   useEffect(() => {
     if (expired) restTimer.stop();
   }, [expired]);
+
+  // ±15 s: the time gives a little jump and the change floats up from it.
+  const pop = useSharedValue(1);
+  const [bump, setBump] = useState<{ id: number; label: string } | null>(null);
+  const adjust = (delta: number) => {
+    restTimer.adjust(delta);
+    pop.set(withSequence(withTiming(1.14, { duration: 90 }), withSpring(1, { duration: 380, dampingRatio: 0.45 })));
+    const id = Date.now();
+    setBump({ id, label: delta > 0 ? `+${delta} s` : `−${-delta} s` });
+    setTimeout(() => setBump((current) => (current?.id === id ? null : current)), 900);
+  };
+  const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.get() }] }));
+
   if (!rest || expired) return null;
   const left = (rest.endsAt - now) / 1000;
   const over = left <= 0;
@@ -583,17 +620,29 @@ function RestBar() {
     <>
       <View style={styles.restTop}>
         <View style={styles.flex}>
-          <AppText variant="footnote" weight="600" tone={over ? 'accent' : 'textSecondary'}>
-            {over ? 'RECUPERO FINITO' : 'RECUPERO'}
-          </AppText>
-          <AppText numeric style={[styles.restTime, { color: over ? theme.accent : theme.text }]}>
-            {over ? 'Vai!' : formatDuration(left)}
-          </AppText>
+          <View>
+            <AppText variant="footnote" weight="600" tone={over ? 'accent' : 'textSecondary'}>
+              {over ? 'RECUPERO FINITO' : 'RECUPERO'}
+            </AppText>
+            {bump ? (
+              // Beside the label, in the free space above the buttons.
+              <Animated.View key={bump.id} entering={FLOAT_UP} style={styles.bump}>
+                <AppText variant="footnote" weight="700" tone="warning" numeric>
+                  {bump.label}
+                </AppText>
+              </Animated.View>
+            ) : null}
+          </View>
+          <Animated.View style={[styles.restTimeRow, popStyle]}>
+            <AppText numeric style={[styles.restTime, { color: over ? theme.accent : theme.text }]}>
+              {over ? 'Vai!' : formatDuration(left)}
+            </AppText>
+          </Animated.View>
         </View>
         {over ? null : (
           <>
-            <RestButton label="−15" accessibilityLabel="Togli 15 secondi" onPress={() => restTimer.adjust(-15)} />
-            <RestButton label="+15" accessibilityLabel="Aggiungi 15 secondi" onPress={() => restTimer.adjust(15)} />
+            <RestButton label="−15" accessibilityLabel="Togli 15 secondi" onPress={() => adjust(-15)} />
+            <RestButton label="+15" accessibilityLabel="Aggiungi 15 secondi" onPress={() => adjust(15)} />
           </>
         )}
         <RestButton label={over ? 'Ok' : 'Salta'} accessibilityLabel={over ? 'Chiudi' : 'Salta il recupero'} onPress={() => restTimer.stop()} prominent />
@@ -605,17 +654,29 @@ function RestBar() {
     </>
   );
 
-  return glass ? (
-    <GlassView style={[styles.restBar, { bottom: insets.bottom + Spacing.sm }]} glassEffectStyle="regular">
-      {content}
-    </GlassView>
-  ) : (
-    <View style={[styles.restBar, styles.restSolid, { bottom: insets.bottom + Spacing.sm, backgroundColor: theme.card, borderColor: theme.separator }]}>
-      {content}
-    </View>
+  // It rises into place when a set is ticked and drops away when skipped or done.
+  return (
+    <Animated.View entering={REST_IN} exiting={REST_OUT} style={[styles.restSlot, { bottom: insets.bottom + Spacing.sm }]}>
+      {glass ? (
+        <GlassView style={styles.restBar} glassEffectStyle="regular">
+          {content}
+        </GlassView>
+      ) : (
+        <View style={[styles.restBar, styles.restSolid, { backgroundColor: theme.card, borderColor: theme.separator }]}>{content}</View>
+      )}
+    </Animated.View>
   );
 }
 
+const REST_IN = FadeInDown.springify().damping(18).stiffness(180);
+const REST_OUT = FadeOutDown.duration(220);
+const FLOAT_UP = new Keyframe({
+  0: { opacity: 0, transform: [{ translateY: 6 }] },
+  20: { opacity: 1, transform: [{ translateY: 0 }] },
+  100: { opacity: 0, transform: [{ translateY: -26 }] },
+}).duration(850);
+
+/** Round button of the rest bar that sinks under the finger and springs back. */
 function RestButton({
   label,
   accessibilityLabel,
@@ -628,22 +689,23 @@ function RestButton({
   prominent?: boolean;
 }) {
   const theme = useTheme();
+  const scale = useSharedValue(1);
+  const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
   return (
     <Pressable
+      onPressIn={() => scale.set(withSpring(0.86, { duration: 180, dampingRatio: 1 }))}
+      onPressOut={() => scale.set(withSpring(1, { duration: 400, dampingRatio: 0.5 }))}
       onPress={() => {
         haptics.selection();
         onPress();
       }}
       accessibilityRole="button"
-      accessibilityLabel={accessibilityLabel}
-      style={({ pressed }) => [
-        styles.restButton,
-        { backgroundColor: prominent ? theme.accent : theme.fill },
-        pressed && { opacity: 0.6 },
-      ]}>
-      <AppText variant="headline" numeric style={{ color: prominent ? theme.onAccent : theme.text }}>
-        {label}
-      </AppText>
+      accessibilityLabel={accessibilityLabel}>
+      <Animated.View style={[styles.restButton, { backgroundColor: prominent ? theme.accent : theme.fill }, style]}>
+        <AppText variant="headline" numeric style={{ color: prominent ? theme.onAccent : theme.text }}>
+          {label}
+        </AppText>
+      </Animated.View>
     </Pressable>
   );
 }
@@ -651,8 +713,7 @@ function RestButton({
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
-  stats: { flexDirection: 'row', gap: Spacing.md, paddingHorizontal: Spacing.xs },
-  stat: { flex: 1, alignItems: 'center', gap: 2 },
+  clock: { fontSize: 56, lineHeight: 64, fontWeight: '700', letterSpacing: -1, fontVariant: ['tabular-nums'] },
   howTo: { paddingTop: Spacing.md, paddingHorizontal: Spacing.lg },
   notes: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   exercise: {},
@@ -667,6 +728,7 @@ const styles = StyleSheet.create({
   },
   noteRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
   tableHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+  warning: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingLeft: 44 + Spacing.md + Spacing.sm, paddingBottom: Spacing.sm, marginTop: -2 },
   setRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
   colSet: { width: 44, alignItems: 'center', textAlign: 'center' },
   colPrev: { flex: 1 },
@@ -686,10 +748,10 @@ const styles = StyleSheet.create({
   footer: { paddingTop: Spacing.xl, gap: Spacing.md },
   dimmed: { opacity: 0.4 },
   bottomSpace: { height: 170 },
+  restSlot: { position: 'absolute', left: Spacing.md, right: Spacing.md },
+  restTimeRow: { alignSelf: 'flex-start', transformOrigin: 'left center' },
+  bump: { position: 'absolute', left: 84, top: 0, width: 64 },
   restBar: {
-    position: 'absolute',
-    left: Spacing.md,
-    right: Spacing.md,
     paddingHorizontal: Spacing.lg,
     paddingVertical: Spacing.md,
     gap: Spacing.sm,

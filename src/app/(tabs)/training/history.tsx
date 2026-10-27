@@ -4,6 +4,7 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { ListGroup, Row, SectionTitle } from '@/components/card';
+import { DayBadge } from '@/components/day-badge';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
@@ -52,6 +53,7 @@ export default function HistoryScreen() {
             {month.items.map((w) => (
               <SwipeToDelete key={w.id} confirm={confirm} onDelete={() => void deleteWorkout(db, w.id)}>
               <Row
+                icon={<DayBadge name={w.name} />}
                 title={w.name}
                 subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
                   (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,

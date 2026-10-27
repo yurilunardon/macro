@@ -11,6 +11,7 @@ import Animated, {
   withSequence,
   withSpring,
   withTiming,
+  Easing,
   ZoomIn,
   ZoomOut,
   type AnimatedRef,
@@ -63,31 +64,43 @@ type Drag = {
   dropping: SharedValue<boolean>;
 };
 
-/** Index the dragged block would take, and its offset from its own place if it went there. */
+/**
+ * Where the dragged block would drop, as in the lists of iOS: going down, it takes the place of
+ * each block whose middle its bottom edge has passed; going up, of each block whose middle its
+ * top edge has passed. Positions are those of the layout before the drag, so the others moving
+ * out of the way never feed back into the choice. Returns the index in the whole list and the
+ * offset from the block's own place to that slot.
+ */
 function dropPlace(drag: Drag): { target: number; offset: number } {
   'worklet';
   const keys = drag.keys.get();
   const heights = drag.heights.get();
-  const active = drag.active.get();
-  let origin = 0;
+  const from = keys.indexOf(drag.active.get());
+  if (from < 0) return { target: 0, offset: 0 };
+  const tops: number[] = [];
+  let y = 0;
   for (const key of keys) {
-    if (key === active) break;
-    origin += heights[key] ?? 0;
+    tops.push(y);
+    y += heights[key] ?? 0;
   }
-  const centre = origin + drag.dragY.get() + (heights[active] ?? 0) / 2;
-  let target = 0;
-  let top = 0;
-  let above = 0;
-  for (const key of keys) {
-    if (key === active) continue;
-    const h = heights[key] ?? 0;
-    if (centre > top + h / 2) {
-      target += 1;
-      above = top + h;
+  const height = heights[keys[from]] ?? 0;
+  const top = tops[from] + drag.dragY.get();
+  const bottom = top + height;
+  let target = from;
+  for (let j = from + 1; j < keys.length; j++) {
+    if (bottom > tops[j] + (heights[keys[j]] ?? 0) / 2) target = j;
+    else break;
+  }
+  if (target === from) {
+    for (let j = from - 1; j >= 0; j--) {
+      if (top < tops[j] + (heights[keys[j]] ?? 0) / 2) target = j;
+      else break;
     }
-    top += h;
   }
-  return { target, offset: above - origin };
+  let offset = 0;
+  if (target > from) for (let j = from + 1; j <= target; j++) offset += heights[keys[j]] ?? 0;
+  else for (let j = target; j < from; j++) offset -= heights[keys[j]] ?? 0;
+  return { target, offset };
 }
 
 type Item = { key: string; drag: Drag; scroll: JiggleScroll; editing: boolean; startEditing: () => void; onDrop: () => void };
@@ -101,6 +114,9 @@ type JiggleListProps<T> = {
   editing: boolean;
   onStartEditing: () => void;
   onReorder: (keys: string[]) => void;
+  /** Asked before the × removes a block; resolving to false keeps it. */
+  confirmRemove?: (item: T) => Promise<boolean>;
+  /** Called once the block has shrunk away. */
   onRemove: (item: T) => void;
   scroll: JiggleScroll;
   /** Space above each block. */
@@ -120,6 +136,7 @@ export function JiggleList<T>({
   editing,
   onStartEditing,
   onReorder,
+  confirmRemove,
   onRemove,
   scroll,
   gap,
@@ -193,7 +210,10 @@ export function JiggleList<T>({
         const key = keyOf(item);
         return (
           <ItemContext.Provider key={key} value={{ key, drag, scroll, editing, startEditing: onStartEditing, onDrop: drop }}>
-            <JiggleItem gap={gap} onRemove={() => onRemove(item)}>
+            <JiggleItem
+              gap={gap}
+              confirmRemove={confirmRemove ? () => confirmRemove(item) : undefined}
+              onRemove={() => onRemove(item)}>
               {renderItem(item)}
             </JiggleItem>
           </ItemContext.Provider>
@@ -241,7 +261,14 @@ function useLiftGesture(item: Item, enabled: boolean) {
   });
 }
 
-function JiggleItem({ gap, onRemove, children }: { gap: number; onRemove: () => void; children: ReactNode }) {
+type JiggleItemProps = {
+  gap: number;
+  confirmRemove?: () => Promise<boolean>;
+  onRemove: () => void;
+  children: ReactNode;
+};
+
+function JiggleItem({ gap, confirmRemove, onRemove, children }: JiggleItemProps) {
   const theme = useTheme();
   const item = useContext(ItemContext);
   if (!item) throw new Error('JiggleItem outside JiggleList');
@@ -263,6 +290,27 @@ function JiggleItem({ gap, onRemove, children }: { gap: number; onRemove: () => 
       ),
     );
   }, [editing, wobble]);
+
+  // Removing: the block shrinks and fades towards its middle while its space closes, and only
+  // then leaves the list, so the blocks below glide up instead of jumping.
+  const removing = useSharedValue(0);
+  const remove = async () => {
+    if (confirmRemove && !(await confirmRemove())) return;
+    haptics.light();
+    removing.set(
+      withTiming(1, { duration: 320, easing: Easing.bezier(0.32, 0.72, 0, 1) }, (finished) => {
+        'worklet';
+        if (finished) scheduleOnRN(onRemove);
+      }),
+    );
+  };
+  const removeStyle = useAnimatedStyle(() => {
+    const r = removing.get();
+    if (r === 0) return {};
+    const h = drag.heights.get()[key] ?? 0;
+    return { height: h * (1 - Math.min(1, r * 1.25)), opacity: 1 - Math.min(1, r * 1.6), overflow: 'hidden' };
+  });
+  const shrinkStyle = useAnimatedStyle(() => ({ transform: [{ scale: 1 - removing.get() * 0.35 }] }));
 
   const style = useAnimatedStyle(() => {
     const active = drag.active.get();
@@ -298,12 +346,14 @@ function JiggleItem({ gap, onRemove, children }: { gap: number; onRemove: () => 
   return (
     <GestureDetector gesture={pan}>
       <Animated.View
-        style={[styles.item, { paddingTop: gap }, style]}
+        style={[styles.item, { paddingTop: gap }, style, removeStyle]}
         onLayout={(event) => {
+          // While it shrinks away its height is the animation's, not its own.
+          if (removing.get() > 0) return;
           const height = event.nativeEvent.layout.height;
           drag.heights.set({ ...drag.heights.get(), [key]: height });
         }}>
-        {children}
+        <Animated.View style={shrinkStyle}>{children}</Animated.View>
         {editing ? (
           // In edit mode a tap on a block does nothing, as on the Home Screen: no field or button
           // inside it reacts, while holding it still drags it.
@@ -312,7 +362,7 @@ function JiggleItem({ gap, onRemove, children }: { gap: number; onRemove: () => 
         {editing ? (
           <Animated.View entering={ZoomIn.duration(180)} exiting={ZoomOut.duration(140)} style={[styles.remove, { top: gap - 9 }]}>
             <Pressable
-              onPress={onRemove}
+              onPress={() => void remove()}
               hitSlop={10}
               accessibilityRole="button"
               accessibilityLabel="Elimina esercizio"

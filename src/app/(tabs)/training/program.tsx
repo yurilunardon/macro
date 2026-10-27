@@ -6,6 +6,7 @@ import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-nat
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { ActionRow, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
+import { DayBadge } from '@/components/day-badge';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { confirmDestructive } from '@/components/prompt';
@@ -162,18 +163,14 @@ export default function ProgramScreen() {
         />
       ) : (
         <ListGroup>
-          {days.map((day, index) => (
+          {days.map((day) => (
             <SwipeToDelete key={day.id} onDelete={() => removeDay(day)}>
               <Link href={{ pathname: '/training/day', params: { id: day.id } }} asChild>
                 <Link.Trigger>
                   <Pressable accessibilityRole="button">
                     {({ pressed }) => (
                       <View style={[styles.day, pressed && { backgroundColor: theme.cardPressed }]}>
-                        <View style={[styles.number, { backgroundColor: theme.fill }]}>
-                          <AppText variant="subhead" weight="700" numeric>
-                            {String(index + 1)}
-                          </AppText>
-                        </View>
+                        <DayBadge name={day.name} />
                         <View style={styles.flex}>
                           <AppText numberOfLines={1}>{day.name}</AppText>
                           <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
@@ -225,5 +222,4 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.md,
     minHeight: ROW_HEIGHT,
   },
-  number: { width: 30, height: 30, borderRadius: 15, alignItems: 'center', justifyContent: 'center' },
 });

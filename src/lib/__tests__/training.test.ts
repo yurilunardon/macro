@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { defaultRestSeconds, exerciseNames, exerciseSearchText, loadIncrement } from '../exercises';
 import {
   bestOneRepMax,
+  dayIcon,
   estimateOneRepMax,
   formatDuration,
   formatSet,
@@ -141,5 +142,18 @@ describe('program templates', () => {
         }
       }
     }
+  });
+});
+
+describe('dayIcon', () => {
+  it('tells push, pull, legs, upper and lower apart', () => {
+    expect(dayIcon('Push')).toBe('figure.strengthtraining.traditional');
+    expect(dayIcon('Pull A')).toBe('figure.rower');
+    expect(dayIcon('Legs')).toBe('figure.step.training');
+    expect(dayIcon('Gambe')).toBe('figure.step.training');
+    expect(dayIcon('Upper 1')).toBe('figure.arms.open');
+    expect(dayIcon('Lower 2')).toBe('figure.stairs');
+    expect(dayIcon('Full body')).toBe('figure.cross.training');
+    expect(dayIcon('Giorno 3')).toBe('figure.strengthtraining.functional');
   });
 });

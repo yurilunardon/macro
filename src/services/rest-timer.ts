@@ -1,7 +1,7 @@
 import * as Notifications from 'expo-notifications';
 import { useSyncExternalStore } from 'react';
+import { Vibration } from 'react-native';
 
-import { haptics } from './haptics';
 import { ensureNotificationPermission } from './reminders';
 
 /** Outside the "macro-" prefix, so the reminders' rescheduling never cancels a running rest. */
@@ -47,15 +47,18 @@ async function schedule(): Promise<void> {
   }).catch(() => {});
 }
 
-/** With the app open the phone buzzes twice at the end; when it is in a pocket the notification takes over. */
+/**
+ * With the app open the phone really vibrates twice at the end (the haptic taps used elsewhere
+ * are too light to notice between sets); with it locked the notification takes over.
+ */
 function armFinish(): void {
   clearTimeout(finishTimer);
   if (!state) return;
   const ending = state;
   finishTimer = setTimeout(() => {
     if (state !== ending) return;
-    haptics.success();
-    setTimeout(() => haptics.medium(), 180);
+    Vibration.vibrate();
+    setTimeout(() => Vibration.vibrate(), 700);
   }, Math.max(0, ending.endsAt - Date.now()));
 }
 

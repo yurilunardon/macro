@@ -141,3 +141,33 @@ export function bestOneRepMax(sets: readonly LoggedSet[]): number | null {
   }
   return best;
 }
+
+/** SF Symbol for a training day, from the words in its name. */
+export type DayIcon =
+  | 'figure.strengthtraining.traditional'
+  | 'figure.rower'
+  | 'figure.step.training'
+  | 'figure.arms.open'
+  | 'figure.stairs'
+  | 'figure.cross.training'
+  | 'dumbbell.fill'
+  | 'figure.core.training'
+  | 'figure.strengthtraining.functional';
+
+const DAY_ICONS: readonly { words: readonly string[]; icon: DayIcon }[] = [
+  // Pressing: chest, shoulders, triceps.
+  { words: ['push', 'spinta', 'petto', 'chest'], icon: 'figure.strengthtraining.traditional' },
+  // Pulling: back and biceps, a row.
+  { words: ['pull', 'tirata', 'trazione', 'dorso', 'schiena', 'back'], icon: 'figure.rower' },
+  { words: ['upper', 'superior', 'sopra', 'busto'], icon: 'figure.arms.open' },
+  { words: ['lower', 'inferior', 'sotto'], icon: 'figure.stairs' },
+  { words: ['leg', 'gamb', 'squat', 'quad', 'glute'], icon: 'figure.step.training' },
+  { words: ['full', 'total', 'completo', 'tutto'], icon: 'figure.cross.training' },
+  { words: ['braccia', 'arm', 'bicip', 'tricip'], icon: 'dumbbell.fill' },
+  { words: ['core', 'addom', 'abs'], icon: 'figure.core.training' },
+];
+
+export function dayIcon(name: string): DayIcon {
+  const lower = name.toLowerCase();
+  return DAY_ICONS.find((d) => d.words.some((w) => lower.includes(w)))?.icon ?? 'figure.strengthtraining.functional';
+}

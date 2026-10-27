@@ -150,14 +150,14 @@ export default function RemindersScreen() {
       <SectionTitle>Allenamento · fine del recupero</SectionTitle>
       <Segmented
         options={[
-          { key: 'silent', label: 'Silenziosa' },
-          { key: 'sound', label: 'Con suono' },
+          { key: 'silent', label: 'Solo avviso' },
+          { key: 'sound', label: 'Suono o vibrazione' },
         ]}
         value={restAlert ?? 'silent'}
         onChange={(value) => void setSetting(db, 'restAlert', value)}
       />
       <SectionFooter>
-        A schermo spento arriva una notifica. In modalità silenziosa il suono diventa una vibrazione.
+        A telefono bloccato «Solo avviso» non vibra; in silenzioso il suono diventa vibrazione. Ad app aperta vibra sempre.
       </SectionFooter>
     </ScreenScroll>
   );

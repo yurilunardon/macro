@@ -5,6 +5,7 @@ import { StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { DayBadge } from '@/components/day-badge';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { confirmDestructive } from '@/components/prompt';
@@ -21,7 +22,7 @@ import { useToday } from '@/hooks/use-today';
 import { formatDayTitle, weekOf } from '@/lib/dates';
 import { MUSCLES, muscleLabel } from '@/lib/exercises';
 import { countLabel, formatNumber } from '@/lib/format';
-import { formatDuration, formatWorkoutLength, setsPerMuscle } from '@/lib/training';
+import { dayIcon, formatDuration, formatWorkoutLength, setsPerMuscle } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 
 /** Weekly hard sets per muscle that research links with growth, roughly. */
@@ -116,7 +117,7 @@ export default function TrainingScreen() {
                     title: 'Prossimo allenamento',
                     actions: next.program.days.map((d) => ({
                       label: d.name,
-                      icon: 'figure.strengthtraining.traditional' as const,
+                      icon: dayIcon(d.name),
                       checked: d.id === next.day.id,
                       onPress: () => pick(d.id),
                     })),
@@ -125,7 +126,12 @@ export default function TrainingScreen() {
               />
             ) : null}
           </View>
-          <AppText variant="title">{next.day.name}</AppText>
+          <View style={styles.heroName}>
+            <DayBadge name={next.day.name} size={40} />
+            <AppText variant="title" style={styles.flex} numberOfLines={1}>
+              {next.day.name}
+            </AppText>
+          </View>
           <AppText variant="subhead" tone="textSecondary" numberOfLines={2}>
             {[countLabel(next.day.exerciseCount, 'esercizio', 'esercizi'), next.day.muscles.map(muscleLabel).join(', ')]
               .filter(Boolean)
@@ -156,6 +162,7 @@ export default function TrainingScreen() {
             {(data?.history ?? []).slice(0, 3).map((w) => (
               <SwipeToDelete key={w.id} confirm={confirmWorkout} onDelete={() => void deleteWorkout(db, w.id)}>
                 <Row
+                  icon={<DayBadge name={w.name} />}
                   title={w.name}
                   subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
                     (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,
@@ -231,6 +238,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   hero: { gap: Spacing.xs },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 32 },
+  heroName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xs },
   heroButton: { marginTop: Spacing.md, gap: Spacing.xs },
   week: { gap: Spacing.md },
   muscle: { gap: Spacing.xs },

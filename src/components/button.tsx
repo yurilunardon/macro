@@ -9,7 +9,8 @@ import { AppText } from './app-text';
 type ButtonProps = {
   title: string;
   onPress: () => void;
-  variant?: 'filled' | 'tinted' | 'plain' | 'destructive';
+  /** `stop` is the tinted red of ending something, as "Termina" in Apple's Workout app. */
+  variant?: 'filled' | 'tinted' | 'plain' | 'destructive' | 'stop';
   icon?: ReactNode;
   disabled?: boolean;
   loading?: boolean;
@@ -28,9 +29,15 @@ export function Button({
 }: ButtonProps) {
   const theme = useTheme();
   const background =
-    variant === 'filled' ? theme.accent : variant === 'tinted' ? theme.accentSoft : 'transparent';
+    variant === 'filled'
+      ? theme.accent
+      : variant === 'tinted'
+        ? theme.accentSoft
+        : variant === 'stop'
+          ? `${theme.danger}24`
+          : 'transparent';
   const color =
-    variant === 'filled' ? theme.onAccent : variant === 'destructive' ? theme.danger : theme.accent;
+    variant === 'filled' ? theme.onAccent : variant === 'destructive' || variant === 'stop' ? theme.danger : theme.accent;
   const inactive = disabled || loading;
 
   return (
