@@ -27,7 +27,7 @@ export default function ExercisesScreen() {
       <Stack.Screen
         options={{
           headerSearchBarOptions: {
-            placeholder: 'Cerca un esercizio',
+            placeholder: 'Cerca: panca, squat, curl…',
             hideWhenScrolling: false,
             onChangeText: (event) => setQuery(event.nativeEvent.text),
           },

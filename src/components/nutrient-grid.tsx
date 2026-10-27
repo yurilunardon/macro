@@ -85,7 +85,7 @@ export function MacroBars({ totals, targets, onPress }: MacroBarsProps) {
 const styles = StyleSheet.create({
   list: { flex: 1, gap: Spacing.sm + 2 },
   item: { gap: Spacing.xs },
-  pressed: { opacity: 0.5 },
+  pressed: { opacity: 0.6 },
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   name: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

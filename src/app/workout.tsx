@@ -22,7 +22,7 @@ import Animated, {
   ZoomOut,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Sortable from 'react-native-sortables';
 
@@ -32,10 +32,12 @@ import { ActionRow, ListGroup } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { ProgressBar } from '@/components/progress';
-import { confirmDestructive } from '@/components/prompt';
+import { confirmDestructive, editText } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { RangeFlag } from '@/components/range-flag';
+import { RestPicker } from '@/components/rest-picker';
 import { SetTypeMenu } from '@/components/set-type-menu';
+import { EditButton } from '@/components/edit-button';
 import { FoldChevron } from '@/components/fold-chevron';
 import { Jiggle } from '@/components/jiggle';
 import { SwipeToDelete, useSwipeReveal } from '@/components/swipe-to-delete';
@@ -74,8 +76,8 @@ import {
 import { haptics } from '@/services/haptics';
 import { endWorkout } from '@/services/end-workout';
 import { restTimer, useRestTimer } from '@/services/rest-timer';
+import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
-const REST_PRESETS = [60, 90, 120, 150, 180, 240];
 const glass = isLiquidGlassAvailable();
 
 /**
@@ -235,11 +237,8 @@ export default function WorkoutScreen() {
           <Stack.Toolbar.Button icon="chevron.down" accessibilityLabel="Riduci: l’allenamento continua" onPress={() => router.back()} />
         </Stack.Toolbar>
         <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Button hidden={!editing} icon="checkmark" variant="done" accessibilityLabel="Fine" onPress={() => setEditing(false)} />
-          <Stack.Toolbar.Button hidden={editing} onPress={() => setEditing(true)}>
-            Modifica
-          </Stack.Toolbar.Button>
-          <Stack.Toolbar.Menu hidden={editing} icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
+          <EditButton editing={editing} onChange={setEditing} />
+          <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
             <Stack.Toolbar.MenuAction icon="flag.checkered" onPress={() => void finish()}>
               Termina allenamento
             </Stack.Toolbar.MenuAction>
@@ -333,21 +332,6 @@ export default function WorkoutScreen() {
   );
 }
 
-/** A text to change in a prompt, with "Elimina" beside "Salva" when there is one. */
-function editText({ title, message, value, onSave }: { title: string; message: string; value: string | null; onSave: (text: string) => void }) {
-  Alert.prompt(
-    title,
-    message,
-    [
-      { text: 'Annulla', style: 'cancel' },
-      ...(value ? [{ text: 'Elimina', style: 'destructive' as const, onPress: () => onSave('') }] : []),
-      { text: 'Salva', isPreferred: true, onPress: (text?: string) => onSave(text ?? '') },
-    ],
-    'plain-text',
-    value ?? '',
-  );
-}
-
 /** A note on the workout or an exercise: a tap changes it; in edit mode a red ⊖ removes it at once. */
 function NoteRow({
   text,
@@ -407,8 +391,13 @@ const folded = new Set<number>();
 /** The load suggested from last time, once taken, by exercise of the workout. */
 const taken = new Map<number, number>();
 
-function ExerciseBlock({ item, currentSetId, names, editing, collapsed, onFold, onCompleted, onSetDone, onRemove }: ExerciseBlockProps) {
+function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, onFold, onCompleted, onSetDone, onRemove }: ExerciseBlockProps) {
   const db = useSQLiteContext();
+  // A set deleted is gone at once, with "Annulla" for a few seconds, as every row in the app.
+  const hidden = usePendingDeletes();
+  const item = { ...given, sets: given.sets.filter((set) => !hidden.has(`set:${set.id}`)) };
+  const removeSet = (setId: number) =>
+    deleteWithUndo({ key: `set:${setId}`, title: 'Serie eliminata', run: () => deleteSet(db, setId) });
   const theme = useTheme();
   const router = useRouter();
   const { exercise } = item;
@@ -579,6 +568,7 @@ function ExerciseBlock({ item, currentSetId, names, editing, collapsed, onFold, 
           </View>
         ) : null}
         <View style={styles.tableHead}>
+          {editing ? <View style={styles.colMinus} /> : null}
           <AppText variant="caption" tone="textSecondary" weight="600" style={styles.colSet}>
             SERIE
           </AppText>
@@ -613,7 +603,7 @@ function ExerciseBlock({ item, currentSetId, names, editing, collapsed, onFold, 
           const divided = index > 0 && !current && (item.sets[index - 1].id !== currentSetId || editing);
           return (
             <Animated.View key={set.id} entering={FadeIn.duration(200)}>
-            <SwipeToDelete onDelete={() => void deleteSet(db, set.id)}>
+            <SwipeToDelete onDelete={() => removeSet(set.id)}>
                 <SetRow
                   set={set}
                   current={current}
@@ -631,7 +621,7 @@ function ExerciseBlock({ item, currentSetId, names, editing, collapsed, onFold, 
                     haptics.light();
                     onSetDone(set.id, rest);
                   }}
-                  onDelete={() => void deleteSet(db, set.id)}
+                  onDelete={() => removeSet(set.id)}
                 />
             </SwipeToDelete>
             </Animated.View>
@@ -643,28 +633,7 @@ function ExerciseBlock({ item, currentSetId, names, editing, collapsed, onFold, 
             <View style={styles.flex}>
               <ActionRow label="Aggiungi serie" symbol="plus" onPress={() => void addSet(db, item.id)} />
             </View>
-            <MenuButton
-              icon="timer"
-              accessibilityLabel={`Recupero dopo ogni serie: ${formatDuration(rest)}. Cambia`}
-              groups={[
-                {
-                  title: 'Recupero dopo ogni serie',
-                  actions: REST_PRESETS.map((seconds) => ({
-                    label: formatDuration(seconds),
-                    icon: 'timer' as const,
-                    checked: seconds === rest,
-                    onPress: () => void setWorkoutExerciseRest(db, item.id, seconds),
-                  })),
-                },
-              ]}>
-              <View style={[styles.restPick, { backgroundColor: theme.fill }]}>
-                <Icon name="timer" size={13} tone="textSecondary" />
-                <AppText variant="subhead" weight="600" numeric>
-                  {formatDuration(rest)}
-                </AppText>
-                <Icon name="chevron.up.chevron.down" size={10} tone="textSecondary" />
-              </View>
-            </MenuButton>
+            <RestPicker value={rest} onChange={(seconds) => void setWorkoutExerciseRest(db, item.id, seconds)} />
           </View>
         )}
         </Animated.View>
@@ -773,15 +742,12 @@ function SetRow({
       : null;
   const flag = outside && range && counted !== null
     ? {
-        title: `${counted} ${kind === 'time' ? 'secondi' : counted === 1 ? 'ripetizione' : 'ripetizioni'}, ${outside === 'above' ? 'sopra' : 'sotto'} ${range.min}–${range.max}`,
+        title: `${counted} ${kind === 'time' ? 's' : 'rip'}: ${outside === 'above' ? 'sopra' : 'sotto'} ${range.min}–${range.max}`,
+        // What happens next time must match `progression`: all sets at the top, half under the bottom.
         message:
           outside === 'above'
-            ? kind === 'time'
-              ? 'Troppo facile: la prossima volta rendilo più difficile.'
-              : 'Il carico è leggero: la prossima volta aumentalo.'
-            : kind === 'time'
-              ? 'Troppo difficile: la prossima volta rendilo più facile.'
-              : 'Il carico è pesante: la prossima volta riducilo.',
+            ? `${kind === 'time' ? 'Troppo facile' : 'Carico leggero'}. Se succede in tutte le serie, la prossima volta ti suggerisco di ${kind === 'time' ? 'renderlo più difficile' : 'aumentarlo'}.`
+            : `${kind === 'time' ? 'Troppo difficile' : 'Carico pesante'}. Se succede in metà delle serie, la prossima volta ti suggerisco di ${kind === 'time' ? 'renderlo più facile' : 'ridurlo'}.`,
       }
     : null;
 
@@ -858,6 +824,21 @@ function SetRow({
     {/* The set to do now has a soft grey fill, as a selected row: no frame, no extra lines. */}
     {current ? <Animated.View entering={CURRENT_IN} pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.fill }]} /> : null}
     <Animated.View style={[styles.setRow, shakeStyle]}>
+      {/* In edit mode the red ⊖ comes in on the left, as in iOS lists, and slides the row open. */}
+      {editing ? (
+        <Animated.View entering={MINUS_IN} exiting={MINUS_OUT} style={styles.colMinus}>
+          <Pressable
+            onPress={() => {
+              haptics.selection();
+              askDelete();
+            }}
+            hitSlop={8}
+            accessibilityRole="button"
+            accessibilityLabel="Elimina la serie">
+            <Icon name="minus.circle.fill" size={22} tone="danger" />
+          </Pressable>
+        </Animated.View>
+      ) : null}
       <View style={styles.colSet}>
         <SetTypeMenu badge={badge} type={set.type} done={set.done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
       </View>
@@ -874,18 +855,8 @@ function SetRow({
       )}
       {trackRir ? <View style={styles.colRir}>{field(rir, setRir, '–', 'Ripetizioni in riserva')}</View> : null}
       {editing ? (
-        <Animated.View entering={MINUS_IN} exiting={MINUS_OUT} style={[styles.colCheck, styles.check]}>
-          <Pressable
-            onPress={() => {
-              haptics.selection();
-              askDelete();
-            }}
-            hitSlop={8}
-            accessibilityRole="button"
-            accessibilityLabel="Elimina la serie">
-            <Icon name="minus.circle.fill" size={24} tone="danger" />
-          </Pressable>
-        </Animated.View>
+        // The tick steps aside; its place stays, so the columns keep lining up with the heads.
+        <View style={styles.colCheck} />
       ) : (
         <Pressable
           onPress={tick}
@@ -1083,7 +1054,7 @@ const DONE_IN = FadeIn.duration(250);
 const CURRENT_IN = FadeIn.duration(260);
 const MINUS_IN = ZoomIn.duration(180);
 const MINUS_OUT = ZoomOut.duration(140);
-const FLAG_IN = ZoomIn.springify().damping(14).stiffness(260);
+const FLAG_IN = FadeIn.duration(220);
 const SETS_IN = FadeIn.duration(200).delay(60);
 const SETS_OUT = FadeOut.duration(120);
 const SKIPPED_IN = FadeInDown.duration(220).withInitialValues({ transform: [{ translateY: 10 }] });
@@ -1152,7 +1123,6 @@ const styles = StyleSheet.create({
   exercise: {},
   menuSpace: { width: 44, height: 44 },
   exerciseFooter: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
-  restPick: { flexDirection: 'row', alignItems: 'center', gap: 5, height: 32, paddingHorizontal: Spacing.md, borderRadius: 16 },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
   adviceButton: { paddingHorizontal: Spacing.md, height: 32, borderRadius: 16, justifyContent: 'center' },
   exerciseHeader: {
@@ -1176,6 +1146,7 @@ const styles = StyleSheet.create({
   colInput: { width: 62, textAlign: 'center' },
   colRir: { width: 44, textAlign: 'center' },
   colCheck: { width: 40 },
+  colMinus: { width: 24, alignItems: 'center' },
   input: {
     height: 40,
     borderRadius: Radius.sm,

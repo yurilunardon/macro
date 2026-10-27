@@ -8,7 +8,7 @@ import { Button } from '@/components/button';
 import { ActionRow, Card, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
 import { FieldRow } from '@/components/form';
 import { MacroInline } from '@/components/nutrition';
-import { promptNumber } from '@/components/prompt';
+import { confirmDestructive, promptNumber } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
@@ -19,6 +19,7 @@ import { formatKcal, formatNumber, numberToInput, parseDecimal } from '@/lib/for
 import { scaleNutrients, type Nutrients } from '@/lib/nutrition';
 import { computeRecipe, parseRecipeFields } from '@/lib/recipes';
 import { haptics } from '@/services/haptics';
+import { deleteWithUndo } from '@/services/undo';
 
 /**
  * Create or edit a recipe. Open it after `recipeDraft.start()` for a new recipe, or with an `id`
@@ -108,17 +109,9 @@ function RecipeEditor() {
   const remove = () => {
     const id = draft.id;
     if (id === null) return;
-    Alert.alert('Eliminare la ricetta?', 'Le voci già nel diario restano invariate.', [
-      { text: 'Annulla', style: 'cancel' },
-      {
-        text: 'Elimina',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteRecipe(db, id);
-          router.back();
-        },
-      },
-    ]);
+    // As from the list of recipes: back to it, where the recipe is gone with "Annulla".
+    router.back();
+    deleteWithUndo({ key: `recipe:${id}`, title: 'Ricetta eliminata', run: () => deleteRecipe(db, id) });
   };
 
   return (
@@ -165,12 +158,9 @@ function RecipeEditor() {
               detail={[`${formatNumber(ing.quantity, 1)} ${ing.unit}`, ing.brand].filter(Boolean).join(' · ')}
               totals={scaleNutrients(ing.per100, ing.quantity)}
               onPress={() => editQuantity(index)}
-              onLongPress={() =>
-                Alert.alert(ing.name, 'Eliminare dalla ricetta?', [
-                  { text: 'Annulla', style: 'cancel' },
-                  { text: 'Elimina', style: 'destructive', onPress: () => recipeDraft.removeIngredient(index) },
-                ])
-              }
+              onLongPress={async () => {
+                if (await confirmDestructive({ title: ing.name, action: 'Elimina dalla ricetta' })) recipeDraft.removeIngredient(index);
+              }}
             />
           </SwipeToDelete>
         ))}

@@ -52,7 +52,7 @@ export default function ExercisePickerScreen() {
         }}
       />
       <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button onPress={() => router.back()}>Annulla</Stack.Toolbar.Button>
+        <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi" onPress={() => router.back()} />
       </Stack.Toolbar>
 
       <GroupedList<Item>

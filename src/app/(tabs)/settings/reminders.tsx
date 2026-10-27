@@ -1,23 +1,17 @@
 import * as Notifications from 'expo-notifications';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Linking, Platform, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, Alert, Linking, StyleSheet, Switch, View } from 'react-native';
 
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
+import { TimePicker } from '@/components/time-picker';
 import { useLiveQuery } from '@/db/live';
 import { getSetting, setSetting } from '@/db/settings';
 import { useTheme } from '@/hooks/use-theme';
-import {
-  DEFAULT_REMINDERS,
-  formatTime,
-  parseTime,
-  REMINDERS,
-  type ReminderKey,
-  type ReminderSettings,
-} from '@/lib/reminders';
+import { DEFAULT_REMINDERS, REMINDERS, type ReminderKey, type ReminderSettings } from '@/lib/reminders';
 import { ensureNotificationPermission } from '@/services/reminders';
 
 export default function RemindersScreen() {
@@ -74,32 +68,6 @@ export default function RemindersScreen() {
     else apply();
   };
 
-  const editTime = (key: ReminderKey, label: string) => {
-    if (Platform.OS !== 'ios') return;
-    const current = settings[key];
-    Alert.prompt(
-      label,
-      'A che ora? Ad esempio 13:30.',
-      [
-        { text: 'Annulla', style: 'cancel' },
-        {
-          text: 'Salva',
-          onPress: (text?: string) => {
-            const time = parseTime(text ?? '');
-            if (!time) {
-              Alert.alert('Ora non valida', 'Scrivila come 13:30.');
-              return;
-            }
-            save({ ...settings, [key]: { ...current, ...time } });
-          },
-        },
-      ],
-      'plain-text',
-      formatTime(current.hour, current.minute),
-      'numbers-and-punctuation',
-    );
-  };
-
   const switchFor = (value: boolean, onChange: (v: boolean) => void, label: string) => (
     <Switch value={value} onValueChange={onChange} trackColor={{ true: theme.accent }} accessibilityLabel={label} />
   );
@@ -122,13 +90,22 @@ export default function RemindersScreen() {
         {REMINDERS.map((r) => {
           const setting = settings[r.key];
           return (
+            // The time is set with the iOS time pill beside the switch, as for alarms in Clock.
             <Row
               key={r.key}
               title={r.label}
-              subtitle={`Alle ${formatTime(setting.hour, setting.minute)} · tocca per cambiare l’ora`}
-              onPress={() => editTime(r.key, r.label)}
               chevron={false}
-              detail={switchFor(effective(setting.enabled), (v) => toggle(r.key, v), `Promemoria ${r.label}`)}
+              detail={
+                <View style={styles.detail}>
+                  <TimePicker
+                    hour={setting.hour}
+                    minute={setting.minute}
+                    accessibilityLabel={`Ora del promemoria ${r.label}`}
+                    onChange={(time) => save({ ...settings, [r.key]: { ...setting, ...time } })}
+                  />
+                  {switchFor(effective(setting.enabled), (v) => toggle(r.key, v), `Promemoria ${r.label}`)}
+                </View>
+              }
             />
           );
         })}
@@ -165,4 +142,5 @@ export default function RemindersScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  detail: { flexDirection: 'row', alignItems: 'center', gap: 10 },
 });

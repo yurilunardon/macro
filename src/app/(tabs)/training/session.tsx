@@ -47,9 +47,9 @@ export default function SessionScreen() {
 
   const remove = async () => {
     const ok = await confirmDestructive({
-      title: 'Eliminare questo allenamento?',
-      message: 'Sparisce dallo storico, dai grafici e dai record.',
-      action: 'Elimina',
+      title: 'Eliminare l’allenamento?',
+      message: 'Sparisce dallo storico e dai record.',
+      action: 'Elimina allenamento',
     });
     if (!ok) return;
     await deleteWorkout(db, workout.id);
@@ -60,7 +60,7 @@ export default function SessionScreen() {
     <ScreenScroll>
       <Stack.Screen options={{ title: workout.name }} />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="ellipsis.circle" accessibilityLabel="Azioni sull’allenamento">
+        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
           <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
             Elimina allenamento
           </Stack.Toolbar.MenuAction>
@@ -91,21 +91,24 @@ export default function SessionScreen() {
               <View key={r.exercise.id} style={styles.record}>
                 <Icon name="trophy.fill" size={18} tone="warning" />
                 <AppText style={styles.flex}>{names(r.exercise).title}</AppText>
-                <AppText tone="textSecondary" numeric>{`1RM stimato ${formatNumber(r.oneRepMax, 1)} kg`}</AppText>
+                <AppText tone="textSecondary" numeric>{`Massimale stimato ${formatNumber(r.oneRepMax, 1)} kg`}</AppText>
               </View>
             ))}
           </ListGroup>
         </>
       ) : null}
 
-      {workout.exercises.map((ex) => (
+      {workout.exercises.map((ex) => {
+        // Numbered as in the workout: 1, 2, 3 for work sets, R, D, C for the others.
+        let ordinal = 0;
+        return (
         <View key={ex.id}>
           <SectionTitle>{names(ex.exercise).title}</SectionTitle>
           <ListGroup>
             {ex.sets.map((set) => (
               <View key={set.id} style={styles.set}>
                 <AppText variant="subhead" tone="textSecondary" numeric style={styles.setNumber}>
-                  {set.type === 'normal' ? '•' : SET_TYPES.find((t) => t.key === set.type)?.short}
+                  {set.type === 'normal' ? String(++ordinal) : SET_TYPES.find((t) => t.key === set.type)?.short}
                 </AppText>
                 <AppText numeric style={styles.flex}>
                   {formatSet(set, ex.exercise.kind)}
@@ -117,7 +120,8 @@ export default function SessionScreen() {
             ))}
           </ListGroup>
         </View>
-      ))}
+        );
+      })}
     </ScreenScroll>
   );
 }

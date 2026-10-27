@@ -72,7 +72,7 @@ export function Chip({ label, selected = false, onPress }: ChipProps) {
       style={({ pressed }) => [
         styles.chip,
         { backgroundColor: selected ? theme.accent : theme.card, borderColor: selected ? theme.accent : theme.separator },
-        pressed && { opacity: 0.7 },
+        pressed && { opacity: 0.6 },
       ]}>
       <AppText variant="subhead" weight="600" numeric style={{ color: selected ? theme.onAccent : theme.text }}>
         {label}

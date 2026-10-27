@@ -7,6 +7,7 @@ import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { ActionRow, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
 import { DayBadge } from '@/components/day-badge';
+import { EditButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { choose, confirmDestructive } from '@/components/prompt';
@@ -51,7 +52,8 @@ export default function ProgramScreen() {
   const id = Number(params.id);
   const { data: program } = useLiveQuery(`program:${id}`, (database) => getProgram(database, id), ['training']);
   const hidden = usePendingDeletes();
-  const [reordering, setReordering] = useState(false);
+  // "Modifica", as in the workout and in Clock: rows get a red ⊖ and a ≡ handle to drag.
+  const [editing, setEditing] = useState(false);
 
   // A template opened from "Nuova scheda" is only being looked at: going back leaves nothing
   // behind, unless it was changed, and then it asks whether to keep it.
@@ -150,22 +152,12 @@ export default function ProgramScreen() {
     <ScreenScroll>
       <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
-        {reordering ? (
-          <Stack.Toolbar.Button variant="done" onPress={() => setReordering(false)}>
-            Fine
-          </Stack.Toolbar.Button>
-        ) : (
-          <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sulla scheda">
-            <Stack.Toolbar.MenuAction icon="arrow.up.arrow.down" disabled={days.length < 2} onPress={() => setReordering(true)}>
-              Riordina i giorni
-            </Stack.Toolbar.MenuAction>
-            {program.draft ? null : (
-              <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
-                Elimina scheda
-              </Stack.Toolbar.MenuAction>
-            )}
-          </Stack.Toolbar.Menu>
-        )}
+        <EditButton editing={editing} disabled={days.length === 0} onChange={setEditing} />
+        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sulla scheda" hidden={program.draft}>
+          <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
+            Elimina scheda
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
       </Stack.Toolbar>
 
       <EditableTitle value={program.name} accessibilityLabel="Nome della scheda" onChange={(name) => void renameProgram(db, program.id, name)} />
@@ -204,12 +196,13 @@ export default function ProgramScreen() {
       )}
 
       <SectionTitle>Giorni</SectionTitle>
-      {reordering ? (
+      {editing ? (
         <SortableList
           items={days}
           keyOf={(day) => String(day.id)}
           rowHeight={ROW_HEIGHT}
           onReorder={(keys) => void reorderDays(db, keys.map(Number))}
+          onRemove={removeDay}
           renderRow={(day) => (
             <View>
               <AppText numberOfLines={1}>{day.name}</AppText>
@@ -246,9 +239,6 @@ export default function ProgramScreen() {
                     onPress={() => prompt('Rinomina giorno', day.name, (name) => void renameDay(db, day.id, name))}>
                     Rinomina
                   </Link.MenuAction>
-                  <Link.MenuAction icon="arrow.up.arrow.down" onPress={() => setReordering(true)}>
-                    Riordina
-                  </Link.MenuAction>
                   <Link.MenuAction icon="trash" destructive onPress={() => removeDay(day)}>
                     Elimina
                   </Link.MenuAction>
@@ -260,8 +250,8 @@ export default function ProgramScreen() {
         </ListGroup>
       )}
       <SectionFooter>
-        {reordering
-          ? 'Tieni premuto un giorno e trascinalo.'
+        {editing
+          ? 'Trascina ≡ per cambiare l’ordine.'
           : 'I giorni si alternano in quest’ordine, poi si riparte dal primo.'}
       </SectionFooter>
     </ScreenScroll>

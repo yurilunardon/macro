@@ -122,3 +122,18 @@ export function choose({ title, message, actions }: ChooseOptions): Promise<numb
     );
   });
 }
+
+/** A text to change in a prompt, with "Elimina" beside "Salva" when there is one. */
+export function editText({ title, message, value, onSave }: { title: string; message: string; value: string | null; onSave: (text: string) => void }) {
+  Alert.prompt(
+    title,
+    message,
+    [
+      { text: 'Annulla', style: 'cancel' },
+      ...(value ? [{ text: 'Elimina', style: 'destructive' as const, onPress: () => onSave('') }] : []),
+      { text: 'Salva', isPreferred: true, onPress: (text?: string) => onSave(text ?? '') },
+    ],
+    'plain-text',
+    value ?? '',
+  );
+}

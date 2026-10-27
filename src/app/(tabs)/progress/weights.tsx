@@ -8,17 +8,20 @@ import { promptNumber } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
-import { deleteWeight, getLatestWeight, getWeightsSince, setWeight } from '@/db/body';
+import { getLatestWeight, getWeightsSince, setWeight } from '@/db/body';
 import { useLiveQuery } from '@/db/live';
 import { useToday } from '@/hooks/use-today';
 import { formatDayTitle } from '@/lib/dates';
 import { formatNumber, numberToInput } from '@/lib/format';
 import { formatChange, groupByMonth, withChanges } from '@/lib/weights';
 import { haptics } from '@/services/haptics';
+import { removeWeight } from '@/services/remove-weight';
+import { usePendingDeletes } from '@/services/undo';
 
 /** Every weigh-in, newest first and grouped by month, with the change from the one before. */
 export default function WeightsScreen() {
   const db = useSQLiteContext();
+  const hidden = usePendingDeletes();
   const today = useToday();
   const { data } = useLiveQuery('weights:all', async (database) => {
     const [weights, latest] = await Promise.all([getWeightsSince(database, '0000-01-01'), getLatestWeight(database)]);
@@ -45,7 +48,7 @@ export default function WeightsScreen() {
       </View>
     );
   }
-  const months = groupByMonth(withChanges(data.weights));
+  const months = groupByMonth(withChanges(data.weights.filter((w) => !hidden.has(`weight:${w.date}`))));
 
   return (
     <ScreenScroll>
@@ -62,7 +65,7 @@ export default function WeightsScreen() {
           <SectionTitle>{month.title}</SectionTitle>
           <ListGroup>
             {month.items.map((w) => (
-              <SwipeToDelete key={w.date} onDelete={() => void deleteWeight(db, w.date)}>
+              <SwipeToDelete key={w.date} onDelete={() => removeWeight(db, w.date)}>
                 <Row
                   title={formatDayTitle(w.date, today)}
                   subtitle={w.change !== null ? formatChange(w.change, 'kg', (n) => formatNumber(n, 1)) : 'Prima pesata'}

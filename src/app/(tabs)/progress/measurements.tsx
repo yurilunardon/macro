@@ -1,10 +1,11 @@
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { Button } from '@/components/button';
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { FieldRow } from '@/components/form';
+import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
@@ -15,6 +16,7 @@ import { formatDayTitle } from '@/lib/dates';
 import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
 import { MEASUREMENTS, type Measurement, type MeasurementKind } from '@/lib/measurements';
 import { haptics } from '@/services/haptics';
+import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 type Fields = Record<MeasurementKind, string>;
 
@@ -34,6 +36,7 @@ export default function MeasurementsScreen() {
 
 function MeasurementsForm({ rows, today }: { rows: Measurement[]; today: string }) {
   const db = useSQLiteContext();
+  const hidden = usePendingDeletes();
   const [fields, setFields] = useState<Fields>(() => {
     const todays = Object.fromEntries(rows.filter((r) => r.date === today).map((r) => [r.kind, numberToInput(r.value)]));
     return Object.fromEntries(MEASUREMENTS.map((m) => [m.kind, todays[m.kind] ?? ''])) as Fields;
@@ -59,6 +62,13 @@ function MeasurementsForm({ rows, today }: { rows: Measurement[]; today: string 
     } finally {
       setSaving(false);
     }
+  };
+
+  // Rows leave at once with "Annulla"; holding one offers the same, for who cannot swipe.
+  const remove = (date: string) =>
+    deleteWithUndo({ key: `measurements:${date}`, title: 'Misure eliminate', run: () => deleteMeasurementsOn(db, date) });
+  const askRemove = async (date: string) => {
+    if (await confirmDestructive({ title: formatDayTitle(date, today), action: 'Elimina misure' })) remove(date);
   };
 
   const byDate = new Map<string, Measurement[]>();
@@ -95,8 +105,8 @@ function MeasurementsForm({ rows, today }: { rows: Measurement[]; today: string 
         <>
           <SectionTitle>Storico</SectionTitle>
           <ListGroup>
-            {[...byDate].map(([date, values]) => (
-              <SwipeToDelete key={date} onDelete={() => void deleteMeasurementsOn(db, date)}>
+            {[...byDate].filter(([date]) => !hidden.has(`measurements:${date}`)).map(([date, values]) => (
+              <SwipeToDelete key={date} onDelete={() => remove(date)}>
                 <Row
                   title={formatDayTitle(date, today)}
                   subtitle={values
@@ -106,12 +116,7 @@ function MeasurementsForm({ rows, today }: { rows: Measurement[]; today: string 
                     })
                     .join(' · ')}
                   chevron={false}
-                  onLongPress={() =>
-                    Alert.alert('Eliminare le misure di questo giorno?', formatDayTitle(date, today), [
-                      { text: 'Annulla', style: 'cancel' },
-                      { text: 'Elimina', style: 'destructive', onPress: () => void deleteMeasurementsOn(db, date) },
-                    ])
-                  }
+                  onLongPress={() => void askRemove(date)}
                 />
               </SwipeToDelete>
             ))}

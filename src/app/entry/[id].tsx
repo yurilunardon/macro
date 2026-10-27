@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState, type ReactNode } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, ScrollView, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -20,6 +20,7 @@ import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
 import { rescaleNutrients, type Nutrients } from '@/lib/nutrition';
 import { parseQuickAdd, QUICK_ADD_NAME, type QuickFields } from '@/lib/quick-add';
 import { haptics } from '@/services/haptics';
+import { deleteWithUndo } from '@/services/undo';
 
 export default function EntryScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -187,18 +188,11 @@ function EntryLayout({
     toast.show(`Spostato in ${mealLabel(meal)}`, 'arrow.up.arrow.down');
   };
 
-  const remove = () =>
-    Alert.alert('Eliminare questa voce?', entry.name, [
-      { text: 'Annulla', style: 'cancel' },
-      {
-        text: 'Elimina',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteEntry(db, entry.id);
-          router.back();
-        },
-      },
-    ]);
+  // As from the diary: back to it, where the entry is gone with "Annulla".
+  const remove = () => {
+    router.back();
+    deleteWithUndo({ key: `entry:${entry.id}`, title: `${entry.name} eliminato`, run: () => deleteEntry(db, entry.id) });
+  };
 
   return (
     <ScrollView

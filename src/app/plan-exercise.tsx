@@ -5,9 +5,10 @@ import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'reac
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ListGroup, SectionFooter, SectionTitle } from '@/components/card';
-import { Chip, FieldRow } from '@/components/form';
+import { ActionRow, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { FieldRow } from '@/components/form';
 import { Icon } from '@/components/icon';
+import { RestPicker } from '@/components/rest-picker';
 import { Radius, Spacing } from '@/constants/theme';
 import { restFor } from '@/db/exercises';
 import { getPlannedExercise, removeDayExercise, updateDayExercise, type PlannedExercise } from '@/db/programs';
@@ -17,8 +18,8 @@ import { muscleLabel } from '@/lib/exercises';
 import { parseDecimal } from '@/lib/format';
 import { formatDuration } from '@/lib/training';
 import { haptics } from '@/services/haptics';
+import { deleteWithUndo } from '@/services/undo';
 
-const RESTS = [60, 90, 120, 150, 180, 240];
 
 /** Sets, rep range, rest and note of one exercise in a day of the program. */
 export default function PlanExerciseScreen() {
@@ -81,9 +82,14 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
     router.back();
   };
 
-  const remove = async () => {
-    await removeDayExercise(db, planned.id);
+  // As from the day's list: back to it, where the exercise is gone with "Annulla".
+  const remove = () => {
     router.back();
+    deleteWithUndo({
+      key: `planned:${planned.id}`,
+      title: `${names(planned.exercise).title} eliminato`,
+      run: () => removeDayExercise(db, planned.id),
+    });
   };
 
   return (
@@ -113,13 +119,21 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
           : 'Al massimo della fascia in tutte le serie, ti propone più carico.'}
       </SectionFooter>
 
-      <SectionTitle>Recupero</SectionTitle>
-      <View style={styles.chips}>
-        <Chip label={`Predefinito (${formatDuration(restFor(planned.exercise))})`} selected={rest === null} onPress={() => setRest(null)} />
-        {RESTS.map((seconds) => (
-          <Chip key={seconds} label={formatDuration(seconds)} selected={rest === seconds} onPress={() => setRest(seconds)} />
-        ))}
-      </View>
+      <ListGroup>
+        <Row
+          title="Recupero dopo ogni serie"
+          subtitle={rest === null ? 'Come nell’esercizio' : 'Solo in questa scheda'}
+          chevron={false}
+          detail={<RestPicker value={rest ?? restFor(planned.exercise)} onChange={setRest} />}
+        />
+        {rest !== null ? (
+          <ActionRow
+            label={`Come nell’esercizio (${formatDuration(restFor(planned.exercise))})`}
+            symbol="arrow.uturn.backward"
+            onPress={() => setRest(null)}
+          />
+        ) : null}
+      </ListGroup>
 
       <SectionTitle>Nota</SectionTitle>
       <ListGroup>
@@ -128,7 +142,7 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
 
       <View style={styles.actions}>
         <Button title="Salva" onPress={() => void save()} disabled={!valid} />
-        <Button title="Elimina dalla scheda" variant="destructive" onPress={() => void remove()} />
+        <Button title="Elimina dalla scheda" variant="destructive" onPress={remove} />
       </View>
     </ScrollView>
   );
@@ -154,6 +168,5 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   sets: { minWidth: 28, textAlign: 'center' },
   stepper: { width: 40, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
   actions: { paddingTop: Spacing.lg, gap: Spacing.sm },
 });

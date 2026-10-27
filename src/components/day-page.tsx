@@ -414,7 +414,7 @@ function Kcal({ value }: { value: number }) {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   loading: { minHeight: 700 },
-  pressed: { opacity: 0.5 },
+  pressed: { opacity: 0.6 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
   summary: { gap: Spacing.md, paddingTop: Spacing.md },
   summaryHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 },

@@ -1,12 +1,12 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { ActivityIndicator, Alert, StyleSheet, Switch, View } from 'react-native';
+import { ActivityIndicator, StyleSheet, Switch, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
-import { Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { Card, ListGroup, Row, SectionTitle } from '@/components/card';
 import { WeightChart } from '@/components/charts';
-import { Chip } from '@/components/form';
-import { confirmDestructive } from '@/components/prompt';
+import { confirmDestructive, editText } from '@/components/prompt';
+import { RestPicker } from '@/components/rest-picker';
 import { ScreenScroll } from '@/components/screen';
 import { Spacing } from '@/constants/theme';
 import { deleteExercise, getExercise, restFor, updateExerciseOptions } from '@/db/exercises';
@@ -18,9 +18,8 @@ import { useToday } from '@/hooks/use-today';
 import { formatDayTitle } from '@/lib/dates';
 import { equipmentLabel, muscleLabel } from '@/lib/exercises';
 import { formatNumber } from '@/lib/format';
-import { estimateOneRepMax, formatDuration, formatSet, isWorkSet } from '@/lib/training';
+import { estimateOneRepMax, formatSet, isWorkSet } from '@/lib/training';
 
-const RESTS = [60, 90, 120, 150, 180, 240];
 
 /** One exercise: progress of the estimated 1RM, records, every session, and its optional blocks. */
 export default function ExerciseScreen() {
@@ -66,22 +65,18 @@ export default function ExerciseScreen() {
   const rest = restFor(exercise);
 
   const editNote = () =>
-    Alert.prompt(
-      'Nota fissa',
-      'Compare in ogni allenamento con questo esercizio.',
-      [
-        { text: 'Annulla', style: 'cancel' },
-        { text: 'Salva', onPress: (text?: string) => void updateExerciseOptions(db, exercise.id, { note: text ?? '' }) },
-      ],
-      'plain-text',
-      exercise.note ?? '',
-    );
+    editText({
+      title: 'Nota fissa',
+      message: 'Visibile in ogni allenamento con questo esercizio.',
+      value: exercise.note,
+      onSave: (text) => void updateExerciseOptions(db, exercise.id, { note: text }),
+    });
 
   const remove = async () => {
     const ok = await confirmDestructive({
-      title: `Eliminare «${names(exercise).title}»?`,
+      title: `${exercise.ref ? 'Nascondere' : 'Eliminare'} «${names(exercise).title}»?`,
       message: 'Gli allenamenti fatti restano nello storico.',
-      action: 'Elimina',
+      action: exercise.ref ? 'Nascondi dalla libreria' : 'Elimina esercizio',
     });
     if (!ok) return;
     await deleteExercise(db, exercise.id);
@@ -92,7 +87,7 @@ export default function ExerciseScreen() {
     <ScreenScroll>
       <Stack.Screen options={{ title: names(exercise).title }} />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="ellipsis.circle" accessibilityLabel="Azioni sull’esercizio">
+        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sull’esercizio">
           <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
             {exercise.ref ? 'Nascondi dalla libreria' : 'Elimina esercizio'}
           </Stack.Toolbar.MenuAction>
@@ -145,19 +140,13 @@ export default function ExerciseScreen() {
           subtitle={exercise.note ?? 'Regolazioni della macchina, presa, attenzioni'}
           onPress={editNote}
         />
+        <Row
+          title="Recupero dopo ogni serie"
+          subtitle="Parte quando completi una serie"
+          chevron={false}
+          detail={<RestPicker value={rest} onChange={(seconds) => void updateExerciseOptions(db, exercise.id, { restSeconds: seconds })} />}
+        />
       </ListGroup>
-      <SectionTitle>{`Recupero · ${formatDuration(rest)}`}</SectionTitle>
-      <View style={styles.chips}>
-        {RESTS.map((seconds) => (
-          <Chip
-            key={seconds}
-            label={formatDuration(seconds)}
-            selected={seconds === rest}
-            onPress={() => void updateExerciseOptions(db, exercise.id, { restSeconds: seconds })}
-          />
-        ))}
-      </View>
-      <SectionFooter>Parte quando completi una serie.</SectionFooter>
 
       {sessions.length > 0 ? <SectionTitle>Storico</SectionTitle> : null}
       {sessions.length > 0 ? (
@@ -196,5 +185,4 @@ const styles = StyleSheet.create({
   card: { gap: Spacing.lg },
   stats: { flexDirection: 'row', gap: Spacing.md },
   stat: { flex: 1 },
-  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm },
 });

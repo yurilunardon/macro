@@ -1,12 +1,13 @@
 import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
-import { Alert, StyleSheet, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { ActionRow, ListGroup, SectionFooter } from '@/components/card';
 import { FoodRow } from '@/components/food-row';
 import { Segmented } from '@/components/form';
+import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
@@ -14,11 +15,12 @@ import { deleteFood, getCustomFoods, getFavoriteFoods, getRecentFoods, setFavori
 import { deleteRecipe } from '@/db/recipes';
 import { useLiveQuery } from '@/db/live';
 import type { Food } from '@/lib/nutrition';
+import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 type ListKey = 'custom' | 'favorites' | 'recent';
 
 const LISTS: readonly { key: ListKey; label: string }[] = [
-  { key: 'custom', label: 'Creati da me' },
+  { key: 'custom', label: 'Miei' },
   { key: 'favorites', label: 'Preferiti' },
   { key: 'recent', label: 'Recenti' },
 ];
@@ -27,6 +29,7 @@ export default function FoodsScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const [list, setList] = useState<ListKey>('custom');
+  const hidden = usePendingDeletes();
 
   const { data } = useLiveQuery(`foods:${list}`, (database) =>
     list === 'custom' ? getCustomFoods(database) : list === 'favorites' ? getFavoriteFoods(database) : getRecentFoods(database, 100),
@@ -38,12 +41,17 @@ export default function FoodsScreen() {
     food.source === 'recipe'
       ? router.push({ pathname: '/settings/recipe', params: { id: food.id } })
       : router.push({ pathname: '/settings/food-edit', params: { foodId: food.id } });
-  const remove = (food: Food) => void (food.source === 'recipe' ? deleteRecipe(db, food.id) : deleteFood(db, food.id));
-  const askDelete = (food: Food) =>
-    Alert.alert(food.name, 'Eliminare l’alimento? Le voci già nel diario restano invariate.', [
-      { text: 'Annulla', style: 'cancel' },
-      { text: 'Elimina', style: 'destructive', onPress: () => remove(food) },
-    ]);
+  // As every row: it leaves at once with "Annulla"; holding it offers the same for who cannot
+  // swipe. Entries already in the diary keep their values either way.
+  const remove = (food: Food) =>
+    deleteWithUndo({
+      key: `food:${food.id}`,
+      title: `${food.name} eliminato`,
+      run: () => (food.source === 'recipe' ? deleteRecipe(db, food.id) : deleteFood(db, food.id)),
+    });
+  const askDelete = async (food: Food) => {
+    if (await confirmDestructive({ title: food.name, message: 'Le voci già nel diario restano invariate.', action: 'Elimina alimento' })) remove(food);
+  };
 
   const footer: Record<ListKey, string> = {
     custom: 'Alimenti creati o corretti da te.',
@@ -57,20 +65,20 @@ export default function FoodsScreen() {
       <View style={styles.gap} />
       <ListGroup>
         {list === 'custom' ? (
-          <ActionRow label="Crea un alimento" onPress={() => router.push('/settings/food-edit')} />
+          <ActionRow label="Crea alimento" onPress={() => router.push('/settings/food-edit')} />
         ) : list === 'favorites' ? (
           <ActionRow
-            label="Aggiungi un preferito"
+            label="Aggiungi preferito"
             symbol="star.circle.fill"
             onPress={() => router.push({ pathname: '/add', params: { mode: 'favorite' } })}
           />
         ) : null}
-        {(data ?? []).map((food) => (
+        {(data ?? []).filter((food) => !hidden.has(`food:${food.id}`)).map((food) => (
           <SwipeToDelete
             key={food.id}
             label={list === 'favorites' ? 'Rimuovi' : 'Elimina'}
             onDelete={() => (list === 'favorites' ? void setFavorite(db, food.id, false) : remove(food))}>
-            <FoodRow food={food} onPress={() => edit(food)} onLongPress={list === 'favorites' ? undefined : () => askDelete(food)} />
+            <FoodRow food={food} onPress={() => edit(food)} onLongPress={list === 'favorites' ? undefined : () => void askDelete(food)} />
           </SwipeToDelete>
         ))}
       </ListGroup>

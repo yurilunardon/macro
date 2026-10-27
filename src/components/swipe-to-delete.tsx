@@ -14,6 +14,8 @@ import { EASE_OUT, project, rubberband } from './motion';
 
 /** Width of the revealed button, as in Mail and Clock. */
 const ACTION_WIDTH = 88;
+/** The red button floats inside the space the row leaves, rounded, as in iOS 26. */
+const INSET = 6;
 /** Past this share of the row, letting go deletes without tapping the button: well past the middle, as in Clock. */
 const FULL_SWIPE = 0.72;
 const SETTLE = { duration: 350, dampingRatio: 1 };
@@ -162,35 +164,38 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina' }
     return c === 0 ? {} : { height: height.get() * (1 - c), opacity: 1 - c };
   });
   const contentStyle = useAnimatedStyle(() => ({ transform: [{ translateX: x.get() }] }));
-  // The red layer sits behind the row and shows where the row has moved away.
-  const actionStyle = useAnimatedStyle(() => ({ opacity: x.get() < -0.5 ? 1 : 0 }));
-  // As in Messages and Mail: the label stays centred in the red area while it grows, and once a
-  // full swipe is armed it jumps to the row's edge and follows the finger.
-  const labelStyle = useAnimatedStyle(() => {
-    const rowWidth = width.get();
+  // The red button fills the space the row leaves, inset and rounded; it grows with the swipe.
+  const actionStyle = useAnimatedStyle(() => {
     const reveal = Math.max(0, -x.get());
-    const centred = rowWidth - reveal / 2 - ACTION_WIDTH / 2;
-    const atEdge = rowWidth - reveal;
-    return { transform: [{ translateX: centred + (atEdge - centred) * armedProgress.get() }] };
+    return { opacity: reveal > 0.5 ? 1 : 0, width: Math.max(0, reveal - INSET * 2) };
+  });
+  // As in Messages and Mail: the label stays centred in the red button while it grows, and once
+  // a full swipe is armed it jumps to the button's leading edge and follows the finger.
+  const labelStyle = useAnimatedStyle(() => {
+    const button = Math.max(0, -x.get() - INSET * 2);
+    const centred = Math.max(0, (button - ACTION_WIDTH) / 2);
+    return { transform: [{ translateX: centred * (1 - armedProgress.get()) }] };
   });
 
+  // The whole row takes the swipe, the red button too: an open row can be dragged further (or
+  // back) from the button as from the row.
   return (
-    <Animated.View style={[styles.container, containerStyle]} onLayout={onLayout}>
-      <Animated.View style={[StyleSheet.absoluteFill, { backgroundColor: theme.danger }, actionStyle]}>
-        <Animated.View style={[styles.label, labelStyle]}>
-          <Pressable
-            onPress={() => slideOut()}
-            accessibilityRole="button"
-            accessibilityLabel={label}
-            style={styles.labelButton}>
-            <Icon name="trash.fill" size={18} color="#FFFFFF" />
-            <AppText variant="caption" weight="600" style={styles.labelText}>
-              {label}
-            </AppText>
-          </Pressable>
+    <GestureDetector gesture={pan} touchAction="pan-y">
+      <Animated.View style={[styles.container, containerStyle]} onLayout={onLayout}>
+        <Animated.View style={[styles.action, { backgroundColor: theme.danger }, actionStyle]}>
+          <Animated.View style={[styles.label, labelStyle]}>
+            <Pressable
+              onPress={() => slideOut()}
+              accessibilityRole="button"
+              accessibilityLabel={label}
+              style={styles.labelButton}>
+              <Icon name="trash.fill" size={18} color="#FFFFFF" />
+              <AppText variant="caption" weight="600" style={styles.labelText}>
+                {label}
+              </AppText>
+            </Pressable>
+          </Animated.View>
         </Animated.View>
-      </Animated.View>
-      <GestureDetector gesture={pan} touchAction="pan-y">
         <Animated.View style={[{ backgroundColor: theme.card }, contentStyle]}>
           <RevealContext value={reveal}>{children}</RevealContext>
           {open ? (
@@ -198,14 +203,23 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina' }
             <Pressable style={StyleSheet.absoluteFill} onPress={reset} accessibilityLabel="Chiudi" />
           ) : null}
         </Animated.View>
-      </GestureDetector>
-    </Animated.View>
+      </Animated.View>
+    </GestureDetector>
   );
 }
 
 const styles = StyleSheet.create({
   container: { overflow: 'hidden' },
-  label: { position: 'absolute', top: 0, bottom: 0, left: 0, width: ACTION_WIDTH },
+  action: {
+    position: 'absolute',
+    top: INSET,
+    bottom: INSET,
+    right: INSET,
+    borderRadius: 14,
+    borderCurve: 'continuous',
+    overflow: 'hidden',
+  },
+  label: { position: 'absolute', top: 0, bottom: 0, left: 0, width: ACTION_WIDTH - INSET * 2 },
   labelButton: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.xs },
   labelText: { color: '#FFFFFF' },
 });

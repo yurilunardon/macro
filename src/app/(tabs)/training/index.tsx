@@ -7,6 +7,7 @@ import Animated, {
   FadeIn,
   FadeOut,
   LinearTransition,
+  type SharedValue,
   useAnimatedStyle,
   useReducedMotion,
   useSharedValue,
@@ -59,6 +60,7 @@ export default function TrainingScreen() {
     return { active, next, programs, history, volume };
   }, ['training']);
   const now = useClock(1000, Boolean(data?.active));
+  const breath = useBreath(Boolean(data?.active));
   // While the workout sheet rises, this page stays as it was; the card changes once covered.
   const [starting, setStarting] = useState(false);
 
@@ -124,9 +126,9 @@ export default function TrainingScreen() {
           accessibilityRole="button"
           accessibilityHint="Apre l’allenamento">
             <Card style={styles.hero}>
-              <Breathing />
+              <Breathing breath={breath} />
               <View style={styles.heroTop}>
-                <LiveDot />
+                <LiveDot breath={breath} />
                 <AppText variant="footnote" weight="600" tone="accent" style={styles.flex}>
                   IN CORSO
                 </AppText>
@@ -318,7 +320,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   hero: { gap: Spacing.xs },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 32 },
-  pressed: { opacity: 0.7 },
+  pressed: { opacity: 0.6 },
   heroName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xs },
   heroButton: { marginTop: Spacing.md, gap: Spacing.xs },
   shrink: { flexShrink: 1 },
@@ -340,29 +342,29 @@ const HERO_LAYOUT = LinearTransition.duration(260);
 const SECTION_IN = FadeIn.duration(200);
 const SECTION_OUT = FadeOut.duration(140);
 
-/** A slow, faint green glow over the card of the workout in progress, as if it breathed. */
-function Breathing() {
-  const theme = useTheme();
+/** One slow beat shared by the card and its dot, so they breathe together: 0 → 1 → 0. */
+function useBreath(running: boolean): SharedValue<number> {
   const reduced = useReducedMotion();
-  const glow = useSharedValue(0);
+  const breath = useSharedValue(0);
   useEffect(() => {
-    if (reduced) return;
-    glow.set(withRepeat(withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.sin) }), -1, true));
-  }, [glow, reduced]);
-  const style = useAnimatedStyle(() => ({ opacity: glow.get() * 0.09 }));
+    if (reduced || !running) return;
+    breath.set(withRepeat(withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.sin) }), -1, true));
+    return () => breath.set(0);
+  }, [breath, reduced, running]);
+  return breath;
+}
+
+/** A soft green glow over the card of the workout in progress, as if it breathed. */
+function Breathing({ breath }: { breath: SharedValue<number> }) {
+  const theme = useTheme();
+  const style = useAnimatedStyle(() => ({ opacity: breath.get() * 0.16 }));
   return <Animated.View pointerEvents="none" style={[styles.glow, { backgroundColor: theme.accent }, style]} />;
 }
 
-/** A green dot with a ring spreading from it, as for something live. */
-function LiveDot() {
+/** A small green dot with a halo that swells and fades in time with the card. */
+function LiveDot({ breath }: { breath: SharedValue<number> }) {
   const theme = useTheme();
-  const reduced = useReducedMotion();
-  const ring = useSharedValue(0);
-  useEffect(() => {
-    if (reduced) return;
-    ring.set(withRepeat(withTiming(1, { duration: 1600, easing: Easing.out(Easing.quad) }), -1, false));
-  }, [ring, reduced]);
-  const style = useAnimatedStyle(() => ({ opacity: 0.5 * (1 - ring.get()), transform: [{ scale: 1 + ring.get() * 1.6 }] }));
+  const style = useAnimatedStyle(() => ({ opacity: 0.45 * breath.get(), transform: [{ scale: 1 + breath.get() * 1.3 }] }));
   return (
     <View style={styles.live}>
       <Animated.View style={[styles.liveRing, { backgroundColor: theme.accent }, style]} />

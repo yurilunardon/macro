@@ -1,11 +1,13 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { ActivityIndicator, Alert, Platform, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { Card, ListGroup, SectionTitle } from '@/components/card';
+import { EditableTitle } from '@/components/editable-title';
 import { MacroInline } from '@/components/nutrition';
+import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
@@ -13,6 +15,7 @@ import { useLiveQuery } from '@/db/live';
 import { deleteSavedMeal, deleteSavedMealItem, getSavedMeal, renameSavedMeal } from '@/db/saved-meals';
 import { formatKcal, formatNumber } from '@/lib/format';
 import { sumNutrients } from '@/lib/nutrition';
+import { deleteWithUndo } from '@/services/undo';
 
 export default function SavedMealScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -32,45 +35,17 @@ export default function SavedMealScreen() {
   const meal = data;
   const totals = sumNutrients(meal.items.map((i) => i.totals));
 
-  const rename = () => {
-    if (Platform.OS !== 'ios') return;
-    Alert.prompt(
-      'Rinomina pasto',
-      undefined,
-      [
-        { text: 'Annulla', style: 'cancel' },
-        {
-          text: 'Salva',
-          onPress: (name?: string) => {
-            const trimmed = (name ?? '').trim();
-            if (trimmed !== '') void renameSavedMeal(db, meal.id, trimmed);
-          },
-        },
-      ],
-      'plain-text',
-      meal.name,
-    );
+  // As from the list of meals: back to it, where the meal is gone with "Annulla".
+  const remove = () => {
+    router.back();
+    deleteWithUndo({ key: `meal:${meal.id}`, title: 'Pasto eliminato', run: () => deleteSavedMeal(db, meal.id) });
   };
-
-  const remove = () =>
-    Alert.alert(`Eliminare «${meal.name}»?`, 'Le voci già nel diario restano invariate.', [
-      { text: 'Annulla', style: 'cancel' },
-      {
-        text: 'Elimina',
-        style: 'destructive',
-        onPress: async () => {
-          await deleteSavedMeal(db, meal.id);
-          router.back();
-        },
-      },
-    ]);
 
   return (
     <ScreenScroll>
-      <Stack.Screen options={{ title: meal.name }} />
-      <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button onPress={rename}>Rinomina</Stack.Toolbar.Button>
-      </Stack.Toolbar>
+      {/* Renamed by tapping its name, as schede and giorni. */}
+      <Stack.Screen options={{ title: '' }} />
+      <EditableTitle value={meal.name} accessibilityLabel="Nome del pasto" onChange={(name) => void renameSavedMeal(db, meal.id, name)} />
 
       <Card style={styles.summary}>
         <AppText variant="title2" numeric>
@@ -85,12 +60,9 @@ export default function SavedMealScreen() {
           {meal.items.map((item) => (
             <SwipeToDelete key={item.id} onDelete={() => void deleteSavedMealItem(db, item.id)}>
               <Pressable
-                onLongPress={() =>
-                  Alert.alert(item.name, 'Eliminare dal pasto?', [
-                    { text: 'Annulla', style: 'cancel' },
-                    { text: 'Elimina', style: 'destructive', onPress: () => void deleteSavedMealItem(db, item.id) },
-                  ])
-                }
+                onLongPress={async () => {
+                  if (await confirmDestructive({ title: item.name, action: 'Elimina dal pasto' })) void deleteSavedMealItem(db, item.id);
+                }}
                 accessibilityHint="Tieni premuto per eliminarlo dal pasto"
                 style={styles.row}>
                 <View style={styles.flex}>

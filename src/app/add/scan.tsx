@@ -140,7 +140,7 @@ function ControlButton({ symbol, label, onPress }: { symbol: SFSymbol; label: st
       onPress={onPress}
       accessibilityRole="button"
       accessibilityLabel={label}
-      style={({ pressed }) => [styles.control, pressed && { opacity: 0.7 }]}>
+      style={({ pressed }) => [styles.control, pressed && { opacity: 0.6 }]}>
       <Icon name={symbol} size={22} color="#FFFFFF" />
     </Pressable>
   );

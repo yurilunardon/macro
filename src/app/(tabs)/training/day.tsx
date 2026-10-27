@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { ActionRow, ListGroup, SectionFooter } from '@/components/card';
+import { EditButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
@@ -49,7 +50,8 @@ export default function DayScreen() {
     ['training'],
   );
   const hidden = usePendingDeletes();
-  const [reordering, setReordering] = useState(false);
+  // "Modifica", as in the workout and in Clock: rows get a red ⊖ and a ≡ handle to drag.
+  const [editing, setEditing] = useState(false);
 
   if (!data) {
     return (
@@ -90,36 +92,29 @@ export default function DayScreen() {
     <ScreenScroll>
       <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
-        {reordering ? (
-          <Stack.Toolbar.Button variant="done" onPress={() => setReordering(false)}>
-            Fine
-          </Stack.Toolbar.Button>
-        ) : (
-          <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sul giorno">
-            <Stack.Toolbar.MenuAction icon="arrow.up.arrow.down" disabled={exercises.length < 2} onPress={() => setReordering(true)}>
-              Riordina gli esercizi
-            </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon="trash" destructive onPress={remove}>
-              Elimina giorno
-            </Stack.Toolbar.MenuAction>
-          </Stack.Toolbar.Menu>
-        )}
+        <EditButton editing={editing} disabled={exercises.length === 0} onChange={setEditing} />
+        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sul giorno">
+          <Stack.Toolbar.MenuAction icon="trash" destructive onPress={remove}>
+            Elimina giorno
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
       </Stack.Toolbar>
 
       <EditableTitle value={day.name} accessibilityLabel="Nome del giorno" onChange={(name) => void renameDay(db, day.id, name)} />
 
-      {!active && exercises.length > 0 && !reordering ? (
+      {!active && exercises.length > 0 && !editing ? (
         <View style={styles.start}>
           <Button title="Inizia allenamento" onPress={() => void start()} />
         </View>
       ) : null}
 
-      {reordering ? (
+      {editing ? (
         <SortableList
           items={exercises}
           keyOf={(planned) => String(planned.id)}
           rowHeight={ROW_HEIGHT}
           onReorder={(keys) => void reorderDayExercises(db, keys.map(Number))}
+          onRemove={removeExercise}
           renderRow={(planned) => (
             <View>
               <AppText numberOfLines={1}>{names(planned.exercise).title}</AppText>
@@ -155,9 +150,6 @@ export default function DayScreen() {
                   </Pressable>
                 </Link.Trigger>
                 <Link.Menu>
-                  <Link.MenuAction icon="arrow.up.arrow.down" onPress={() => setReordering(true)}>
-                    Riordina
-                  </Link.MenuAction>
                   <Link.MenuAction icon="trash" destructive onPress={() => removeExercise(planned)}>
                     Elimina
                   </Link.MenuAction>
@@ -171,7 +163,7 @@ export default function DayScreen() {
           />
         </ListGroup>
       )}
-      {reordering ? <SectionFooter>Tieni premuto un esercizio e trascinalo.</SectionFooter> : null}
+      {editing ? <SectionFooter>Trascina ≡ per cambiare l’ordine.</SectionFooter> : null}
     </ScreenScroll>
   );
 }

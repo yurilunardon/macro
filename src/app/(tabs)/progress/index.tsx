@@ -14,7 +14,7 @@ import { promptNumber } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Radius, Spacing } from '@/constants/theme';
-import { deleteWeight, getLatestWeight, getWeightsSince, setWeight } from '@/db/body';
+import { getLatestWeight, getWeightsSince, setWeight } from '@/db/body';
 import { getDayPlans, getTrainingSettings, setTrainingSettings } from '@/db/days';
 import { getDailyTotals } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
@@ -30,6 +30,8 @@ import { measurementChanges } from '@/lib/measurements';
 import { summarizePeriod } from '@/lib/stats';
 import { formatChange, withChanges } from '@/lib/weights';
 import { haptics } from '@/services/haptics';
+import { removeWeight } from '@/services/remove-weight';
+import { usePendingDeletes } from '@/services/undo';
 
 type WeightRange = '30' | '90' | '365';
 type StatsRange = '7' | '30' | '90';
@@ -51,6 +53,7 @@ const TREND_DAYS = 28;
 
 export default function ProgressScreen() {
   const db = useSQLiteContext();
+  const hidden = usePendingDeletes();
   const router = useRouter();
   const theme = useTheme();
   const [weightRange, setWeightRange] = useState<WeightRange>('90');
@@ -160,7 +163,7 @@ export default function ProgressScreen() {
   };
 
   // The weigh-ins right under the chart; the full history has its own page.
-  const recent = withChanges(weights).slice(0, 3);
+  const recent = withChanges(weights.filter((w) => !hidden.has(`weight:${w.date}`))).slice(0, 3);
   const changes = data ? measurementChanges(data.measurements, addDays(today, -89)) : [];
 
   return (
@@ -199,7 +202,7 @@ export default function ProgressScreen() {
       <ListGroup>
         <ActionRow label="Registra il peso di oggi" onPress={logWeight} />
         {recent.map((w) => (
-          <SwipeToDelete key={w.date} onDelete={() => void deleteWeight(db, w.date)}>
+          <SwipeToDelete key={w.date} onDelete={() => removeWeight(db, w.date)}>
             <Row
               title={formatDayTitle(w.date, today)}
               subtitle={w.change !== null ? formatChange(w.change, 'kg', (n) => formatNumber(n, 1)) : null}

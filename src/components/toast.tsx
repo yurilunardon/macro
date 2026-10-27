@@ -130,7 +130,7 @@ const styles = StyleSheet.create({
   },
   title: { flexShrink: 1 },
   action: { marginLeft: Spacing.sm },
-  pressed: { opacity: 0.5 },
+  pressed: { opacity: 0.6 },
   solid: {
     borderWidth: StyleSheet.hairlineWidth,
     boxShadow: '0 6px 20px rgba(0, 0, 0, 0.15)',
