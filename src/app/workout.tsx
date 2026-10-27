@@ -5,7 +5,6 @@ import { useEffect, useState } from 'react';
 import Animated, {
   FadeIn,
   FadeInDown,
-  FadeOut,
   FadeOutDown,
   Keyframe,
   LayoutAnimationConfig,
@@ -15,6 +14,8 @@ import Animated, {
   withSequence,
   withSpring,
   withTiming,
+  ZoomIn,
+  ZoomOut,
 } from 'react-native-reanimated';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, TextInput, View } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -39,7 +40,6 @@ import {
   addSet,
   deleteSet,
   deleteWorkout,
-  finishWorkout,
   getActiveWorkout,
   getWorkout,
   removeWorkoutExercise,
@@ -59,6 +59,7 @@ import { muscleLabel } from '@/lib/exercises';
 import { numberToInput, parseDecimal } from '@/lib/format';
 import { formatDuration, formatSet, type LoggedSet } from '@/lib/training';
 import { haptics } from '@/services/haptics';
+import { endWorkout } from '@/services/end-workout';
 import { restTimer, useRestTimer } from '@/services/rest-timer';
 
 const REST_PRESETS = [60, 90, 120, 150, 180, 240];
@@ -124,12 +125,10 @@ export default function WorkoutScreen() {
     );
   }
 
-  const allSets = workout.exercises.flatMap((e) => e.sets);
   const exercises =
     localOrder && localOrder.length === workout.exercises.length
       ? localOrder.map((id) => workout.exercises.find((ex) => ex.id === id)).filter((ex) => ex !== undefined)
       : workout.exercises;
-  const doneCount = allSets.filter((s) => s.done).length;
   const title = (e: WorkoutExercise) => names(e.exercise).title;
 
   const onSetDone = (setId: number, rest: number) => {
@@ -149,33 +148,12 @@ export default function WorkoutScreen() {
   };
 
   const finish = async () => {
-    if (doneCount === 0) {
-      const discard = await confirmDestructive({
-        title: 'Nessuna serie spuntata',
-        message: 'Non c’è niente da salvare.',
-        action: 'Annulla allenamento',
-      });
-      if (!discard) return;
-      await deleteWorkout(db, workout.id);
-      restTimer.stop();
-      router.back();
-      return;
-    }
-    const pending = allSets.length - doneCount;
-    if (pending > 0) {
-      const ok = await confirmDestructive({
-        title: 'Terminare l’allenamento?',
-        message: `${pending === 1 ? '1 serie non spuntata non verrà salvata' : `${pending} serie non spuntate non verranno salvate`}.`,
-        action: 'Termina',
-      });
-      if (!ok) return;
-    }
-    await finishWorkout(db, workout.id);
-    restTimer.stop();
-    haptics.success();
+    const result = await endWorkout(db, workout.id);
+    if (!result) return;
     router.back();
-    router.push({ pathname: '/training/session', params: { id: workout.id, done: '1' } });
+    if (result === 'finished') router.push({ pathname: '/training/session', params: { id: workout.id, done: '1' } });
   };
+
 
   const discard = async () => {
     const ok = await confirmDestructive({
@@ -204,6 +182,8 @@ export default function WorkoutScreen() {
   return (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
       <ScreenScroll animatedRef={scrollRef}>
+        {/* While reordering, a tap anywhere outside the exercises ends it, as on the Home Screen. */}
+        <View onStartShouldSetResponder={() => reordering} onResponderRelease={() => setReordering(false)}>
         <Stack.Screen options={{ title: workout.name }} />
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.down" accessibilityLabel="Riduci: l’allenamento continua" onPress={() => router.back()} />
@@ -241,11 +221,6 @@ export default function WorkoutScreen() {
 
         {/* While training only the time matters; sets and volume are in the summary at the end. */}
         <ElapsedTime startedAt={workout.startedAt} />
-        {doneCount === 0 ? (
-          <AppText variant="footnote" tone="textSecondary" align="center" style={styles.howTo}>
-            Tocca ✓ a fine serie: parte il recupero.
-          </AppText>
-        ) : null}
 
         {workout.notes ? (
           <Pressable onPress={editNotes} accessibilityRole="button" style={styles.notes}>
@@ -275,6 +250,9 @@ export default function WorkoutScreen() {
             inactiveItemOpacity={1}
             activeItemShadowOpacity={0.25}
             overDrag="vertical"
+            // The block stays where it was grabbed instead of jumping to centre on the finger,
+            // which threw tall exercises far above or below it.
+            enableActiveItemSnap={false}
             hapticsEnabled
             onDragStart={() => setReordering(true)}
             onDragEnd={({ data: ordered }) => {
@@ -313,6 +291,7 @@ export default function WorkoutScreen() {
           <Button title="Termina allenamento" variant="stop" icon={<Icon name="flag.checkered" size={16} tone="danger" weight="semibold" />} onPress={() => void finish()} />
         </View>
         <View style={styles.bottomSpace} />
+        </View>
       </ScreenScroll>
       <RestBar />
     </View>
@@ -412,8 +391,8 @@ function ExerciseBlock({ item, names, onSetDone, onReorder, onRemove }: Exercise
           <AppText variant="caption" tone="textSecondary" weight="600" style={styles.colSet}>
             SERIE
           </AppText>
-          <AppText variant="caption" tone="textSecondary" weight="600" style={styles.colPrev}>
-            ULTIMA VOLTA
+          <AppText variant="caption" tone="textSecondary" weight="600" numberOfLines={1} style={styles.colPrev}>
+            {exercise.trackRir ? 'ULTIMA' : 'ULTIMA VOLTA'}
           </AppText>
           {timed ? (
             <AppText variant="caption" tone="textSecondary" weight="600" style={styles.colInput}>
@@ -503,11 +482,23 @@ function SetRow({ set, badge, previous, kind, trackRir, range, onUpdate, onCompl
     return { weight: parseDecimal(weight), reps: r === null ? null : Math.round(r), seconds: s === null ? null : Math.round(s), rir: parseDecimal(rir) };
   };
 
-  // A count outside the planned range is most often a typo (20 for 10): say so beside the set.
-  // Warm-ups and drop sets follow their own counts.
-  const counted = parseDecimal(kind === 'time' ? seconds : reps);
+  // Once a set is ticked, a count outside the planned range (often a typo, 20 for 10) gets a
+  // small "!" on the tick; tapping it says why. Warm-ups and drop sets follow their own counts.
+  const counted = kind === 'time' ? set.seconds : set.reps;
   const outside =
-    range !== null && counted !== null && (set.type === 'normal' || set.type === 'failure') && (counted > range.max || counted < range.min);
+    set.done &&
+    range !== null &&
+    counted !== null &&
+    (set.type === 'normal' || set.type === 'failure') &&
+    (counted > range.max || counted < range.min);
+  const explain = () => {
+    if (!range || counted === null) return;
+    const unit = kind === 'time' ? 'secondi' : 'ripetizioni';
+    Alert.alert(
+      `Fuori dalla fascia ${range.min}–${range.max}`,
+      `Hai registrato ${counted} ${unit}. Se è un errore, tocca ✓ per riaprire la serie e correggerla.`,
+    );
+  };
 
   const tick = () => {
     if (set.done) {
@@ -526,7 +517,7 @@ function SetRow({ set, badge, previous, kind, trackRir, range, onUpdate, onCompl
     onComplete(filled);
   };
 
-  const field = (value: string, onChange: (text: string) => void, placeholder: string, label: string, warn = false) => (
+  const field = (value: string, onChange: (text: string) => void, placeholder: string, label: string) => (
     <TextInput
       value={value}
       onChangeText={(text) => {
@@ -543,8 +534,7 @@ function SetRow({ set, badge, previous, kind, trackRir, range, onUpdate, onCompl
       accessibilityLabel={label}
       style={[
         styles.input,
-        { backgroundColor: set.done ? 'transparent' : theme.fill, color: warn ? theme.warning : theme.text },
-        warn && !set.done && { borderColor: theme.warning, borderWidth: 1.5 },
+        { backgroundColor: set.done ? 'transparent' : theme.fill, color: theme.text },
         missing && { borderColor: theme.danger, borderWidth: 1.5 },
       ]}
     />
@@ -560,11 +550,11 @@ function SetRow({ set, badge, previous, kind, trackRir, range, onUpdate, onCompl
         {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
       </AppText>
       {kind === 'time' ? (
-        <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi', outside)}</View>
+        <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi')}</View>
       ) : (
         <>
           <View style={styles.colInput}>{field(weight, setWeight, 'kg', 'Chili')}</View>
-          <View style={styles.colInput}>{field(reps, setReps, 'rip', 'Ripetizioni', outside)}</View>
+          <View style={styles.colInput}>{field(reps, setReps, 'rip', 'Ripetizioni')}</View>
         </>
       )}
       {trackRir ? <View style={styles.colRir}>{field(rir, setRir, '–', 'Ripetizioni in riserva')}</View> : null}
@@ -584,15 +574,19 @@ function SetRow({ set, badge, previous, kind, trackRir, range, onUpdate, onCompl
         ]}>
         <Icon name="checkmark" size={15} weight="bold" color={set.done ? theme.onAccent : theme.textTertiary} />
       </Pressable>
+      {outside ? (
+        <Animated.View entering={ZoomIn.duration(200)} exiting={ZoomOut.duration(120)} style={styles.flag}>
+          <Pressable
+            onPress={explain}
+            hitSlop={10}
+            accessibilityRole="button"
+            accessibilityLabel="Valore fuori dalla fascia, tocca per i dettagli"
+            style={[styles.flagDot, { backgroundColor: theme.warning, borderColor: theme.card }]}>
+            <AppText style={styles.flagText}>!</AppText>
+          </Pressable>
+        </Animated.View>
+      ) : null}
     </View>
-    {outside && range ? (
-      <Animated.View entering={FadeIn.duration(150)} exiting={FadeOut.duration(120)} style={styles.warning}>
-        <Icon name="exclamationmark.triangle.fill" size={12} tone="warning" />
-        <AppText variant="caption" weight="600" tone="warning">
-          {`Fuori dalla fascia ${range.min}–${range.max}${kind === 'time' ? ' s' : ''}: è corretto?`}
-        </AppText>
-      </Animated.View>
-    ) : null}
     </View>
   );
 }
@@ -605,10 +599,16 @@ function ElapsedTime({ startedAt }: { startedAt: string }) {
   const theme = useTheme();
   const now = useClock(1000);
   const elapsed = formatDuration((now - new Date(startedAt).getTime()) / 1000);
+  // A capsule like the time of a workout on the Lock Screen: quieter than a big headline.
   return (
-    <AppText numeric align="center" accessibilityLabel={`Tempo: ${elapsed}`} style={[styles.clock, { color: theme.text }]}>
-      {elapsed}
-    </AppText>
+    <View style={styles.clockRow} accessible accessibilityLabel={`Tempo: ${elapsed}`}>
+      <View style={[styles.clock, { backgroundColor: `${theme.accent}1F` }]}>
+        <Icon name="stopwatch" size={16} tone="accent" weight="semibold" />
+        <AppText numeric weight="600" tone="accent" style={styles.clockText}>
+          {elapsed}
+        </AppText>
+      </View>
+    </View>
   );
 }
 
@@ -638,9 +638,23 @@ function RestBar() {
   };
   const popStyle = useAnimatedStyle(() => ({ transform: [{ scale: pop.get() }] }));
 
+  // "Salta": the bar runs down to empty and the panel drops away, so the skip can be seen.
+  const [skipping, setSkipping] = useState(false);
+  const skip = () => {
+    setSkipping(true);
+    haptics.light();
+    setTimeout(() => {
+      restTimer.stop();
+      setSkipping(false);
+    }, 380);
+  };
+
   if (!rest || expired) return null;
-  const left = (rest.endsAt - now) / 1000;
-  const over = left <= 0;
+  const left = skipping ? 0 : (rest.endsAt - now) / 1000;
+  const over = !skipping && left <= 0;
+  // Green with the whole rest ahead, through orange, to red as it runs out.
+  const fraction = Math.max(0, Math.min(1, left / rest.total));
+  const barColor = over ? theme.accent : fraction > 0.5 ? mix(theme.ringCloser, theme.ringOnTarget, (fraction - 0.5) * 2) : mix(theme.ringFar, theme.ringCloser, fraction * 2);
 
   const content = (
     <>
@@ -648,7 +662,7 @@ function RestBar() {
         <View style={styles.flex}>
           <View>
             <AppText variant="footnote" weight="600" tone={over ? 'accent' : 'textSecondary'}>
-              {over ? 'RECUPERO FINITO' : 'RECUPERO'}
+              {over ? 'RECUPERO FINITO' : skipping ? 'SALTATO' : 'RECUPERO'}
             </AppText>
             {bump ? (
               // Beside the label, in the free space above the buttons.
@@ -661,19 +675,19 @@ function RestBar() {
           </View>
           <Animated.View style={[styles.restTimeRow, popStyle]}>
             <AppText numeric style={[styles.restTime, { color: over ? theme.accent : theme.text }]}>
-              {over ? 'Vai!' : formatDuration(left)}
+              {over ? 'Vai!' : formatDuration(Math.max(0, left))}
             </AppText>
           </Animated.View>
         </View>
         {over ? null : (
           <>
-            <RestButton label="−15" accessibilityLabel="Togli 15 secondi" onPress={() => adjust(-15)} />
-            <RestButton label="+15" accessibilityLabel="Aggiungi 15 secondi" onPress={() => adjust(15)} />
+            <RestButton label="−15" accessibilityLabel="Togli 15 secondi" disabled={left <= 15 || skipping} onPress={() => adjust(-15)} />
+            <RestButton label="+15" accessibilityLabel="Aggiungi 15 secondi" disabled={skipping} onPress={() => adjust(15)} />
           </>
         )}
-        <RestButton label={over ? 'Ok' : 'Salta'} accessibilityLabel={over ? 'Chiudi' : 'Salta il recupero'} onPress={() => restTimer.stop()} prominent />
+        <RestButton label={over ? 'Ok' : 'Salta'} accessibilityLabel={over ? 'Chiudi' : 'Salta il recupero'} onPress={over ? () => restTimer.stop() : skip} prominent />
       </View>
-      <ProgressBar value={Math.max(0, left)} target={rest.total} color={over ? theme.accent : theme.warning} height={6} />
+      <ProgressBar value={Math.max(0, left)} target={rest.total} color={barColor} height={6} />
       <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
         {rest.label}
       </AppText>
@@ -694,8 +708,15 @@ function RestBar() {
   );
 }
 
+/** Blend of two #RRGGBB colours: `t` = 0 gives `from`, 1 gives `to`. */
+function mix(from: string, to: string, t: number): string {
+  const channel = (hex: string, i: number) => Number.parseInt(hex.slice(1 + i * 2, 3 + i * 2), 16);
+  const parts = [0, 1, 2].map((i) => Math.round(channel(from, i) + (channel(to, i) - channel(from, i)) * t));
+  return `#${parts.map((p) => p.toString(16).padStart(2, '0')).join('')}`;
+}
+
 const REST_IN = FadeInDown.springify().damping(18).stiffness(180);
-const REST_OUT = FadeOutDown.duration(220);
+const REST_OUT = FadeOutDown.duration(320);
 const FLOAT_UP = new Keyframe({
   0: { opacity: 0, transform: [{ translateY: 6 }] },
   20: { opacity: 1, transform: [{ translateY: 0 }] },
@@ -708,17 +729,22 @@ function RestButton({
   accessibilityLabel,
   onPress,
   prominent = false,
+  disabled = false,
 }: {
   label: string;
   accessibilityLabel: string;
   onPress: () => void;
   prominent?: boolean;
+  disabled?: boolean;
 }) {
   const theme = useTheme();
   const scale = useSharedValue(1);
   const style = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
   return (
     <Pressable
+      disabled={disabled}
+      accessibilityState={{ disabled }}
+      style={disabled && styles.restDisabled}
       onPressIn={() => scale.set(withSpring(0.86, { duration: 180, dampingRatio: 1 }))}
       onPressOut={() => scale.set(withSpring(1, { duration: 400, dampingRatio: 0.5 }))}
       onPress={() => {
@@ -739,8 +765,9 @@ function RestButton({
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
-  clock: { fontSize: 56, lineHeight: 64, fontWeight: '700', letterSpacing: -1, fontVariant: ['tabular-nums'] },
-  howTo: { paddingTop: Spacing.md, paddingHorizontal: Spacing.lg },
+  clockRow: { alignItems: 'center', paddingTop: Spacing.xs },
+  clock: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, height: 40, paddingHorizontal: Spacing.lg, borderRadius: 20 },
+  clockText: { fontSize: 20, lineHeight: 24, fontVariant: ['tabular-nums'] },
   notes: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   exercise: {},
   exerciseHeader: {
@@ -754,7 +781,10 @@ const styles = StyleSheet.create({
   },
   noteRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
   tableHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
-  warning: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingLeft: 44 + Spacing.md + Spacing.sm, paddingBottom: Spacing.sm, marginTop: -2 },
+  // A small "!" on the top-right edge of the tick.
+  flag: { position: 'absolute', right: Spacing.md - 4, top: Spacing.sm - 5 },
+  flagDot: { width: 18, height: 18, borderRadius: 9, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
+  flagText: { color: '#FFFFFF', fontSize: 11, lineHeight: 13, fontWeight: '800' },
   setRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
   colSet: { width: 44, alignItems: 'center', textAlign: 'center' },
   colPrev: { flex: 1 },
@@ -774,6 +804,7 @@ const styles = StyleSheet.create({
   footer: { paddingTop: Spacing.xl, gap: Spacing.md },
   dimmed: { opacity: 0.4 },
   bottomSpace: { height: 170 },
+  restDisabled: { opacity: 0.35 },
   restSlot: { position: 'absolute', left: Spacing.md, right: Spacing.md },
   restTimeRow: { alignSelf: 'flex-start', transformOrigin: 'left center' },
   bump: { position: 'absolute', left: 84, top: 0, width: 64 },

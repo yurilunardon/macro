@@ -1,6 +1,6 @@
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -23,6 +23,7 @@ import { formatDayTitle, weekOf } from '@/lib/dates';
 import { MUSCLES, muscleLabel } from '@/lib/exercises';
 import { countLabel, formatNumber } from '@/lib/format';
 import { dayIcon, formatDuration, formatWorkoutLength, setsPerMuscle } from '@/lib/training';
+import { endWorkout } from '@/services/end-workout';
 import { haptics } from '@/services/haptics';
 
 /** Weekly hard sets per muscle that research links with growth, roughly. */
@@ -51,6 +52,14 @@ export default function TrainingScreen() {
     await startWorkout(db, { dayId });
     haptics.success();
     router.push('/workout');
+  };
+
+  const endActive = async () => {
+    if (!data?.active) return;
+    const id = data.active.id;
+    if ((await endWorkout(db, id, { confirm: true })) === 'finished') {
+      router.push({ pathname: '/training/session', params: { id, done: '1' } });
+    }
   };
 
   const pick = (dayId: number) => {
@@ -89,18 +98,38 @@ export default function TrainingScreen() {
 
       {/* The one thing to do here comes first: the workout in progress, or the next one. */}
       {data?.active ? (
-        <Card style={[styles.hero, { backgroundColor: theme.accentSoft }]}>
-          <AppText variant="footnote" weight="600" tone="accent">
-            IN CORSO
-          </AppText>
-          <AppText variant="title">{data.active.name}</AppText>
-          <AppText variant="subhead" tone="textSecondary" numeric>
-            {formatDuration((now - new Date(data.active.startedAt).getTime()) / 1000)}
-          </AppText>
-          <View style={styles.heroButton}>
-            <Button title="Riprendi" onPress={() => router.push('/workout')} />
-          </View>
-        </Card>
+        // The workout keeps running: the whole card opens it, and it can be ended from here.
+        <Pressable onPress={() => router.push('/workout')} accessibilityRole="button" accessibilityHint="Apre l’allenamento">
+          {({ pressed }) => (
+            <Card style={[styles.hero, pressed && styles.pressed]}>
+              <View style={styles.heroTop}>
+                <AppText variant="footnote" weight="600" tone="accent" style={styles.flex}>
+                  IN CORSO
+                </AppText>
+                <Icon name="chevron.right" size={14} tone="accent" weight="semibold" />
+              </View>
+              <View style={styles.heroName}>
+                <DayBadge name={data.active?.name ?? ''} size={40} />
+                <View style={styles.flex}>
+                  <AppText variant="title" numberOfLines={1}>
+                    {data.active?.name}
+                  </AppText>
+                  <AppText variant="subhead" tone="textSecondary" numeric>
+                    {formatDuration((now - new Date(data.active?.startedAt ?? now).getTime()) / 1000)}
+                  </AppText>
+                </View>
+              </View>
+              <View style={styles.heroButton}>
+                <Button
+                  title="Termina allenamento"
+                  variant="stop"
+                  icon={<Icon name="flag.checkered" size={16} tone="danger" weight="semibold" />}
+                  onPress={() => void endActive()}
+                />
+              </View>
+            </Card>
+          )}
+        </Pressable>
       ) : next ? (
         <Card style={styles.hero}>
           <View style={styles.heroTop}>
@@ -238,6 +267,7 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   hero: { gap: Spacing.xs },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 32 },
+  pressed: { opacity: 0.7 },
   heroName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xs },
   heroButton: { marginTop: Spacing.md, gap: Spacing.xs },
   week: { gap: Spacing.md },

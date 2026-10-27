@@ -3,6 +3,7 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { memo, useEffect, useRef } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
+  Easing,
   FadeIn,
   FadeOut,
   LinearTransition,
@@ -40,9 +41,10 @@ import { toast } from './toast';
 
 
 const FADE_IN = FadeIn.duration(180);
-const MEAL_LAYOUT = LinearTransition.springify().damping(26).stiffness(260);
-const ROWS_IN = FadeIn.duration(220).delay(60);
-const ROWS_OUT = FadeOut.duration(140);
+// A short eased resize, no spring: the cards must not bounce up and down.
+const MEAL_LAYOUT = LinearTransition.duration(220).easing(Easing.out(Easing.cubic));
+const ROWS_IN = FadeIn.duration(180).delay(40);
+const ROWS_OUT = FadeOut.duration(100);
 
 /** "120 g · Barilla", or for a quick entry just that it was typed by hand. */
 function entryDetail(entry: Entry): string | null {

@@ -78,10 +78,17 @@ export const restTimer = {
     sound = options.sound;
     set({ endsAt: Date.now() + seconds * 1000, total: seconds, label });
   },
+  /**
+   * Adds or takes away time. The bar keeps the length of the whole rest, so taking 15 s away
+   * shortens it; adding past the full length makes the full length longer. The rest never goes
+   * below zero: with less left than the change, "−15" is not offered (skipping ends it).
+   */
   adjust(deltaSeconds: number): void {
     if (!state) return;
-    const endsAt = Math.max(Date.now() + 1000, state.endsAt + deltaSeconds * 1000);
-    set({ ...state, endsAt, total: Math.max(1, state.total + deltaSeconds) });
+    const now = Date.now();
+    const left = state.endsAt - now + deltaSeconds * 1000;
+    if (left <= 0) return;
+    set({ ...state, endsAt: now + left, total: Math.max(state.total, left / 1000) });
   },
   stop(): void {
     if (!state) return;

@@ -6,20 +6,20 @@ import { ActivityIndicator, Alert, ScrollView, StyleSheet, View } from 'react-na
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { Card, ListGroup, SectionTitle } from '@/components/card';
-import { Chip, FieldRow, Segmented } from '@/components/form';
+import { Chip, FieldRow } from '@/components/form';
+import { MenuButton } from '@/components/menu-button';
 import { MACROS } from '@/components/nutrition';
+import { toast } from '@/components/toast';
 import { Spacing } from '@/constants/theme';
-import { deleteEntry, getEntry, updateEntry, updateQuickEntry, type Entry } from '@/db/entries';
+import { deleteEntry, getEntry, moveEntry, updateEntry, updateQuickEntry, type Entry } from '@/db/entries';
 import { getFood } from '@/db/foods';
 import { useLiveQuery } from '@/db/live';
 import { useTheme } from '@/hooks/use-theme';
 import { formatGrams, formatKcal, formatNumber, numberToInput, parseDecimal } from '@/lib/format';
-import { MEALS, type MealKey } from '@/lib/meals';
+import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
 import { rescaleNutrients, type Nutrients } from '@/lib/nutrition';
 import { parseQuickAdd, QUICK_ADD_NAME, type QuickFields } from '@/lib/quick-add';
 import { haptics } from '@/services/haptics';
-
-const MEAL_OPTIONS = MEALS.map((m) => ({ key: m.key, label: m.label }));
 
 export default function EntryScreen() {
   const { id } = useLocalSearchParams<{ id: string }>();
@@ -51,7 +51,6 @@ function QuantityEditor({ entry, servingSize }: { entry: Entry; servingSize: num
   const db = useSQLiteContext();
   const router = useRouter();
   const [text, setText] = useState(numberToInput(entry.quantity));
-  const [meal, setMeal] = useState<MealKey>(entry.meal);
   const [saving, setSaving] = useState(false);
 
   const parsed = parseDecimal(text);
@@ -66,7 +65,7 @@ function QuantityEditor({ entry, servingSize }: { entry: Entry; servingSize: num
     if (quantity === null) return;
     setSaving(true);
     try {
-      await updateEntry(db, entry, { quantity, meal });
+      await updateEntry(db, entry, { quantity, meal: entry.meal });
       haptics.success();
       router.back();
     } finally {
@@ -101,8 +100,6 @@ function QuantityEditor({ entry, servingSize }: { entry: Entry; servingSize: num
         </View>
       ) : null}
 
-      <SectionTitle>Pasto</SectionTitle>
-      <Segmented options={MEAL_OPTIONS} value={meal} onChange={setMeal} />
     </EntryLayout>
   );
 }
@@ -117,7 +114,6 @@ function QuickEditor({ entry }: { entry: Entry }) {
     carbs: entry.totals.carbs > 0 ? numberToInput(entry.totals.carbs) : '',
     fat: entry.totals.fat > 0 ? numberToInput(entry.totals.fat) : '',
   });
-  const [meal, setMeal] = useState<MealKey>(entry.meal);
   const [saving, setSaving] = useState(false);
 
   const { result, invalid, estimatedKcal } = parseQuickAdd(fields);
@@ -127,7 +123,7 @@ function QuickEditor({ entry }: { entry: Entry }) {
     if (!result) return;
     setSaving(true);
     try {
-      await updateQuickEntry(db, entry.id, { meal, ...result });
+      await updateQuickEntry(db, entry.id, { meal: entry.meal, ...result });
       haptics.success();
       router.back();
     } finally {
@@ -159,8 +155,6 @@ function QuickEditor({ entry }: { entry: Entry }) {
         <FieldRow label="Grassi" value={fields.fat} onChangeText={set('fat')} placeholder="0" suffix="g" numeric invalid={invalid.has('fat')} />
       </ListGroup>
 
-      <SectionTitle>Pasto</SectionTitle>
-      <Segmented options={MEAL_OPTIONS} value={meal} onChange={setMeal} />
     </EntryLayout>
   );
 }
@@ -184,6 +178,14 @@ function EntryLayout({
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
+
+  const currentMeal = MEALS.find((m) => m.key === entry.meal) ?? MEALS[0];
+  const moveTo = async (meal: MealKey) => {
+    if (meal === entry.meal) return;
+    await moveEntry(db, entry.id, meal);
+    haptics.success();
+    toast.show(`Spostato in ${mealLabel(meal)}`, 'arrow.up.arrow.down');
+  };
 
   const remove = () =>
     Alert.alert('Eliminare questa voce?', entry.name, [
@@ -215,25 +217,49 @@ function EntryLayout({
       </View>
 
       <Card style={styles.preview}>
-        <AppText variant="display" numeric>
+        <AppText variant="display" numeric align="center">
           {formatKcal(preview.kcal)}
           <AppText variant="headline" tone="textSecondary">
             {' kcal'}
           </AppText>
         </AppText>
+        {/* Three equal columns, centred and divided, so the three values line up evenly. */}
         <View style={styles.macros}>
-          {MACROS.map((m) => (
-            <View key={m.key} style={styles.macro}>
-              <AppText variant="headline" numeric style={{ color: theme[m.key] }}>
+          {MACROS.map((m, index) => (
+            <View key={m.key} style={[styles.macro, index > 0 && { borderLeftColor: theme.separator, borderLeftWidth: StyleSheet.hairlineWidth }]}>
+              <AppText variant="headline" numeric align="center" style={{ color: theme[m.key] }}>
                 {formatGrams(preview[m.key])}
               </AppText>
-              <AppText variant="caption" tone="textSecondary">
+              <AppText variant="caption" tone="textSecondary" align="center">
                 {m.label}
               </AppText>
             </View>
           ))}
         </View>
       </Card>
+
+      {/* Moving to another meal happens right away, as a choice of its own, not on Save. */}
+      <ListGroup>
+        <View style={styles.mealRow}>
+          <AppText style={styles.flex}>Pasto</AppText>
+          <MenuButton
+            icon={currentMeal.symbol}
+            title={currentMeal.label}
+            accessibilityLabel="Sposta in un altro pasto"
+            groups={[
+              {
+                title: 'Sposta in',
+                actions: MEALS.map((m) => ({
+                  label: m.label,
+                  icon: m.symbol,
+                  checked: m.key === entry.meal,
+                  onPress: () => void moveTo(m.key),
+                })),
+              },
+            ]}
+          />
+        </View>
+      </ListGroup>
 
       {children}
 
@@ -249,9 +275,11 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: Spacing.lg, paddingTop: Spacing.xl, paddingBottom: Spacing.xxl },
   title: { marginBottom: Spacing.lg, gap: 2 },
-  preview: { gap: Spacing.lg },
-  macros: { flexDirection: 'row', gap: Spacing.md },
-  macro: { flex: 1 },
+  preview: { gap: Spacing.lg, marginBottom: Spacing.lg },
+  macros: { flexDirection: 'row' },
+  macro: { flex: 1, gap: 2 },
+  flex: { flex: 1 },
+  mealRow: { flexDirection: 'row', alignItems: 'center', paddingLeft: Spacing.lg, paddingRight: Spacing.md, minHeight: 48 },
   chips: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, paddingTop: Spacing.md },
   actions: { gap: Spacing.sm, paddingTop: Spacing.xl },
 });

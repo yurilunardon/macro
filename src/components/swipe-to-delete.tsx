@@ -14,8 +14,8 @@ import { EASE_OUT, project, rubberband } from './motion';
 
 /** Width of the revealed button, as in Mail and Clock. */
 const ACTION_WIDTH = 88;
-/** Past this share of the row, letting go deletes without tapping the button. */
-const FULL_SWIPE = 0.55;
+/** Past this share of the row, letting go deletes without tapping the button: well past the middle, as in Clock. */
+const FULL_SWIPE = 0.72;
 const SETTLE = { duration: 350, dampingRatio: 1 };
 
 // Captured by the gesture worklets, which call back into JS with scheduleOnRN.
