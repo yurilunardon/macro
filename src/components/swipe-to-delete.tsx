@@ -45,6 +45,14 @@ type SwipeToDeleteProps = {
   /** Asked once the row has slid out; resolving to false puts it back. */
   confirm?: () => Promise<boolean>;
   label?: string;
+  /**
+   * The row closes its gap itself (the default). Lists that animate their own changes turn it
+   * off: the row is removed as soon as it has slid out and the list moves the rest in one go,
+   * instead of following a height that changes on every frame.
+   */
+  collapse?: boolean;
+  /** On a glass card: the row lets the glass through instead of covering it with the card colour. */
+  transparent?: boolean;
 };
 
 /**
@@ -52,7 +60,7 @@ type SwipeToDeleteProps = {
  * turns the whole row red, ticks, and deletes on release. The row then closes its gap.
  * Rows that use it should keep another way to delete for people who cannot swipe.
  */
-export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina' }: SwipeToDeleteProps) {
+export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina', collapse: collapses = true, transparent = false }: SwipeToDeleteProps) {
   const theme = useTheme();
   const x = useSharedValue(0);
   const startX = useSharedValue(0);
@@ -97,6 +105,10 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina' }
       return;
     }
     if (closeOpenRow === closeSelf) closeOpenRow = null;
+    if (!collapses) {
+      onDelete();
+      return;
+    }
     collapse.set(
       withTiming(1, { duration: 240, easing: EASE_OUT }, (finished) => {
         'worklet';
@@ -196,7 +208,7 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina' }
             </Pressable>
           </Animated.View>
         </Animated.View>
-        <Animated.View style={[{ backgroundColor: theme.card }, contentStyle]}>
+        <Animated.View style={[{ backgroundColor: transparent ? 'transparent' : theme.card }, contentStyle]}>
           <RevealContext value={reveal}>{children}</RevealContext>
           {open ? (
             // While open, a tap on the row closes it instead of opening it.

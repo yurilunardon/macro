@@ -1,6 +1,9 @@
+import { useNavigation } from 'expo-router';
+import type { NativeStackNavigationProp } from 'expo-router/native-stack';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState, type ComponentRef } from 'react';
+import { StyleSheet, View, type TextInput } from 'react-native';
+import type { ParamListBase } from 'expo-router/react-navigation';
 
 import { Button } from '@/components/button';
 import { ListGroup, SectionFooter, SectionTitle } from '@/components/card';
@@ -26,6 +29,18 @@ export default function QuickAddScreen() {
   const [fields, setFields] = useState<QuickFields>(EMPTY_QUICK_FIELDS);
   const [showErrors, setShowErrors] = useState(false);
   const [saving, setSaving] = useState(false);
+
+  // The calories take the keyboard once the screen has slid in: focused while it was still
+  // moving, iOS scrolled the page to the field and it opened shifted down.
+  const navigation = useNavigation<NativeStackNavigationProp<ParamListBase>>();
+  const kcalInput = useRef<ComponentRef<typeof TextInput>>(null);
+  useEffect(
+    () =>
+      navigation.addListener('transitionEnd', (event) => {
+        if (!event.data.closing) kcalInput.current?.focus();
+      }),
+    [navigation],
+  );
 
   const { result, invalid, estimatedKcal } = parseQuickAdd(fields);
   const set = (key: keyof QuickFields) => (value: string) => setFields((f) => ({ ...f, [key]: value }));
@@ -56,7 +71,7 @@ export default function QuickAddScreen() {
           placeholder={estimatedKcal !== null ? formatKcal(estimatedKcal) : 'Obbligatorie'}
           suffix="kcal"
           numeric
-          autoFocus
+          ref={kcalInput}
           invalid={bad('kcal')}
         />
       </ListGroup>

@@ -342,13 +342,13 @@ const HERO_LAYOUT = LinearTransition.duration(260);
 const SECTION_IN = FadeIn.duration(200);
 const SECTION_OUT = FadeOut.duration(140);
 
-/** One slow beat shared by the card and its dot, so they breathe together: 0 → 1 → 0. */
+/** One beat shared by the card and its dot, so they breathe together: 0 → 1 → 0, about once a second each way. */
 function useBreath(running: boolean): SharedValue<number> {
   const reduced = useReducedMotion();
   const breath = useSharedValue(0);
   useEffect(() => {
     if (reduced || !running) return;
-    breath.set(withRepeat(withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.sin) }), -1, true));
+    breath.set(withRepeat(withTiming(1, { duration: 1000, easing: Easing.inOut(Easing.sin) }), -1, true));
     return () => breath.set(0);
   }, [breath, reduced, running]);
   return breath;

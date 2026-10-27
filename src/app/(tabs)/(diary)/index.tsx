@@ -1,5 +1,4 @@
 import { Stack, useRouter } from 'expo-router';
-import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -18,13 +17,9 @@ import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
 import { DayPage } from '@/components/day-page';
 import { Icon } from '@/components/icon';
-import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
-import { toast } from '@/components/toast';
 import { WeekStrip } from '@/components/week-strip';
 import { Spacing } from '@/constants/theme';
-import { copyDay, deleteMealEntries, getEntriesForDate } from '@/db/entries';
-import { useLiveQuery } from '@/db/live';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
@@ -36,9 +31,7 @@ import {
   formatLongDate,
   type DateKey,
 } from '@/lib/dates';
-import { countLabel, formatKcal } from '@/lib/format';
-import { MEALS, mealForTime } from '@/lib/meals';
-import { sumNutrients } from '@/lib/nutrition';
+import { mealForTime } from '@/lib/meals';
 import { formatExpiry, type ExpiryStatus } from '@/lib/provisioning';
 import { haptics } from '@/services/haptics';
 
@@ -46,7 +39,6 @@ import { haptics } from '@/services/haptics';
 const RANGE = 730;
 
 export default function NutritionScreen() {
-  const db = useSQLiteContext();
   const router = useRouter();
   const today = useToday();
   const expiry = useAppExpiry();
@@ -209,28 +201,6 @@ export default function NutritionScreen() {
     </View>
   );
 
-  // The day's entries, for the actions in the header.
-  const { data: dayEntries } = useLiveQuery(`day-entries:${date}`, (database) => getEntriesForDate(database, date), ['food']);
-  const count = dayEntries?.length ?? 0;
-  const dayName = formatDayTitle(date, today).toLowerCase();
-  const copyTarget = date === today ? { date: addDays(today, 1), label: 'domani' } : { date: today, label: 'oggi' };
-
-  const copyWholeDay = async () => {
-    const copied = await copyDay(db, date, copyTarget.date);
-    haptics.success();
-    toast.show(`${countLabel(copied, 'alimento copiato', 'alimenti copiati')} in ${copyTarget.label}`, 'doc.on.doc.fill');
-  };
-
-  const clearDay = async () => {
-    const kcal = sumNutrients((dayEntries ?? []).map((e) => e.totals)).kcal;
-    const ok = await confirmDestructive({
-      title: `Svuotare ${dayName}?`,
-      message: `${countLabel(count, 'alimento', 'alimenti')}, ${formatKcal(kcal)} kcal.`,
-      action: 'Svuota',
-    });
-    if (ok) await Promise.all(MEALS.map((m) => deleteMealEntries(db, date, m.key)));
-  };
-
   return (
     <ScreenScroll>
       {/* As in Calendar: always in the bar, dimmed while today is on screen. */}
@@ -239,20 +209,10 @@ export default function NutritionScreen() {
           Oggi
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
+      {/* Scanning is the quickest way to log food: the one button on the right, tinted. */}
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sul giorno">
-          <Stack.Toolbar.MenuAction
-            icon="doc.on.doc"
-            disabled={count === 0}
-            onPress={() => void copyWholeDay()}>
-            {`Copia giorno in ${copyTarget.label}`}
-          </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction icon="trash" destructive disabled={count === 0} onPress={() => void clearDay()}>
-            Svuota giorno
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
         <Stack.Toolbar.Button
-          separateBackground
+          variant="prominent"
           icon="barcode.viewfinder"
           accessibilityLabel="Scansiona codice a barre"
           onPress={() => router.push({ pathname: '/add/scan', params: { meal: mealForTime(), date } })}

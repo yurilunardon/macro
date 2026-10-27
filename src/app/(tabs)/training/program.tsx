@@ -7,7 +7,7 @@ import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { ActionRow, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
 import { DayBadge } from '@/components/day-badge';
-import { EditButton } from '@/components/edit-button';
+import { editButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { choose, confirmDestructive } from '@/components/prompt';
@@ -152,7 +152,7 @@ export default function ProgramScreen() {
     <ScreenScroll>
       <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
-        <EditButton editing={editing} disabled={days.length === 0} onChange={setEditing} />
+        <Stack.Toolbar.Button {...editButton({ editing, disabled: days.length === 0, onChange: setEditing })} />
         <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sulla scheda" hidden={program.draft}>
           <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
             Elimina scheda

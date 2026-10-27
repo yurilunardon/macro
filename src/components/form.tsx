@@ -1,3 +1,4 @@
+import type { ComponentRef, Ref } from 'react';
 import { Pressable, StyleSheet, TextInput, View, type TextInputProps } from 'react-native';
 
 import { Radius, Spacing } from '@/constants/theme';
@@ -15,6 +16,7 @@ type FieldRowProps = {
   suffix?: string;
   numeric?: boolean;
   invalid?: boolean;
+  ref?: Ref<ComponentRef<typeof TextInput>>;
 } & Pick<TextInputProps, 'autoFocus' | 'autoCapitalize' | 'returnKeyType' | 'onSubmitEditing' | 'selectTextOnFocus'>;
 
 /** Label on the left, input on the right: for rows inside a ListGroup. */
@@ -26,6 +28,7 @@ export function FieldRow({
   suffix,
   numeric = false,
   invalid = false,
+  ref,
   ...inputProps
 }: FieldRowProps) {
   const theme = useTheme();
@@ -35,6 +38,7 @@ export function FieldRow({
         {label}
       </AppText>
       <TextInput
+        ref={ref}
         value={value}
         onChangeText={onChangeText}
         placeholder={placeholder}

@@ -38,7 +38,7 @@ import { ScreenScroll } from '@/components/screen';
 import { RangeFlag } from '@/components/range-flag';
 import { RestPicker } from '@/components/rest-picker';
 import { SetTypeMenu } from '@/components/set-type-menu';
-import { EditButton } from '@/components/edit-button';
+import { editButton } from '@/components/edit-button';
 import { FoldChevron } from '@/components/fold-chevron';
 import { Jiggle } from '@/components/jiggle';
 import { SwipeToDelete, useSwipeReveal } from '@/components/swipe-to-delete';
@@ -232,13 +232,18 @@ export default function WorkoutScreen() {
         <View onStartShouldSetResponder={() => editing} onResponderRelease={() => setEditing(false)}>
         {/* The time, big in the bar at the top, with the name of the workout above it. */}
         <Stack.Screen
-          options={{ title: workout.name, headerTitle: () => <WorkoutTitle name={workout.name} startedAt={workout.startedAt} /> }}
+          options={{
+            title: workout.name,
+            headerTitle: () => (
+              <WorkoutTitle name={workout.name} startedAt={workout.startedAt} onPress={editing ? () => setEditing(false) : undefined} />
+            ),
+          }}
         />
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.down" accessibilityLabel="Riduci: l’allenamento continua" onPress={() => router.back()} />
         </Stack.Toolbar>
         <Stack.Toolbar placement="right">
-          <EditButton editing={editing} onChange={setEditing} />
+          <Stack.Toolbar.Button {...editButton({ editing, onChange: setEditing })} />
           <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
             <Stack.Toolbar.MenuAction icon="flag.checkered" onPress={() => void finish()}>
               Termina allenamento
@@ -328,12 +333,12 @@ export default function WorkoutScreen() {
             icon={<Icon name="plus" size={16} tone="accent" weight="semibold" />}
             onPress={addExercise}
           />
-          <Button title="Termina allenamento" variant="stop" icon={<Icon name="flag.checkered" size={16} tone="danger" weight="semibold" />} onPress={() => void finish()} />
         </View>
         <View style={styles.bottomSpace} />
         </View>
       </ScreenScroll>
-      <RestBar />
+      {/* Out of edit mode, "Termina" waits at the bottom whenever no rest is running. */}
+      <RestBar onFinish={editing ? undefined : () => void finish()} />
     </>
   );
 }
@@ -467,7 +472,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
   return (
     <View style={styles.exercise}>
       <ListGroup layout={BLOCK_LAYOUT}>
-        <View style={styles.exerciseHeader}>
+        <View style={[styles.exerciseHeader, editing && styles.exerciseHeaderEditing]}>
           {holdsCurrent ? (
             <Animated.View entering={CURRENT_IN} exiting={SETS_OUT} pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.fill }]} />
           ) : null}
@@ -502,9 +507,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
             </View>
             <FoldChevron open={!collapsed} />
           </Pressable>
-          {editing ? (
-            <View style={styles.menuSpace} />
-          ) : (
+          {editing ? null : (
             <MenuButton
               icon="ellipsis.circle"
               accessibilityLabel={`Opzioni per ${names.title}`}
@@ -600,16 +603,15 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
               RIR
             </AppText>
           ) : null}
-          <View style={styles.colCheck} />
+          {editing ? null : <View style={styles.colCheck} />}
         </View>
         {item.sets.map((set, index) => {
           const badge = set.type === 'warmup' ? 'R' : set.type === 'drop' ? 'D' : set.type === 'failure' ? 'C' : String(++ordinal);
           const current = set.id === currentSetId && !editing;
-          // No line touches the set to do now: its soft fill is enough of an edge.
-          const divided = index > 0 && !current && (item.sets[index - 1].id !== currentSetId || editing);
+          const divided = index > 0;
           return (
             <Animated.View key={set.id} entering={FadeIn.duration(200)} exiting={SET_OUT} layout={BLOCK_LAYOUT}>
-            <SwipeToDelete onDelete={() => removeSet(set.id)}>
+            <SwipeToDelete collapse={false} onDelete={() => removeSet(set.id)}>
                 <SetRow
                   set={set}
                   current={current}
@@ -802,8 +804,7 @@ function SetRow({
       style={[
         styles.input,
         {
-          // On the set to do now the boxes take the card's colour, standing out of its fill.
-          backgroundColor: set.done ? 'transparent' : current ? theme.card : theme.fill,
+          backgroundColor: set.done ? 'transparent' : theme.fill,
           color: flagged ? theme.warning : theme.text,
         },
         missing && value === '' && { borderColor: theme.danger, borderWidth: 1.5 },
@@ -827,8 +828,6 @@ function SetRow({
   return (
     <View style={set.done && { backgroundColor: `${theme.accent}1F` }}>
     {divided ? <View style={[styles.setDivider, { backgroundColor: theme.separator }]} /> : null}
-    {/* The set to do now has a soft grey fill, as a selected row: no frame, no extra lines. */}
-    {current ? <Animated.View entering={CURRENT_IN} pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.fill }]} /> : null}
     <Animated.View style={[styles.setRow, shakeStyle]}>
       {/* In edit mode the red ⊖ comes in on the left, as in iOS lists, and slides the row open. */}
       {editing ? (
@@ -845,8 +844,13 @@ function SetRow({
           </Pressable>
         </Animated.View>
       ) : null}
+      {/* The set to do now: its number in a green circle, as today in the week strip, and its
+          tick ringed in green. Nothing else changes, so the eye goes straight to it. */}
       <View style={styles.colSet}>
-        <SetTypeMenu badge={badge} type={set.type} done={set.done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
+        {current ? (
+          <Animated.View entering={CURRENT_IN} pointerEvents="none" style={[styles.currentBadge, { backgroundColor: theme.accent }]} />
+        ) : null}
+        <SetTypeMenu badge={badge} type={set.type} done={set.done} current={current} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
       </View>
       <AppText variant="subhead" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
         {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
@@ -860,10 +864,8 @@ function SetRow({
         </>
       )}
       {trackRir ? <View style={styles.colRir}>{field(rir, setRir, '–', 'Ripetizioni in riserva')}</View> : null}
-      {editing ? (
-        // The tick steps aside; its place stays, so the columns keep lining up with the heads.
-        <View style={styles.colCheck} />
-      ) : (
+      {/* In edit mode the tick steps aside and the values move over, as rows do in iOS lists. */}
+      {editing ? null : (
         <Pressable
           onPress={tick}
           hitSlop={6}
@@ -887,22 +889,58 @@ function SetRow({
 }
 
 /**
+ * "Termina allenamento" in a glass pill at the bottom, always in reach instead of at the end of
+ * the page. It makes way for the rest bar while resting, and comes back after.
+ */
+function FinishPill({ onPress, bottom }: { onPress: () => void; bottom: number }) {
+  const theme = useTheme();
+  const label = (
+    <>
+      <Icon name="flag.checkered" size={15} tone="danger" weight="semibold" />
+      <AppText weight="600" tone="danger">
+        Termina allenamento
+      </AppText>
+    </>
+  );
+  return (
+    <Animated.View entering={PILL_IN} exiting={PILL_OUT} pointerEvents="box-none" style={[styles.pillSlot, { bottom }]}>
+      <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
+        {glass ? (
+          <GlassView style={styles.pill} glassEffectStyle="regular" isInteractive>
+            {label}
+          </GlassView>
+        ) : (
+          <View style={[styles.pill, styles.restSolid, { backgroundColor: theme.card, borderColor: theme.separator }]}>{label}</View>
+        )}
+      </Pressable>
+    </Animated.View>
+  );
+}
+
+/**
  * The time of the workout, big in the bar at the top, with its name small above it. It ticks on
  * its own: the rest of the screen does not redraw every second, which got in the way of dragging.
  */
-function WorkoutTitle({ name, startedAt }: { name: string; startedAt: string }) {
+function WorkoutTitle({ name, startedAt, onPress }: { name: string; startedAt: string; onPress?: () => void }) {
   const theme = useTheme();
   const now = useClock(1000);
   const elapsed = formatDuration((now - new Date(startedAt).getTime()) / 1000);
   return (
-    <View style={styles.title} accessible accessibilityRole="header" accessibilityLabel={`${name}, ${elapsed}`}>
+    // While editing, a tap here ends it too, as a tap anywhere else on the page does.
+    <Pressable
+      onPress={onPress}
+      disabled={!onPress}
+      style={styles.title}
+      accessible
+      accessibilityRole="header"
+      accessibilityLabel={`${name}, ${elapsed}`}>
       <AppText variant="caption" weight="600" tone="textSecondary" numberOfLines={1}>
         {name.toUpperCase()}
       </AppText>
       <AppText numeric style={[styles.titleTime, { color: theme.accent }]}>
         {elapsed}
       </AppText>
-    </View>
+    </Pressable>
   );
 }
 
@@ -928,7 +966,7 @@ function bestSet(sets: readonly WorkoutSet[]): WorkoutSet | null {
  * When it is over it turns into "Vai!" and stays, with the phone buzzing, until "Vai" is
  * pressed or the next set is ticked.
  */
-function RestBar() {
+function RestBar({ onFinish }: { onFinish?: () => void }) {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const rest = useRestTimer();
@@ -973,7 +1011,7 @@ function RestBar() {
     );
   };
 
-  if (!rest) return null;
+  if (!rest) return onFinish ? <FinishPill onPress={onFinish} bottom={insets.bottom + Spacing.sm} /> : null;
   const left = (rest.endsAt - now) / 1000;
   const over = left <= 0 && !skipping;
   // Green with the whole rest ahead, through orange, to red as it runs out.
@@ -1054,6 +1092,8 @@ function mix(from: string, to: string, t: number): string {
   return `#${parts.map((p) => p.toString(16).padStart(2, '0')).join('')}`;
 }
 
+const PILL_IN = FadeInDown.duration(260).delay(120);
+const PILL_OUT = FadeOutDown.duration(160);
 const REST_IN = FadeInDown.springify().damping(18).stiffness(180);
 const REST_OUT = FadeOutDown.duration(320);
 const DONE_IN = FadeIn.duration(250);
@@ -1066,7 +1106,7 @@ const SETS_OUT = FadeOut.duration(120);
 // The same timing react-native-sortables moves the exercises with (withTiming's default), so a
 // card that grows or shrinks and the cards below it that make room move as one.
 const BLOCK_LAYOUT = LinearTransition.duration(300).easing(Easing.inOut(Easing.quad));
-const SET_OUT = FadeOut.duration(150);
+const SET_OUT = FadeOut.duration(200);
 const EXERCISE_IN = FadeIn.duration(250);
 const EXERCISE_OUT = FadeOut.duration(200);
 const SKIPPED_IN = FadeInDown.duration(220).withInitialValues({ transform: [{ translateY: 10 }] });
@@ -1135,7 +1175,6 @@ const styles = StyleSheet.create({
   titleTime: { fontSize: 22, lineHeight: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
   notes: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   exercise: {},
-  menuSpace: { width: 44, height: 44 },
   exerciseFooter: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
   adviceButton: { paddingHorizontal: Spacing.md, height: 32, borderRadius: 16, justifyContent: 'center' },
@@ -1148,6 +1187,7 @@ const styles = StyleSheet.create({
     paddingVertical: Spacing.sm,
     minHeight: 60,
   },
+  exerciseHeaderEditing: { paddingRight: Spacing.md },
   exerciseTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingRight: Spacing.xs },
   noteRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, minHeight: 36 },
   tableHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
@@ -1155,7 +1195,8 @@ const styles = StyleSheet.create({
   // On the top right corner of the reps box.
   flag: { position: 'absolute', top: -8, right: -9 },
   setRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
-  colSet: { width: 44, alignItems: 'center', textAlign: 'center' },
+  colSet: { width: 44, alignItems: 'center', justifyContent: 'center', textAlign: 'center' },
+  currentBadge: { position: 'absolute', width: 30, height: 30, borderRadius: 15 },
   colPrev: { flex: 1 },
   colInput: { width: 62, textAlign: 'center' },
   colRir: { width: 44, textAlign: 'center' },
@@ -1177,6 +1218,9 @@ const styles = StyleSheet.create({
   skipped: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   restDisabled: { opacity: 0.35 },
   restSlot: { position: 'absolute', left: Spacing.md, right: Spacing.md },
+  pillSlot: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
+  pressed: { opacity: 0.6 },
+  pill: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, height: 48, paddingHorizontal: Spacing.xl, borderRadius: 24 },
   restTimeRow: { alignSelf: 'flex-start', transformOrigin: 'left center' },
   bump: { position: 'absolute', left: 84, top: 0, width: 64 },
   restBar: {

@@ -6,7 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { ActionRow, ListGroup, SectionFooter } from '@/components/card';
-import { EditButton } from '@/components/edit-button';
+import { editButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
@@ -92,7 +92,7 @@ export default function DayScreen() {
     <ScreenScroll>
       <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
-        <EditButton editing={editing} disabled={exercises.length === 0} onChange={setEditing} />
+        <Stack.Toolbar.Button {...editButton({ editing, disabled: exercises.length === 0, onChange: setEditing })} />
         <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sul giorno">
           <Stack.Toolbar.MenuAction icon="trash" destructive onPress={remove}>
             Elimina giorno

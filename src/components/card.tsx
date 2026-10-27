@@ -48,11 +48,19 @@ export function SectionFooter({ children }: { children: ReactNode }) {
 }
 
 /** A card of rows with hairline separators between them. With `layout`, it resizes smoothly. */
-export function ListGroup({ children, layout }: { children: ReactNode; layout?: ComponentProps<typeof Animated.View>['layout'] }) {
+export function ListGroup({
+  children,
+  layout,
+  style,
+}: {
+  children: ReactNode;
+  layout?: ComponentProps<typeof Animated.View>['layout'];
+  style?: StyleProp<ViewStyle>;
+}) {
   const theme = useTheme();
   const items = Children.toArray(children).filter(isValidElement);
   return (
-    <Animated.View layout={layout} style={[styles.group, { backgroundColor: theme.card }]}>
+    <Animated.View layout={layout} style={[styles.group, { backgroundColor: theme.card }, style]}>
       {items.map((child, index) => (
         <Fragment key={child.key ?? index}>
           {index > 0 && <View style={[styles.divider, { backgroundColor: theme.separator }]} />}

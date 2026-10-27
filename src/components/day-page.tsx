@@ -1,3 +1,4 @@
+import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Link, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { memo, useEffect, useRef } from 'react';
@@ -10,7 +11,7 @@ import { useLiveQuery } from '@/db/live';
 import { saveMealFromDiary } from '@/db/saved-meals';
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { addDays, weekdayOf, type DateKey } from '@/lib/dates';
+import { addDays, formatDayTitle, weekdayOf, type DateKey } from '@/lib/dates';
 import { countLabel, formatKcal, formatNumber } from '@/lib/format';
 import { dayTypeFor, type DayType } from '@/lib/goals';
 import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
@@ -32,6 +33,16 @@ import { confirmDestructive } from './prompt';
 import { SwipeToDelete } from './swipe-to-delete';
 import { toast } from './toast';
 
+/**
+ * Trying out the day's cards in Liquid Glass instead of solid white. To go back, make it
+ * `false`: every card takes its solid colour again.
+ */
+const GLASS_CARDS = isLiquidGlassAvailable();
+
+/** The glass behind a card's content, filling it, when GLASS_CARDS is on. */
+function GlassBackground() {
+  return <GlassView pointerEvents="none" glassEffectStyle="regular" style={styles.glass} />;
+}
 
 const FADE_IN = FadeIn.duration(180);
 // A short eased resize, no spring: the cards must not bounce up and down.
@@ -111,9 +122,6 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
     toast.show(`${countLabel(count, 'alimento copiato', 'alimenti copiati')} ${where}`, 'doc.on.doc.fill');
   };
 
-  const copyMealTo = async (meal: MealKey) =>
-    copied(await copyMeal(db, { date, meal }, { date: copyTarget.date, meal }), `in ${copyTarget.label}`);
-
   const copyFromYesterday = async (meal: MealKey) => {
     const count = await copyMeal(db, { date: addDays(date, -1), meal }, { date, meal });
     if (count > 0) copied(count, 'da ieri');
@@ -147,6 +155,16 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
       action: 'Svuota',
     });
     if (ok) await deleteMealEntries(db, date, meal);
+  };
+
+  // At the foot of the day, out of the way: rarely wanted, and never by accident.
+  const clearDay = async () => {
+    const ok = await confirmDestructive({
+      title: `Svuotare ${formatDayTitle(date, today).toLowerCase()}?`,
+      message: `${countLabel(entries.length, 'alimento', 'alimenti')}, ${formatKcal(totals.kcal)} kcal.`,
+      action: 'Svuota',
+    });
+    if (ok) await Promise.all(MEALS.map((m) => deleteMealEntries(db, date, m.key)));
   };
 
   const copyEntryTo = async (entry: Entry) => {
@@ -192,7 +210,8 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
         </Pressable>
       ) : null}
 
-      <Card style={styles.summary}>
+      <Card style={[styles.summary, GLASS_CARDS && styles.clear]}>
+            {GLASS_CARDS ? <GlassBackground /> : null}
             <View style={styles.summaryHead}>
               {dayType ? (
                   <MenuButton
@@ -242,6 +261,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
         const mealTotals = sumNutrients(mealEntries.map((e) => e.totals));
         const count = mealEntries.length;
         const canCopy = count === 0 && data?.yesterdayMeals.has(meal.key);
+        const addIcon = <Icon name="plus.circle.fill" size={24} tone="accent" />;
         // An empty meal has nothing to fold: its title adds to it, as the + beside it.
         const foldable = count > 0;
         const open = !collapsed.has(meal.key);
@@ -250,35 +270,18 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
             inert={!interactive}
             icon="ellipsis.circle"
             accessibilityLabel={`Azioni per ${meal.label.toLowerCase()}`}
+            // What the + beside it does not: keep the meal for another day, or clear it.
             groups={[
               {
-                actions: [{ label: 'Scansiona codice a barre', icon: 'barcode.viewfinder', onPress: () => openAdd(meal.key, true) }],
-              },
-              {
                 actions: [
-                  ...(canCopy
-                    ? [{ label: 'Copia da ieri', icon: 'clock.arrow.circlepath' as const, onPress: () => void copyFromYesterday(meal.key) }]
-                    : []),
-                  ...(count > 0
-                    ? [
-                        { label: 'Salva come pasto', icon: 'bookmark' as const, onPress: () => saveAsMeal(meal.key, count) },
-                        { label: `Copia in ${copyTarget.label}`, icon: 'doc.on.doc' as const, onPress: () => void copyMealTo(meal.key) },
-                      ]
-                    : []),
+                  { label: 'Salva come pasto', icon: 'bookmark', onPress: () => saveAsMeal(meal.key, count) },
+                  {
+                    label: `Svuota ${meal.label.toLowerCase()}`,
+                    icon: 'trash',
+                    destructive: true,
+                    onPress: () => void clearMeal(meal.key, count, mealTotals.kcal),
+                  },
                 ],
-              },
-              {
-                actions:
-                  count > 0
-                    ? [
-                        {
-                          label: `Svuota ${meal.label.toLowerCase()}`,
-                          icon: 'trash' as const,
-                          destructive: true,
-                          onPress: () => void clearMeal(meal.key, count, mealTotals.kcal),
-                        },
-                      ]
-                    : [],
               },
             ]}>
             {/* Grey, so the + beside it reads as the meal's main action. */}
@@ -290,7 +293,8 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
         return (
           // The card follows its content's size smoothly, and the cards below follow it, when a
           // meal is folded or unfolded.
-          <Animated.View key={meal.key} layout={MEAL_LAYOUT} style={[styles.meal, { backgroundColor: theme.card }]}>
+          <Animated.View key={meal.key} layout={MEAL_LAYOUT} style={[styles.meal, { backgroundColor: GLASS_CARDS ? 'transparent' : theme.card }]}>
+              {GLASS_CARDS ? <GlassBackground /> : null}
               <View style={styles.mealHeader}>
                 <Pressable
                   onPress={() => {
@@ -320,21 +324,29 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                     </AppText>
                   ) : null}
                 </Pressable>
-                {/* Adding is the one thing done to every meal, many times a day: always in sight, folded or not. */}
-                <Pressable
-                  onPress={() => openAdd(meal.key)}
-                  hitSlop={4}
-                  accessibilityRole="button"
-                  accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}
-                  style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
-                  <Icon name="plus.circle.fill" size={24} tone="accent" />
-                </Pressable>
-                {menu}
+                {/* Adding is the one thing done to every meal, many times a day: always in sight,
+                    folded or not. The sheet grows out of the + and shrinks back into it. */}
+                {interactive ? (
+                  <Link href={{ pathname: '/add', params: { meal: meal.key, date } }} asChild>
+                    <Link.Trigger withAppleZoom>
+                      <Pressable
+                        hitSlop={4}
+                        accessibilityRole="button"
+                        accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}
+                        style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
+                        {addIcon}
+                      </Pressable>
+                    </Link.Trigger>
+                  </Link>
+                ) : (
+                  <View style={styles.headerButton}>{addIcon}</View>
+                )}
+                {count > 0 ? menu : null}
               </View>
               {open && (foldable || canCopy) ? (
               <Animated.View entering={ROWS_IN} exiting={ROWS_OUT}>
               <View style={[styles.divider, { backgroundColor: theme.separator }]} />
-              <ListGroup>
+              <ListGroup style={GLASS_CARDS && styles.clear}>
               {mealEntries.map((entry) => {
                 const row = (pressed: boolean) => (
                   <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
@@ -350,7 +362,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                 );
                 if (!interactive) return <View key={entry.id}>{row(false)}</View>;
                 return (
-                  <SwipeToDelete key={entry.id} onDelete={() => removeEntry(entry)}>
+                  <SwipeToDelete key={entry.id} transparent={GLASS_CARDS} onDelete={() => removeEntry(entry)}>
                     <Link href={`/entry/${entry.id}`} asChild>
                       <Link.Trigger>
                         <Pressable
@@ -401,6 +413,17 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
           </Animated.View>
         );
       })}
+      {entries.length > 0 ? (
+        <Pressable
+          disabled={!interactive}
+          onPress={() => void clearDay()}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.clearDay, pressed && styles.pressed]}>
+          <AppText variant="subhead" weight="600" tone="danger">
+            Svuota giorno
+          </AppText>
+        </Pressable>
+      ) : null}
     </Animated.View>
   );
 });
@@ -447,6 +470,9 @@ const styles = StyleSheet.create({
     minHeight: 56,
   },
   entryText: { flex: 1, gap: 1 },
+  clear: { backgroundColor: 'transparent' },
+  glass: { ...StyleSheet.absoluteFill, borderRadius: Radius.lg, borderCurve: 'continuous' },
+  clearDay: { alignSelf: 'center', paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg, marginTop: Spacing.lg },
   headerButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   addRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, minHeight: 52 },
   copy: {
