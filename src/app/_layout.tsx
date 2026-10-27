@@ -42,7 +42,21 @@ export default function RootLayout() {
             <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="add" options={{ presentation: 'modal', headerShown: false }} />
-              <Stack.Screen name="workout" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Allenamento' }} />
+              {/*
+                An opaque bar: the time and name in it are a custom title, which iOS does not set
+                apart from the sets scrolling under a transparent bar.
+              */}
+              <Stack.Screen
+                name="workout"
+                options={{
+                  ...TAB_STACK_OPTIONS,
+                  headerTransparent: false,
+                  headerBlurEffect: undefined,
+                  headerStyle: { backgroundColor: theme.background },
+                  presentation: 'modal',
+                  title: 'Allenamento',
+                }}
+              />
               <Stack.Screen name="workout-summary" options={{ presentation: 'fullScreenModal', headerShown: false }} />
               <Stack.Screen
                 name="exercise-picker"

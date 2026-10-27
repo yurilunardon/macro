@@ -1,4 +1,4 @@
-import { useState, type ReactNode } from 'react';
+import { createContext, use, useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, type LayoutChangeEvent } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
@@ -28,6 +28,13 @@ let closeOpenRow: (() => void) | null = null;
 /** Closes the row left open, e.g. when the list starts scrolling, as iOS does. */
 export function closeOpenSwipeRow(): void {
   closeOpenRow?.();
+}
+
+const RevealContext = createContext<() => void>(() => {});
+
+/** Inside a swipe row: slides it open on its "Elimina" button, as the red ⊖ does in Clock. */
+export function useSwipeReveal(): () => void {
+  return use(RevealContext);
 }
 
 type SwipeToDeleteProps = {
@@ -66,6 +73,12 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina' }
 
   const closeOthers = () => {
     if (closeOpenRow && closeOpenRow !== closeSelf) closeOpenRow();
+  };
+
+  const reveal = () => {
+    closeOthers();
+    x.set(withSpring(-ACTION_WIDTH, SETTLE));
+    settle(true);
   };
 
   const reset = () => {
@@ -179,7 +192,7 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina' }
       </Animated.View>
       <GestureDetector gesture={pan} touchAction="pan-y">
         <Animated.View style={[{ backgroundColor: theme.card }, contentStyle]}>
-          {children}
+          <RevealContext value={reveal}>{children}</RevealContext>
           {open ? (
             // While open, a tap on the row closes it instead of opening it.
             <Pressable style={StyleSheet.absoluteFill} onPress={reset} accessibilityLabel="Chiudi" />

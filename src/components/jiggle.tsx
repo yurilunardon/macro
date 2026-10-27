@@ -31,8 +31,9 @@ type JiggleProps = {
 
 /**
  * A block of a sortable list in edit mode, as an app on the Home Screen: it wobbles a little
- * out of step with the others and shows a × to remove it, while a tap on its content does
- * nothing. Dragging is the sortable list's job.
+ * out of step with the others and shows a small × on its corner to remove it. Taps on its
+ * controls still work (the red ⊖ of edit mode); a tap on empty space inside it is kept from
+ * reaching the page, which ends the editing. Dragging is the sortable list's job.
  */
 export function Jiggle({ editing, onRemove, removeLabel, inset, children }: JiggleProps) {
   const theme = useTheme();
@@ -52,14 +53,14 @@ export function Jiggle({ editing, onRemove, removeLabel, inset, children }: Jigg
   const style = useAnimatedStyle(() => ({ transform: [{ rotate: `${wobble.get()}deg` }] }));
 
   return (
-    <Animated.View style={[{ paddingTop: inset }, style]}>
+    <Animated.View style={[{ paddingTop: inset }, style]} onStartShouldSetResponder={() => editing}>
       {children}
-      {editing ? <View style={StyleSheet.absoluteFill} onStartShouldSetResponder={() => true} /> : null}
       {editing ? (
-        <Animated.View entering={ZoomIn.duration(180)} exiting={ZoomOut.duration(140)} style={[styles.remove, { top: inset - 9 }]}>
+        // Outside the corner, clear of the exercise's name.
+        <Animated.View entering={ZoomIn.duration(180)} exiting={ZoomOut.duration(140)} style={[styles.remove, { top: inset - 8 }]}>
           <Sortable.Touchable onTap={onRemove} accessibilityRole="button" accessibilityLabel={removeLabel}>
-            <View style={[styles.removeButton, { backgroundColor: theme.textSecondary }]}>
-              <Icon name="xmark" size={11} weight="bold" color={theme.background} />
+            <View style={[styles.removeButton, { backgroundColor: theme.textSecondary, borderColor: theme.background }]}>
+              <Icon name="xmark" size={8} weight="bold" color={theme.background} />
             </View>
           </Sortable.Touchable>
         </Animated.View>
@@ -69,6 +70,6 @@ export function Jiggle({ editing, onRemove, removeLabel, inset, children }: Jigg
 }
 
 const styles = StyleSheet.create({
-  remove: { position: 'absolute', left: -7, zIndex: 2 },
-  removeButton: { width: 28, height: 28, borderRadius: 14, alignItems: 'center', justifyContent: 'center' },
+  remove: { position: 'absolute', left: -8, zIndex: 2, padding: 0 },
+  removeButton: { width: 22, height: 22, borderRadius: 11, borderWidth: 2, alignItems: 'center', justifyContent: 'center' },
 });

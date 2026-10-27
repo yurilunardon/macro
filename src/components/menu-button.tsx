@@ -7,7 +7,7 @@ import type { MenuButtonProps } from './menu-button.types';
 export type { MenuAction, MenuGroup } from './menu-button.types';
 
 /** Fallback for platforms without native SwiftUI menus: the same actions in an alert. */
-export function MenuButton({ icon, title, accessibilityLabel, groups }: MenuButtonProps) {
+export function MenuButton({ icon, title, accessibilityLabel, groups, children }: MenuButtonProps) {
   const actions = groups.flatMap((group) => group.actions);
   const open = () =>
     Alert.alert(accessibilityLabel, undefined, [
@@ -19,13 +19,17 @@ export function MenuButton({ icon, title, accessibilityLabel, groups }: MenuButt
       { text: 'Annulla', style: 'cancel' as const },
     ]);
   return (
-    <Pressable onPress={open} hitSlop={12} accessibilityRole="button" accessibilityLabel={accessibilityLabel} style={styles.row}>
-      <Icon name={icon} size={title ? 14 : 22} tone="accent" />
-      {title ? (
-        <AppText variant="subhead" weight="600" tone="accent">
-          {title}
-        </AppText>
-      ) : null}
+    <Pressable onPress={open} hitSlop={12} accessibilityRole="button" accessibilityLabel={accessibilityLabel} style={!children && styles.row}>
+      {children ?? (
+        <>
+          <Icon name={icon} size={title ? 14 : 22} tone="accent" />
+          {title ? (
+            <AppText variant="subhead" weight="600" tone="accent">
+              {title}
+            </AppText>
+          ) : null}
+        </>
+      )}
     </Pressable>
   );
 }

@@ -1,8 +1,18 @@
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, {
+  Easing,
+  FadeIn,
+  FadeOut,
+  LinearTransition,
+  useAnimatedStyle,
+  useReducedMotion,
+  useSharedValue,
+  withRepeat,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -15,7 +25,7 @@ import { PressableScale } from '@/components/pressable-scale';
 import { ProgressBar } from '@/components/progress';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
 import { prefetchLiveQuery, useLiveQuery } from '@/db/live';
 import { getNextDay, getPrograms, setNextDay } from '@/db/programs';
@@ -114,7 +124,9 @@ export default function TrainingScreen() {
           accessibilityRole="button"
           accessibilityHint="Apre l’allenamento">
             <Card style={styles.hero}>
+              <Breathing />
               <View style={styles.heroTop}>
+                <LiveDot />
                 <AppText variant="footnote" weight="600" tone="accent" style={styles.flex}>
                   IN CORSO
                 </AppText>
@@ -130,14 +142,17 @@ export default function TrainingScreen() {
                     {formatDuration((now - new Date(data.active?.startedAt ?? now).getTime()) / 1000)}
                   </AppText>
                 </View>
-              </View>
-              <View style={styles.heroButton}>
-                <Button
-                  title="Termina allenamento"
-                  variant="stop"
-                  icon={<Icon name="flag.checkered" size={16} tone="danger" weight="semibold" />}
+                {/* Small and to the side: ending is a rare, deliberate act here. */}
+                <Pressable
                   onPress={() => void endActive()}
-                />
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Termina allenamento"
+                  style={({ pressed }) => [styles.end, { backgroundColor: theme.fill }, pressed && styles.pressed]}>
+                  <AppText variant="subhead" weight="600" tone="danger">
+                    Termina
+                  </AppText>
+                </Pressable>
               </View>
             </Card>
         </PressableScale>
@@ -149,31 +164,36 @@ export default function TrainingScreen() {
             <AppText variant="footnote" weight="600" tone="textSecondary" style={styles.flex} numberOfLines={1}>
               {`PROSSIMO · ${next.program.name.toUpperCase()}`}
             </AppText>
-            {next.program.days.length > 1 ? (
-              <MenuButton
-                icon="arrow.left.arrow.right"
-                title="Cambia"
-                accessibilityLabel="Scegli il prossimo giorno"
-                groups={[
-                  {
-                    title: 'Prossimo allenamento',
-                    actions: next.program.days.map((d) => ({
-                      label: d.name,
-                      icon: dayIcon(d.name),
-                      checked: d.id === next.day.id,
-                      onPress: () => pick(d.id),
-                    })),
-                  },
-                ]}
-              />
-            ) : null}
           </View>
-          <View style={styles.heroName}>
-            <DayBadge name={next.day.name} size={40} />
-            <AppText variant="title" style={styles.flex} numberOfLines={1}>
-              {next.day.name}
-            </AppText>
-          </View>
+          {/*
+            The day reads as a value to pick (name and ⌃⌄), as pop-up buttons on iOS: it changes
+            the day within this program; another program is one step further, in the same menu.
+          */}
+          <MenuButton
+            icon="chevron.up.chevron.down"
+            accessibilityLabel={`Prossimo giorno: ${next.day.name}. Scegli un altro giorno`}
+            groups={[
+              {
+                title: `Giorni di ${next.program.name}`,
+                actions: next.program.days.map((d) => ({
+                  label: d.name,
+                  icon: dayIcon(d.name),
+                  checked: d.id === next.day.id,
+                  onPress: () => pick(d.id),
+                })),
+              },
+              {
+                actions: [{ label: 'Cambia scheda', icon: 'list.bullet.rectangle', onPress: () => router.push('/training/programs') }],
+              },
+            ]}>
+            <View style={styles.heroName}>
+              <DayBadge name={next.day.name} size={40} />
+              <AppText variant="title" numberOfLines={1} style={styles.shrink}>
+                {next.day.name}
+              </AppText>
+              <Icon name="chevron.up.chevron.down" size={13} tone="textSecondary" weight="semibold" />
+            </View>
+          </MenuButton>
           <AppText variant="subhead" tone="textSecondary" numberOfLines={2}>
             {[countLabel(next.day.exerciseCount, 'esercizio', 'esercizi'), next.day.muscles.map(muscleLabel).join(', ')]
               .filter(Boolean)
@@ -198,9 +218,12 @@ export default function TrainingScreen() {
         </Card>
       ) : null}
 
-      <Animated.View layout={HERO_LAYOUT}>
+      {/*
+        Each block below slides to its new place, and what comes and goes fades, so deleting
+        workouts reshapes the page in one movement instead of a series of jumps.
+      */}
       {(data?.history ?? []).length > 0 ? (
-        <>
+        <Animated.View key="recent" layout={HERO_LAYOUT} entering={SECTION_IN} exiting={SECTION_OUT}>
           <SectionTitle>Recenti</SectionTitle>
           <ListGroup>
             {(data?.history ?? []).slice(0, 3).map((w) => (
@@ -217,11 +240,12 @@ export default function TrainingScreen() {
             ))}
             <Row title="Tutti gli allenamenti" onPress={() => router.push('/training/history')} />
           </ListGroup>
-        </>
+        </Animated.View>
       ) : null}
 
+      <Animated.View layout={HERO_LAYOUT}>
       <SectionTitle>Questa settimana</SectionTitle>
-      <Card style={styles.week}>
+      <Card style={styles.week} layout={HERO_LAYOUT}>
         <AppText variant="headline">
           {`${countLabel(thisWeek.length, 'allenamento', 'allenamenti')} · ${countLabel(
             thisWeek.reduce((sum, w) => sum + w.workSets, 0),
@@ -233,8 +257,8 @@ export default function TrainingScreen() {
           trained.map((m) => {
             const sets = muscles.get(m.key) ?? 0;
             return (
+              <Animated.View key={m.key} layout={HERO_LAYOUT} entering={SECTION_IN} exiting={SECTION_OUT}>
               <Pressable
-                key={m.key}
                 onPress={() => router.push({ pathname: '/training/muscle', params: { muscle: m.key } })}
                 accessibilityRole="button"
                 accessibilityLabel={`${m.label}: ${formatNumber(sets, 1)} serie. Dettagli`}
@@ -255,16 +279,21 @@ export default function TrainingScreen() {
                   height={5}
                 />
               </Pressable>
+              </Animated.View>
             );
           })
         ) : (
-          <AppText variant="subhead" tone="textSecondary">
-            Nessuna serie questa settimana.
-          </AppText>
+          <Animated.View entering={SECTION_IN}>
+            <AppText variant="subhead" tone="textSecondary">
+              Nessuna serie questa settimana.
+            </AppText>
+          </Animated.View>
         )}
       </Card>
       <SectionFooter>{`Serie allenanti per muscolo. Obiettivo: ${VOLUME_LOW}–${VOLUME_HIGH} a settimana.`}</SectionFooter>
+      </Animated.View>
 
+      <Animated.View layout={HERO_LAYOUT}>
       {/* Set up once, opened rarely: last. */}
       <SectionTitle>Libreria</SectionTitle>
       <ListGroup>
@@ -292,6 +321,12 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.7 },
   heroName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xs },
   heroButton: { marginTop: Spacing.md, gap: Spacing.xs },
+  shrink: { flexShrink: 1 },
+  end: { paddingHorizontal: Spacing.md, height: 32, borderRadius: 16, justifyContent: 'center' },
+  glow: { ...StyleSheet.absoluteFill, borderRadius: Radius.lg, borderCurve: 'continuous' },
+  live: { width: 8, height: 8, alignItems: 'center', justifyContent: 'center' },
+  liveDot: { width: 8, height: 8, borderRadius: 4 },
+  liveRing: { position: 'absolute', width: 8, height: 8, borderRadius: 4 },
   week: { gap: Spacing.md },
   muscle: { gap: Spacing.xs },
   muscleTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
@@ -302,3 +337,36 @@ const styles = StyleSheet.create({
 const HERO_IN = FadeIn.duration(260);
 const HERO_OUT = FadeOut.duration(160);
 const HERO_LAYOUT = LinearTransition.duration(260);
+const SECTION_IN = FadeIn.duration(200);
+const SECTION_OUT = FadeOut.duration(140);
+
+/** A slow, faint green glow over the card of the workout in progress, as if it breathed. */
+function Breathing() {
+  const theme = useTheme();
+  const reduced = useReducedMotion();
+  const glow = useSharedValue(0);
+  useEffect(() => {
+    if (reduced) return;
+    glow.set(withRepeat(withTiming(1, { duration: 1600, easing: Easing.inOut(Easing.sin) }), -1, true));
+  }, [glow, reduced]);
+  const style = useAnimatedStyle(() => ({ opacity: glow.get() * 0.09 }));
+  return <Animated.View pointerEvents="none" style={[styles.glow, { backgroundColor: theme.accent }, style]} />;
+}
+
+/** A green dot with a ring spreading from it, as for something live. */
+function LiveDot() {
+  const theme = useTheme();
+  const reduced = useReducedMotion();
+  const ring = useSharedValue(0);
+  useEffect(() => {
+    if (reduced) return;
+    ring.set(withRepeat(withTiming(1, { duration: 1600, easing: Easing.out(Easing.quad) }), -1, false));
+  }, [ring, reduced]);
+  const style = useAnimatedStyle(() => ({ opacity: 0.5 * (1 - ring.get()), transform: [{ scale: 1 + ring.get() * 1.6 }] }));
+  return (
+    <View style={styles.live}>
+      <Animated.View style={[styles.liveRing, { backgroundColor: theme.accent }, style]} />
+      <View style={[styles.liveDot, { backgroundColor: theme.accent }]} />
+    </View>
+  );
+}

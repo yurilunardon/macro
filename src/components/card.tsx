@@ -1,6 +1,7 @@
 import type { SFSymbol } from 'expo-symbols';
-import { Children, Fragment, isValidElement, type ReactNode } from 'react';
+import { Children, Fragment, isValidElement, type ComponentProps, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View, type StyleProp, type ViewStyle } from 'react-native';
+import Animated from 'react-native-reanimated';
 
 import { Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -8,9 +9,22 @@ import { useTheme } from '@/hooks/use-theme';
 import { AppText } from './app-text';
 import { Icon } from './icon';
 
-export function Card({ children, style }: { children: ReactNode; style?: StyleProp<ViewStyle> }) {
+/** With `layout`, it grows and shrinks smoothly when what it holds changes. */
+export function Card({
+  children,
+  style,
+  layout,
+}: {
+  children: ReactNode;
+  style?: StyleProp<ViewStyle>;
+  layout?: ComponentProps<typeof Animated.View>['layout'];
+}) {
   const theme = useTheme();
-  return <View style={[styles.card, { backgroundColor: theme.card }, style]}>{children}</View>;
+  return (
+    <Animated.View layout={layout} style={[styles.card, { backgroundColor: theme.card }, style]}>
+      {children}
+    </Animated.View>
+  );
 }
 
 /** Title above a group, iOS Settings style. */

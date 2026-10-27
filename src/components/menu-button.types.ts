@@ -1,4 +1,5 @@
 import type { SFSymbol } from 'expo-symbols';
+import type { ReactNode } from 'react';
 
 export type MenuAction = {
   label: string;
@@ -23,4 +24,6 @@ export type MenuButtonProps = {
    * kept ready off screen, where a SwiftUI view per button would cost too much.
    */
   inert?: boolean;
+  /** Draws the button with these views instead of the icon and title, e.g. a value to pick. */
+  children?: ReactNode;
 };
