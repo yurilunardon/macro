@@ -1,58 +1,37 @@
-import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Link, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { memo, useEffect, useRef } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, LinearTransition } from 'react-native-reanimated';
 
 import { getDayPlan, getTrainingSettings, setDayType } from '@/db/days';
 import { copyEntry, copyMeal, deleteEntry, deleteMealEntries, getEntriesForDate, moveEntry, type Entry } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { saveMealFromDiary } from '@/db/saved-meals';
-import { Radius, Spacing } from '@/constants/theme';
+import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
-import { addDays, formatDayTitle, weekdayOf, type DateKey } from '@/lib/dates';
+import { addDays, daysBetween, formatDaySubtitle, formatDayTitle, formatLongDate, weekdayOf, type DateKey } from '@/lib/dates';
 import { countLabel, formatKcal, formatNumber } from '@/lib/format';
 import { dayTypeFor, type DayType } from '@/lib/goals';
 import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
 import { sumNutrients } from '@/lib/nutrition';
 import { QUICK_ADD_NAME } from '@/lib/quick-add';
 import { haptics } from '@/services/haptics';
-import { toggleMeal, useCollapsedMeals } from '@/services/collapsed-meals';
 import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 import { AppText } from './app-text';
 import { Card, ListGroup } from './card';
-import { FoldChevron } from './fold-chevron';
 import { Icon } from './icon';
 import { MenuButton } from './menu-button';
 import { MacroBars } from './nutrient-grid';
-import { MacroInline } from './nutrition';
 import { CalorieRing } from './progress';
 import { confirmDestructive } from './prompt';
 import { SwipeToDelete } from './swipe-to-delete';
 import { toast } from './toast';
 
-/**
- * Trying out the day's cards in Liquid Glass instead of solid white. To go back, make it
- * `false`: every card takes its solid colour again.
- */
-const GLASS_CARDS = isLiquidGlassAvailable();
-
-/**
- * The glass behind a card's content, filling it, when GLASS_CARDS is on. Tinted with half the
- * card's colour, so it stays quiet: glass, but not louder than the food in it.
- */
-function GlassBackground() {
-  const theme = useTheme();
-  return <GlassView pointerEvents="none" glassEffectStyle="regular" tintColor={`${theme.card}80`} style={styles.glass} />;
-}
-
 const FADE_IN = FadeIn.duration(180);
-// A short eased resize, no spring: the cards must not bounce up and down.
+// A short eased resize, no spring: the meals below must not bounce up and down.
 const MEAL_LAYOUT = LinearTransition.duration(220).easing(Easing.out(Easing.cubic));
-const ROWS_IN = FadeIn.duration(180).delay(40);
-const ROWS_OUT = FadeOut.duration(100);
 
 /** "120 g · Barilla", or for a quick entry just that it was typed by hand. */
 function entryDetail(entry: Entry): string | null {
@@ -73,13 +52,17 @@ type DayPageProps = {
   onReady?: (date: DateKey) => void;
 };
 
-/** One day of the food diary: summary of the day and its four meals. */
+/**
+ * One day of the food diary, read top to bottom as a list in Settings or Health: the date with
+ * the kind of day, what is left of the day's calories and macros, then each meal as a section,
+ * its name and calories as the header and the foods in a card under it. The macros of each food
+ * are one tap away, on the food, instead of coloured numbers on every line.
+ */
 export const DayPage = memo(function DayPage({ date, today, interactive, onReady }: DayPageProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
   const hidden = usePendingDeletes();
-  const collapsed = useCollapsedMeals(db);
 
   const { data } = useLiveQuery(
     `diary:${date}`,
@@ -114,9 +97,6 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
   const targets = data?.plan.targets;
   // From today things are copied to tomorrow (to plan ahead), from any other day to today.
   const copyTarget = date === today ? { date: addDays(today, 1), label: 'domani' } : { date: today, label: 'oggi' };
-
-  const openAdd = (meal: MealKey, scan = false) =>
-    router.push({ pathname: scan ? '/add/scan' : '/add', params: { meal, date } });
 
   const removeEntry = (entry: Entry) =>
     deleteWithUndo({ key: `entry:${entry.id}`, title: `${entry.name} eliminato`, run: () => deleteEntry(db, entry.id) });
@@ -191,150 +171,143 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
   };
 
   const dayType = data?.plan.dayType ?? null;
-  const dayTypeLabel = dayType === 'training' ? 'Allenamento' : 'Riposo';
-  const dayTypeIcon = dayType === 'training' ? 'figure.strengthtraining.traditional' : 'bed.double.fill';
+  // "Oggi", "Ieri", "Domani", or how far away: the week strip above already marks today.
+  const relative = Math.abs(daysBetween(today, date)) <= 1 ? formatDayTitle(date, today) : formatDaySubtitle(date, today);
 
-  // Until its data is there the day stays empty, then fades in: never a half-filled page.
-  if (!data) return <View style={styles.loading} />;
-
-  // Glass must not be faded in: drawn under a parent that is not opaque, UIKit puts it in place
-  // with a jump in size.
-  return (
-    <Animated.View entering={GLASS_CARDS ? undefined : FADE_IN}>
-      {data.plan.isDefault ? (
-        <Pressable onPress={() => router.navigate('/settings/goals')} accessibilityRole="button">
-          <Card style={[styles.banner, { backgroundColor: theme.accentSoft }]}>
-            <Icon name="target" size={22} tone="accent" />
-            <View style={styles.flex}>
-              <AppText variant="headline">Imposta i tuoi obiettivi</AppText>
-              <AppText variant="subhead" tone="textSecondary">
-                Calorie e macro da peso, altezza e attività.
-              </AppText>
-            </View>
-            <Icon name="chevron.right" size={13} tone="textSecondary" weight="semibold" />
-          </Card>
-        </Pressable>
+  // The date belongs to the page, as in Calendar: dragging, the days on either side come in with
+  // theirs. The kind of day sits beside it, since it sets the day's goals.
+  const heading = (
+    <View style={styles.heading}>
+      <View style={styles.flex}>
+        <AppText variant="headline" numberOfLines={1}>
+          {formatLongDate(date)}
+        </AppText>
+        <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+          {relative}
+        </AppText>
+      </View>
+      {dayType ? (
+        <MenuButton
+          inert={!interactive}
+          icon={dayType === 'training' ? 'figure.strengthtraining.traditional' : 'bed.double.fill'}
+          title={dayType === 'training' ? 'Allenamento' : 'Riposo'}
+          accessibilityLabel="Tipo di giorno: cambia gli obiettivi"
+          groups={[
+            {
+              title: 'Obiettivi del giorno',
+              actions: [
+                {
+                  label: 'Allenamento',
+                  icon: 'figure.strengthtraining.traditional',
+                  checked: dayType === 'training',
+                  onPress: () => changeDayType('training'),
+                },
+                { label: 'Riposo', icon: 'bed.double.fill', checked: dayType === 'rest', onPress: () => changeDayType('rest') },
+              ],
+            },
+          ]}
+        />
       ) : null}
+    </View>
+  );
 
-      {/* Straight on the page, as the rings in Fitness: the day's totals are not one more box
-          among the meals. The version in a card is tagged diario-riepilogo-in-card. */}
-      <View style={styles.summary}>
-        <View style={styles.summaryHead}>
-          {dayType ? (
-              <MenuButton
-                inert={!interactive}
-                icon={dayTypeIcon}
-                title={dayTypeLabel}
-                accessibilityLabel="Tipo di giorno: cambia gli obiettivi"
-                groups={[
-                  {
-                    title: 'Obiettivi del giorno',
-                    actions: [
-                      {
-                        label: 'Allenamento',
-                        icon: 'figure.strengthtraining.traditional',
-                        checked: dayType === 'training',
-                        onPress: () => changeDayType('training'),
-                      },
-                      { label: 'Riposo', icon: 'bed.double.fill', checked: dayType === 'rest', onPress: () => changeDayType('rest') },
-                    ],
-                  },
-                ]}
-              />
-          ) : (
-            <View />
-          )}
-          <AppText variant="subhead" tone="textSecondary" numeric>
-            <AppText variant="subhead" weight="600" numeric>
-              {formatKcal(totals.kcal)}
-            </AppText>
-            {` / ${formatKcal(targets?.kcal ?? 0)} kcal`}
-          </AppText>
-        </View>
-        <View style={styles.summaryBody}>
+  // Until its data is there the day shows only its date, then the rest fades in: never a
+  // half-filled page.
+  if (!data) {
+    return (
+      <View>
+        {heading}
+        <View style={styles.loading} />
+      </View>
+    );
+  }
+
+  return (
+    <View>
+      {heading}
+      <Animated.View entering={FADE_IN}>
+        {data.plan.isDefault ? (
+          <Pressable onPress={() => router.navigate('/settings/goals')} accessibilityRole="button">
+            <Card style={[styles.banner, { backgroundColor: theme.accentSoft }]}>
+              <Icon name="target" size={22} tone="accent" />
+              <View style={styles.flex}>
+                <AppText variant="headline">Imposta i tuoi obiettivi</AppText>
+                <AppText variant="subhead" tone="textSecondary">
+                  Calorie e macro da peso, altezza e attività.
+                </AppText>
+              </View>
+              <Icon name="chevron.right" size={13} tone="textSecondary" weight="semibold" />
+            </Card>
+          </Pressable>
+        ) : null}
+
+        {/* Straight on the page, as the rings in Fitness: what is left of the day comes first. */}
+        <View style={styles.summary}>
           <CalorieRing eaten={totals.kcal} target={targets?.kcal ?? 0} />
           {targets ? (
-            <MacroBars
-              totals={totals}
-              targets={targets}
-              onPress={(key) => router.push({ pathname: '/nutrients', params: { date, key } })}
-            />
+            <MacroBars totals={totals} targets={targets} onPress={(key) => router.push({ pathname: '/nutrients', params: { date, key } })} />
           ) : null}
         </View>
-      </View>
 
-      {MEALS.map((meal) => {
-        const mealEntries = entries.filter((e) => e.meal === meal.key);
-        const mealTotals = sumNutrients(mealEntries.map((e) => e.totals));
-        const count = mealEntries.length;
-        const canCopy = count === 0 && data?.yesterdayMeals.has(meal.key);
-        const addIcon = <Icon name="plus.circle.fill" size={24} tone="accent" />;
-        // An empty meal has nothing to fold: its title adds to it, as the + beside it.
-        const foldable = count > 0;
-        const open = !collapsed.has(meal.key);
-        const menu = (
-          <MenuButton
-            inert={!interactive}
-            icon="ellipsis.circle"
-            accessibilityLabel={`Azioni per ${meal.label.toLowerCase()}`}
-            // What the + beside it does not: keep the meal for another day, or clear it.
-            groups={[
-              {
-                actions: [
-                  { label: 'Salva come pasto', icon: 'bookmark', onPress: () => saveAsMeal(meal.key, count) },
-                  {
-                    label: `Svuota ${meal.label.toLowerCase()}`,
-                    icon: 'trash',
-                    destructive: true,
-                    onPress: () => void clearMeal(meal.key, count, mealTotals.kcal),
-                  },
-                ],
-              },
-            ]}>
-            {/* Grey, so the + beside it reads as the meal's main action. */}
-            <View style={styles.headerButton}>
-              <Icon name="ellipsis.circle" size={22} tone="textSecondary" />
-            </View>
-          </MenuButton>
-        );
-        return (
-          // The card follows its content's size smoothly, and the cards below follow it, when a
-          // meal is folded or unfolded.
-          <Animated.View key={meal.key} layout={MEAL_LAYOUT} style={[styles.meal, { backgroundColor: GLASS_CARDS ? 'transparent' : theme.card }]}>
-              {GLASS_CARDS ? <GlassBackground /> : null}
+        {MEALS.map((meal) => {
+          const mealEntries = entries.filter((e) => e.meal === meal.key);
+          const mealKcal = sumNutrients(mealEntries.map((e) => e.totals)).kcal;
+          const count = mealEntries.length;
+          const canCopy = count === 0 && data.yesterdayMeals.has(meal.key);
+          const addIcon = <Icon name="plus.circle.fill" size={26} tone="accent" />;
+          return (
+            // The section follows its content's size smoothly, and the ones below follow it.
+            <Animated.View key={meal.key} layout={MEAL_LAYOUT} style={styles.meal}>
               <View style={styles.mealHeader}>
-                <Pressable
-                  onPress={() => {
-                    if (!foldable) {
-                      openAdd(meal.key);
-                      return;
-                    }
-                    haptics.selection();
-                    toggleMeal(db, meal.key);
-                  }}
-                  accessibilityRole="button"
-                  accessibilityState={foldable ? { expanded: open } : undefined}
-                  accessibilityHint={foldable ? (open ? 'Tocca per chiudere' : 'Tocca per aprire') : 'Tocca per aggiungere'}
-                  style={styles.mealTitle}>
-                  <View style={styles.mealName}>
-                    <Icon name={meal.symbol} size={17} tone="textSecondary" />
-                    <AppText variant="headline">{meal.label}</AppText>
-                    {foldable ? <FoldChevron open={open} /> : null}
-                  </View>
-                  {count > 0 ? (
-                    <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
-                      <AppText variant="footnote" weight="600" numeric>
-                        {`${formatKcal(mealTotals.kcal)} kcal`}
-                      </AppText>
-                      {'   '}
-                      <MacroInline totals={mealTotals} />
+                <AppText variant="title2" style={styles.mealName} numberOfLines={1}>
+                  {meal.label}
+                </AppText>
+                {count > 0 ? (
+                  <AppText variant="subhead" tone="textSecondary" numeric>
+                    {`${formatKcal(mealKcal)} kcal`}
+                  </AppText>
+                ) : null}
+                {/* An empty meal that was there yesterday: one tap fills it the same way. */}
+                {canCopy ? (
+                  <Pressable
+                    disabled={!interactive}
+                    onPress={() => void copyFromYesterday(meal.key)}
+                    accessibilityRole="button"
+                    accessibilityLabel={`Copia ${meal.label.toLowerCase()} da ieri`}
+                    style={({ pressed }) => [styles.copy, { backgroundColor: theme.fill }, pressed && styles.pressed]}>
+                    <Icon name="clock.arrow.circlepath" size={13} tone="textSecondary" />
+                    <AppText variant="footnote" weight="600" tone="textSecondary">
+                      Copia da ieri
                     </AppText>
-                  ) : null}
-                </Pressable>
-                {count > 0 ? menu : null}
-                {/* Adding is the one thing done to every meal, many times a day: always in sight,
-                    folded or not, and in the same place on every card, the last on the right. The
-                    sheet grows out of the + and shrinks back into it. */}
+                  </Pressable>
+                ) : null}
+                {count > 0 ? (
+                  <MenuButton
+                    inert={!interactive}
+                    icon="ellipsis.circle"
+                    accessibilityLabel={`Azioni per ${meal.label.toLowerCase()}`}
+                    // What the + beside it does not: keep the meal for another day, or clear it.
+                    groups={[
+                      {
+                        actions: [
+                          { label: 'Salva come pasto', icon: 'bookmark', onPress: () => saveAsMeal(meal.key, count) },
+                          {
+                            label: `Svuota ${meal.label.toLowerCase()}`,
+                            icon: 'trash',
+                            destructive: true,
+                            onPress: () => void clearMeal(meal.key, count, mealKcal),
+                          },
+                        ],
+                      },
+                    ]}>
+                    {/* Grey, so the + beside it reads as the meal's main action. */}
+                    <View style={styles.headerButton}>
+                      <Icon name="ellipsis.circle" size={22} tone="textSecondary" />
+                    </View>
+                  </MenuButton>
+                ) : null}
+                {/* Adding is the one thing done to every meal, many times a day: always in sight
+                    and always last on the right. The sheet grows out of the + and back into it. */}
                 {interactive ? (
                   <Link href={{ pathname: '/add', params: { meal: meal.key, date } }} asChild>
                     <Link.Trigger withAppleZoom>
@@ -353,88 +326,73 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                   <View style={styles.headerButton}>{addIcon}</View>
                 )}
               </View>
-              {open && (foldable || canCopy) ? (
-              <Animated.View entering={ROWS_IN} exiting={ROWS_OUT}>
-              <View style={[styles.divider, { backgroundColor: theme.separator }]} />
-              <ListGroup style={GLASS_CARDS && styles.clear}>
-              {mealEntries.map((entry) => {
-                const row = (pressed: boolean) => (
-                  <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
-                    <View style={styles.entryText}>
-                      <AppText numberOfLines={1}>{entry.name}</AppText>
-                      <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                        {entryDetail(entry) ? `${entryDetail(entry)}   ` : ''}
-                        <MacroInline totals={entry.totals} />
-                      </AppText>
-                    </View>
-                    <Kcal value={entry.totals.kcal} />
-                  </View>
-                );
-                if (!interactive) return <View key={entry.id}>{row(false)}</View>;
-                return (
-                  <SwipeToDelete key={entry.id} transparent={GLASS_CARDS} onDelete={() => removeEntry(entry)}>
-                    <Link href={`/entry/${entry.id}`} asChild>
-                      <Link.Trigger>
-                        <Pressable
-                          accessibilityRole="button"
-                          accessibilityHint="Tocca per modificare, tieni premuto per altre azioni, scorri a sinistra per eliminare">
-                          {({ pressed }) => row(pressed)}
-                        </Pressable>
-                      </Link.Trigger>
-                      <Link.Menu>
-                        <Link.MenuAction icon="pencil" onPress={() => router.push(`/entry/${entry.id}`)}>
-                          {entry.quick ? 'Modifica' : 'Modifica quantità'}
-                        </Link.MenuAction>
-                        <Link.Menu title="Sposta in" icon="arrow.up.arrow.down">
-                          {MEALS.filter((m) => m.key !== entry.meal).map((m) => (
-                            <Link.MenuAction key={m.key} icon={m.symbol} onPress={() => void moveEntryTo(entry, m.key)}>
-                              {m.label}
+              {count > 0 ? (
+                <ListGroup>
+                  {mealEntries.map((entry) => {
+                    const row = (pressed: boolean) => (
+                      <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
+                        <View style={styles.entryText}>
+                          <AppText numberOfLines={1}>{entry.name}</AppText>
+                          {entryDetail(entry) ? (
+                            <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                              {entryDetail(entry)}
+                            </AppText>
+                          ) : null}
+                        </View>
+                        <Kcal value={entry.totals.kcal} />
+                      </View>
+                    );
+                    if (!interactive) return <View key={entry.id}>{row(false)}</View>;
+                    return (
+                      <SwipeToDelete key={entry.id} onDelete={() => removeEntry(entry)}>
+                        <Link href={`/entry/${entry.id}`} asChild>
+                          <Link.Trigger>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityHint="Tocca per modificare, tieni premuto per altre azioni, scorri a sinistra per eliminare">
+                              {({ pressed }) => row(pressed)}
+                            </Pressable>
+                          </Link.Trigger>
+                          <Link.Menu>
+                            <Link.MenuAction icon="pencil" onPress={() => router.push(`/entry/${entry.id}`)}>
+                              {entry.quick ? 'Modifica' : 'Modifica quantità'}
                             </Link.MenuAction>
-                          ))}
-                        </Link.Menu>
-                        <Link.MenuAction icon="doc.on.doc" onPress={() => void copyEntryTo(entry)}>
-                          {`Copia in ${copyTarget.label}`}
-                        </Link.MenuAction>
-                        <Link.MenuAction icon="trash" destructive onPress={() => removeEntry(entry)}>
-                          Elimina
-                        </Link.MenuAction>
-                      </Link.Menu>
-                    </Link>
-                  </SwipeToDelete>
-                );
-              })}
-              {canCopy ? (
-                <View style={styles.addRow}>
-                  <Pressable
-                    onPress={() => void copyFromYesterday(meal.key)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Copia ${meal.label.toLowerCase()} da ieri`}
-                    style={({ pressed }) => [styles.copy, { backgroundColor: theme.fill }, pressed && styles.pressed]}>
-                    <Icon name="clock.arrow.circlepath" size={14} tone="textSecondary" />
-                    <AppText variant="subhead" weight="600" tone="textSecondary">
-                      Copia da ieri
-                    </AppText>
-                  </Pressable>
-                </View>
+                            <Link.Menu title="Sposta in" icon="arrow.up.arrow.down">
+                              {MEALS.filter((m) => m.key !== entry.meal).map((m) => (
+                                <Link.MenuAction key={m.key} icon={m.symbol} onPress={() => void moveEntryTo(entry, m.key)}>
+                                  {m.label}
+                                </Link.MenuAction>
+                              ))}
+                            </Link.Menu>
+                            <Link.MenuAction icon="doc.on.doc" onPress={() => void copyEntryTo(entry)}>
+                              {`Copia in ${copyTarget.label}`}
+                            </Link.MenuAction>
+                            <Link.MenuAction icon="trash" destructive onPress={() => removeEntry(entry)}>
+                              Elimina
+                            </Link.MenuAction>
+                          </Link.Menu>
+                        </Link>
+                      </SwipeToDelete>
+                    );
+                  })}
+                </ListGroup>
               ) : null}
-              </ListGroup>
-              </Animated.View>
-              ) : null}
-          </Animated.View>
-        );
-      })}
-      {entries.length > 0 ? (
-        <Pressable
-          disabled={!interactive}
-          onPress={() => void clearDay()}
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.clearDay, pressed && styles.pressed]}>
-          <AppText variant="subhead" weight="600" tone="danger">
-            Svuota giorno
-          </AppText>
-        </Pressable>
-      ) : null}
-    </Animated.View>
+            </Animated.View>
+          );
+        })}
+        {entries.length > 0 ? (
+          <Pressable
+            disabled={!interactive}
+            onPress={() => void clearDay()}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.clearDay, pressed && styles.pressed]}>
+            <AppText variant="subhead" weight="600" tone="danger">
+              Svuota giorno
+            </AppText>
+          </Pressable>
+        ) : null}
+      </Animated.View>
+    </View>
   );
 });
 
@@ -454,44 +412,39 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   loading: { minHeight: 700 },
   pressed: { opacity: 0.6 },
+  heading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingTop: Spacing.md, paddingBottom: Spacing.sm, minHeight: 64 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
-  summary: { gap: Spacing.md, paddingBottom: Spacing.sm },
-  summaryHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 },
-  dayType: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2, paddingVertical: Spacing.xs },
-  summaryBody: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
-  meal: { marginTop: Spacing.md, borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },
-  divider: { height: StyleSheet.hairlineWidth, marginLeft: Spacing.lg },
+  summary: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg, paddingVertical: Spacing.sm },
+  meal: { marginTop: Spacing.lg },
+  // Lined up with the foods' names in the card below; the + with their calories.
   mealHeader: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.xs,
     paddingLeft: Spacing.lg,
-    // The + is drawn in a 40-wide button: this puts its circle as far from the edge as the title.
     paddingRight: Spacing.sm,
-    paddingVertical: Spacing.md,
+    minHeight: 44,
+    marginBottom: Spacing.xs,
   },
-  mealTitle: { flex: 1, gap: 2 },
-  mealName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  mealName: { flex: 1, fontSize: 20, lineHeight: 25 },
   entry: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm + 3,
-    minHeight: 56,
+    paddingVertical: Spacing.sm + 2,
+    minHeight: 52,
   },
   entryText: { flex: 1, gap: 1 },
-  clear: { backgroundColor: 'transparent' },
-  glass: { ...StyleSheet.absoluteFill, borderRadius: Radius.lg, borderCurve: 'continuous' },
   clearDay: { alignSelf: 'center', paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg, marginTop: Spacing.lg },
   headerButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
-  addRow: { flexDirection: 'row', alignItems: 'center', paddingHorizontal: Spacing.lg, minHeight: 52 },
   copy: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs + 2,
-    paddingHorizontal: Spacing.md,
-    height: 32,
-    borderRadius: 16,
+    gap: Spacing.xs,
+    paddingHorizontal: Spacing.sm + 2,
+    height: 28,
+    borderRadius: 14,
+    borderCurve: 'continuous',
   },
 });

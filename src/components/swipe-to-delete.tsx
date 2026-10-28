@@ -51,8 +51,6 @@ type SwipeToDeleteProps = {
    * instead of following a height that changes on every frame.
    */
   collapse?: boolean;
-  /** On a glass card: the row lets the glass through instead of covering it with the card colour. */
-  transparent?: boolean;
 };
 
 /**
@@ -60,7 +58,7 @@ type SwipeToDeleteProps = {
  * turns the whole row red, ticks, and deletes on release. The row then closes its gap.
  * Rows that use it should keep another way to delete for people who cannot swipe.
  */
-export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina', collapse: collapses = true, transparent = false }: SwipeToDeleteProps) {
+export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina', collapse: collapses = true }: SwipeToDeleteProps) {
   const theme = useTheme();
   const x = useSharedValue(0);
   const startX = useSharedValue(0);
@@ -208,7 +206,7 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina', 
             </Pressable>
           </Animated.View>
         </Animated.View>
-        <Animated.View style={[{ backgroundColor: transparent ? 'transparent' : theme.card }, contentStyle]}>
+        <Animated.View style={[{ backgroundColor: theme.card }, contentStyle]}>
           <RevealContext value={reveal}>{children}</RevealContext>
           {open ? (
             // While open, a tap on the row closes it instead of opening it.

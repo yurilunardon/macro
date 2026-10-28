@@ -19,8 +19,8 @@ import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { DayBadge } from '@/components/day-badge';
+import { DayDeck } from '@/components/day-deck';
 import { Icon } from '@/components/icon';
-import { MenuButton } from '@/components/menu-button';
 import { confirmDestructive } from '@/components/prompt';
 import { PressableScale } from '@/components/pressable-scale';
 import { ProgressBar } from '@/components/progress';
@@ -35,9 +35,9 @@ import { useClock } from '@/hooks/use-clock';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { formatDayTitle, weekOf } from '@/lib/dates';
-import { MUSCLES, muscleLabel } from '@/lib/exercises';
+import { MUSCLES } from '@/lib/exercises';
 import { countLabel, formatNumber } from '@/lib/format';
-import { dayIcon, formatDuration, formatWorkoutLength, setsPerMuscle, WEEKLY_SETS } from '@/lib/training';
+import { formatDuration, formatWorkoutLength, setsPerMuscle, WEEKLY_SETS } from '@/lib/training';
 import { endWorkout } from '@/services/end-workout';
 import { haptics } from '@/services/haptics';
 
@@ -81,11 +81,6 @@ export default function TrainingScreen() {
     }
   };
 
-  const pick = (dayId: number) => {
-    haptics.selection();
-    void setNextDay(db, dayId);
-  };
-
   const confirmWorkout = () =>
     confirmDestructive({
       title: 'Eliminare l’allenamento?',
@@ -101,18 +96,6 @@ export default function TrainingScreen() {
     (a, b) => (muscles.get(b.key) ?? 0) - (muscles.get(a.key) ?? 0),
   );
   const next = data?.next ?? null;
-  const nextGroups = (upcoming: NonNullable<typeof next>) => [
-    {
-      title: `Giorni di ${upcoming.program.name}`,
-      actions: upcoming.program.days.map((d) => ({
-        label: d.name,
-        icon: dayIcon(d.name),
-        checked: d.id === upcoming.day.id,
-        onPress: () => pick(d.id),
-      })),
-    },
-    { actions: [{ label: 'Cambia scheda', icon: 'list.bullet.rectangle' as const, onPress: () => router.push('/training/programs') }] },
-  ];
 
   return (
     <ScreenScroll>
@@ -170,38 +153,14 @@ export default function TrainingScreen() {
         </Animated.View>
       ) : next ? (
         <Animated.View key="next" entering={HERO_IN} exiting={HERO_OUT}>
-        <Card style={styles.hero}>
-          <View style={styles.heroTop}>
-            <AppText variant="footnote" weight="600" tone="textSecondary" style={styles.flex} numberOfLines={1}>
-              {`PROSSIMO · ${next.program.name.toUpperCase()}`}
-            </AppText>
-            {/*
-              ⌃⌄ in the card's corner, big enough to find at once: another day of this program,
-              or another program one step further, in the same menu. The name opens it too.
-            */}
-            <MenuButton icon="chevron.up.chevron.down" accessibilityLabel={`Prossimo giorno: ${next.day.name}. Scegli un altro giorno`} groups={nextGroups(next)}>
-              <View style={[styles.switch, { backgroundColor: theme.fill }]}>
-                <Icon name="chevron.up.chevron.down" size={16} tone="accent" weight="semibold" />
-              </View>
-            </MenuButton>
-          </View>
-          <MenuButton icon="chevron.up.chevron.down" accessibilityLabel={`Prossimo giorno: ${next.day.name}. Scegli un altro giorno`} groups={nextGroups(next)}>
-            <View style={styles.heroName}>
-              <DayBadge name={next.day.name} size={40} />
-              <AppText variant="title" numberOfLines={1} style={styles.shrink}>
-                {next.day.name}
-              </AppText>
-            </View>
-          </MenuButton>
-          <AppText variant="subhead" tone="textSecondary" numberOfLines={2}>
-            {[countLabel(next.day.exerciseCount, 'esercizio', 'esercizi'), next.day.muscles.map(muscleLabel).join(', ')]
-              .filter(Boolean)
-              .join(' · ')}
-          </AppText>
-          <View style={styles.heroButton}>
-            <Button title="Inizia" onPress={() => void start(next.day.id)} />
-          </View>
-        </Card>
+          {/* The program's days as a pile of sheets: ⌃⌄ turns to the next one. */}
+          <DayDeck
+            program={next.program}
+            dayId={next.day.id}
+            onChange={(dayId) => void setNextDay(db, dayId)}
+            onStart={(dayId) => void start(dayId)}
+            onChangeProgram={() => router.push('/training/programs')}
+          />
         </Animated.View>
       ) : data ? (
         <Card style={styles.hero}>
@@ -317,12 +276,9 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   hero: { gap: Spacing.xs },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 32 },
-  // Over the card's padding, so the circle sits in its corner without pushing the name down.
-  switch: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginVertical: -Spacing.xs },
   pressed: { opacity: 0.6 },
   heroName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xs },
   heroButton: { marginTop: Spacing.md, gap: Spacing.xs },
-  shrink: { flexShrink: 1 },
   end: { paddingHorizontal: Spacing.md, height: 32, borderRadius: 16, justifyContent: 'center' },
   glow: { ...StyleSheet.absoluteFill, borderRadius: Radius.lg, borderCurve: 'continuous' },
   live: { width: 8, height: 8, alignItems: 'center', justifyContent: 'center' },

@@ -23,14 +23,7 @@ import { Spacing } from '@/constants/theme';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
-import {
-  addDays,
-  daysBetween,
-  formatDaySubtitle,
-  formatDayTitle,
-  formatLongDate,
-  type DateKey,
-} from '@/lib/dates';
+import { addDays, daysBetween, type DateKey } from '@/lib/dates';
 import { mealForTime } from '@/lib/meals';
 import { formatExpiry, type ExpiryStatus } from '@/lib/provisioning';
 import { haptics } from '@/services/haptics';
@@ -200,12 +193,11 @@ export default function NutritionScreen() {
     settle(day);
   };
 
-  // As in Calendar, the date belongs to the page: dragging, the days on either side come in with
-  // theirs.
+  // As in Calendar, the date belongs to the page (see DayPage): dragging, the days on either
+  // side come in with theirs.
   const renderDay = ({ item }: ListRenderItemInfo<DateKey>) => (
     <View style={[styles.page, { width }]}>
       <View onLayout={(event) => onPageLayout(item, event.nativeEvent.layout.height)}>
-        <DayHeading date={item} today={today} />
         <DayPage date={item} today={today} interactive={item === interactiveDay} onReady={pageReady} />
       </View>
     </View>
@@ -261,19 +253,6 @@ export default function NutritionScreen() {
   );
 }
 
-/** "Lunedì 27 ottobre · Oggi" at the top of a day's page. */
-function DayHeading({ date, today }: { date: DateKey; today: DateKey }) {
-  const relative = Math.abs(daysBetween(today, date)) <= 1 ? formatDayTitle(date, today) : formatDaySubtitle(date, today);
-  return (
-    <AppText variant="subhead" tone="textSecondary" align="center" numberOfLines={1} style={styles.date}>
-      <AppText variant="subhead" weight="600">
-        {formatLongDate(date)}
-      </AppText>
-      {` · ${relative}`}
-    </AppText>
-  );
-}
-
 /** Shown from three days before the app's signature expires. */
 function ExpiryBanner({ status }: { status: ExpiryStatus }) {
   const theme = useTheme();
@@ -301,7 +280,6 @@ function ExpiryBanner({ status }: { status: ExpiryStatus }) {
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  date: { paddingTop: Spacing.md, paddingBottom: Spacing.md },
   // Full width, out of the screen's side margins, as the pages under it.
   rule: { height: StyleSheet.hairlineWidth, marginHorizontal: -Spacing.lg },
   pager: { marginHorizontal: -Spacing.lg },
