@@ -29,6 +29,8 @@ type DayDeckProps = {
   onPick: (dayId: number) => void;
   onStart: (dayId: number) => void;
   onChangeProgram: () => void;
+  /** When it is planned in the calendar: "Oggi", "Domani", "Venerdì". */
+  when?: string | null;
 };
 
 /**
@@ -36,7 +38,7 @@ type DayDeckProps = {
  * under it, only as a picture of what is in the program. ⌃⌄ lists the days to pick the next one,
  * which simply takes its place.
  */
-export function DayDeck({ program, dayId, onPick, onStart, onChangeProgram }: DayDeckProps) {
+export function DayDeck({ program, dayId, onPick, onStart, onChangeProgram, when }: DayDeckProps) {
   const theme = useTheme();
   const day = program.days.find((d) => d.id === dayId) ?? program.days[0];
   const behind = Math.min(program.days.length - 1, 2);
@@ -57,8 +59,9 @@ export function DayDeck({ program, dayId, onPick, onStart, onChangeProgram }: Da
       ))}
       <View style={[styles.sheet, { backgroundColor: theme.card }]}>
         <View style={styles.top}>
-          <AppText variant="footnote" weight="600" tone="textSecondary" style={styles.flex} numberOfLines={1}>
-            {`PROSSIMO · ${program.name.toUpperCase()}`}
+          {/* Today's, as the calendar has it, stands out: it is what to do now. */}
+          <AppText variant="footnote" weight="600" tone={when === 'Oggi' ? 'accent' : 'textSecondary'} style={styles.flex} numberOfLines={1}>
+            {`${(when ?? 'Prossimo').toUpperCase()} · ${program.name.toUpperCase()}`}
           </AppText>
           {/* ⌃⌄ in the corner: the program's days, to pick the next one, and other programs. */}
           <MenuButton

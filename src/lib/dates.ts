@@ -4,6 +4,7 @@ export type DateKey = string;
 const DATE_KEY = /^(\d{4})-(\d{2})-(\d{2})$/;
 
 const weekdayDayMonth = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric', month: 'long' });
+const weekdayName = new Intl.DateTimeFormat('it-IT', { weekday: 'long' });
 const dayMonth = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' });
 const weekdayShort = new Intl.DateTimeFormat('it-IT', { weekday: 'narrow' });
 
@@ -57,6 +58,15 @@ export function formatDayTitle(key: DateKey, today: DateKey = todayKey()): strin
   if (diff === -1) return 'Ieri';
   if (diff === 1) return 'Domani';
   return capitalize(weekdayDayMonth.format(fromDateKey(key)));
+}
+
+/** "Oggi", "Domani", or the day of the week within the next six days ("Venerdì"); null further on. */
+export function formatSoon(key: DateKey, today: DateKey = todayKey()): string | null {
+  const diff = daysBetween(today, key);
+  if (diff === 0) return 'Oggi';
+  if (diff === 1) return 'Domani';
+  if (diff > 1 && diff < 7) return capitalize(weekdayName.format(fromDateKey(key)));
+  return null;
 }
 
 /**

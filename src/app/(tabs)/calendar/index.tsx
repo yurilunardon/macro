@@ -13,6 +13,9 @@ import { MonthGrid } from '@/components/month-grid';
 import { ScreenScroll } from '@/components/screen';
 import { SupplementRow } from '@/components/supplement-row';
 import { Radius, Spacing } from '@/constants/theme';
+import { getWeightUpTo } from '@/db/body';
+import { getDayPlan } from '@/db/days';
+import { getDailyTotals } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { getSetting, setSetting } from '@/db/settings';
 import { getDosesOn, getDosesTaken, getPurchasesBetween, getSupplements, setDoseTaken } from '@/db/supplements';
@@ -40,7 +43,9 @@ import {
   monthRange,
   type DateKey,
 } from '@/lib/dates';
+import { formatKcal, formatNumber } from '@/lib/format';
 import { adherence, dosesDue, formatEuro, percent, type Adherence } from '@/lib/supplements';
+import { logWeight } from '@/services/log-weight';
 import { startAndOpenWorkout } from '@/services/start-workout';
 import { usePendingDeletes } from '@/services/undo';
 
@@ -81,6 +86,20 @@ export default function CalendarScreen() {
     ['calendar'],
   );
   const { data: reportSeen } = useLiveQuery('report-seen', (database) => getSetting(database, 'reportSeen'), ['settings']);
+  // What was eaten that day against its target, and the weight.
+  const { data: body } = useLiveQuery(
+    `calendar-body:${selected}`,
+    async (database) => {
+      const [totals, plan, weight] = await Promise.all([
+        getDailyTotals(database, selected, selected),
+        getDayPlan(database, selected),
+        getWeightUpTo(database, selected),
+      ]);
+      return { eaten: totals[0] ?? null, target: plan.targets, weight };
+    },
+    ['food', 'body', 'settings', 'calendar'],
+  );
+  const weighIn = body?.weight?.date === selected ? body.weight : null;
 
   const select = (day: DateKey) => {
     setPicked(day === today ? null : day);
@@ -152,8 +171,14 @@ export default function CalendarScreen() {
           <Stack.Toolbar.MenuAction icon="figure.volleyball" onPress={() => router.push('/calendar/activity-types')}>
             Tipi di attività
           </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="scalemass" onPress={() => router.push('/calendar/weight')}>
+            Peso e misure
+          </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon="chart.bar.xaxis" onPress={() => openReport(month)}>
             Report
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="gearshape" onPress={() => router.push('/settings')}>
+            Impostazioni
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
         <Stack.Toolbar.Menu separateBackground icon="plus" accessibilityLabel="Aggiungi">
@@ -162,6 +187,9 @@ export default function CalendarScreen() {
           </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon="pills" onPress={() => router.push('/supplement')}>
             Integratore
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="scalemass" onPress={() => logWeight(db, selected > today ? today : selected, weighIn ?? body?.weight ?? null, today)}>
+            Peso
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
@@ -265,6 +293,37 @@ export default function CalendarScreen() {
             />
           )}
         </ListGroup>
+
+        {selected <= today ? (
+          <>
+            <SectionTitle>Alimentazione e peso</SectionTitle>
+            <ListGroup>
+              <Row
+                icon={<ActivityBadge symbol="fork.knife" color="orange" size={28} />}
+                title="Alimentazione"
+                subtitle={
+                  body?.eaten
+                    ? `${formatKcal(body.eaten.kcal)} / ${formatKcal(body.target.kcal)} kcal · P ${formatNumber(body.eaten.protein, 0)} g`
+                    : 'Niente registrato'
+                }
+                onPress={() => router.navigate({ pathname: '/', params: { date: selected } })}
+              />
+              <Row
+                icon={<ActivityBadge symbol="scalemass.fill" color="blue" size={28} />}
+                title="Peso"
+                detail={
+                  weighIn ? (
+                    `${formatNumber(weighIn.kg, 1)} kg`
+                  ) : (
+                    <AppText tone="accent">Registra</AppText>
+                  )
+                }
+                chevron={weighIn !== null}
+                onPress={() => logWeight(db, selected, body?.weight ?? null, today)}
+              />
+            </ListGroup>
+          </>
+        ) : null}
       </Animated.View>
 
       <SectionTitle>{formatMonthName(month)}</SectionTitle>

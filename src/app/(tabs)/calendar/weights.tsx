@@ -4,17 +4,16 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
-import { promptNumber } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
-import { getLatestWeight, getWeightsSince, setWeight } from '@/db/body';
+import { getLatestWeight, getWeightsSince } from '@/db/body';
 import { useLiveQuery } from '@/db/live';
 import { useToday } from '@/hooks/use-today';
 import { formatDayTitle } from '@/lib/dates';
-import { formatNumber, numberToInput } from '@/lib/format';
+import { formatNumber } from '@/lib/format';
 import { formatChange, groupByMonth, withChanges } from '@/lib/weights';
-import { haptics } from '@/services/haptics';
+import { logWeight } from '@/services/log-weight';
 import { removeWeight } from '@/services/remove-weight';
 import { usePendingDeletes } from '@/services/undo';
 
@@ -28,19 +27,6 @@ export default function WeightsScreen() {
     return { weights, latest };
   }, ['body']);
 
-  const logWeight = () =>
-    promptNumber({
-      title: 'Peso di oggi',
-      message: 'In chilogrammi.',
-      defaultValue: data?.latest ? numberToInput(data.latest.kg) : '',
-      min: 20,
-      max: 400,
-      onSubmit: (kg) => {
-        void setWeight(db, today, kg);
-        haptics.success();
-      },
-    });
-
   if (!data) {
     return (
       <View style={styles.center}>
@@ -53,7 +39,7 @@ export default function WeightsScreen() {
   return (
     <ScreenScroll>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button icon="plus" accessibilityLabel="Registra il peso di oggi" onPress={logWeight} />
+        <Stack.Toolbar.Button icon="plus" accessibilityLabel="Registra il peso di oggi" onPress={() => logWeight(db, today, data.latest)} />
       </Stack.Toolbar>
       {months.length === 0 ? (
         <AppText tone="textSecondary" align="center" style={styles.empty}>

@@ -9,10 +9,12 @@ export type ReminderSettings = Record<ReminderKey, ReminderSetting> & {
   expiry: boolean;
   /** On the first of each month, the report of the month before. Missing in settings saved before it. */
   monthlyReport?: boolean;
+  /** In the evening, the supplements of the day not ticked yet. Missing in settings saved before it. */
+  supplements?: ReminderSetting;
 };
 
 export const REMINDERS: readonly { key: ReminderKey; label: string; title: string; body: string }[] = [
-  { key: 'weighIn', label: 'Pesata', title: 'Pesati', body: 'Al mattino, prima di colazione: registralo in Progressi.' },
+  { key: 'weighIn', label: 'Pesata', title: 'Pesati', body: 'Al mattino, prima di colazione: registralo nel Calendario.' },
   { key: 'breakfast', label: 'Colazione', title: 'Colazione', body: 'Registra la colazione in Fuel.' },
   { key: 'lunch', label: 'Pranzo', title: 'Pranzo', body: 'Registra il pranzo in Fuel.' },
   { key: 'dinner', label: 'Cena', title: 'Cena', body: 'Registra la cena in Fuel.' },
@@ -25,7 +27,14 @@ export const DEFAULT_REMINDERS: ReminderSettings = {
   dinner: { enabled: false, hour: 21, minute: 0 },
   expiry: true,
   monthlyReport: true,
+  supplements: { enabled: true, hour: 21, minute: 30 },
 };
+
+/** The evening reminder of the supplements as "21:30", or null when it is off. */
+export function supplementsEvening(settings: ReminderSettings | null): string | null {
+  const setting = settings?.supplements ?? DEFAULT_REMINDERS.supplements;
+  return setting?.enabled ? formatTime(setting.hour, setting.minute) : null;
+}
 
 /** Accepts "7:30", "07.30", "730" or "7". Returns null if it is not a time of day. */
 export function parseTime(text: string): { hour: number; minute: number } | null {

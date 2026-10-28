@@ -8,6 +8,16 @@ import type { SupplementReminder } from '@/lib/supplements';
 /** Every notification this app schedules starts with this, so it can replace only its own. */
 const PREFIX = 'macro-';
 
+/** The supplements' notifications carry a "Segna come presi" button, handled in NotificationSync. */
+export const SUPPLEMENTS_CATEGORY = 'supplements';
+export const TAKEN_ACTION = 'taken';
+
+/**
+ * iOS keeps at most 64 notifications waiting: the supplements' days ahead take what the daily
+ * reminders, the report and the expiry leave.
+ */
+const SUPPLEMENT_LIMIT = 50;
+
 // Show reminders as banners even while the app is open. The end of a rest is shown inside the
 // app instead (the timer bar and a double buzz), so its banner would only be in the way.
 Notifications.setNotificationHandler({
@@ -60,14 +70,26 @@ export async function syncNotifications(input: {
     });
   }
 
-  for (const r of input.supplements) {
+  if (input.supplements.length > 0) {
+    await Notifications.setNotificationCategoryAsync(SUPPLEMENTS_CATEGORY, [
+      { identifier: TAKEN_ACTION, buttonTitle: 'Segna come presi', options: { opensAppToForeground: true } },
+    ]).catch(() => {
+      // Without the button the notification still opens the calendar.
+    });
+  }
+  for (const r of input.supplements.slice(0, SUPPLEMENT_LIMIT)) {
     const at = fromDateKey(r.date);
     const [hour, minute] = r.time.split(':').map(Number);
     at.setHours(hour, minute, 0, 0);
     if (at.getTime() <= Date.now()) continue;
     await Notifications.scheduleNotificationAsync({
       identifier: `${PREFIX}supplements-${r.date}-${r.time}`,
-      content: { title: 'Integratori', body: r.body, data: { url: '/calendar' } },
+      content: {
+        title: r.title,
+        body: r.body,
+        categoryIdentifier: SUPPLEMENTS_CATEGORY,
+        data: { url: '/calendar', date: r.date, supplements: r.ids },
+      },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
     });
   }

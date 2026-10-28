@@ -39,8 +39,8 @@ export default function FoodsScreen() {
   // A recipe's values come from its ingredients, so it opens in the recipe editor.
   const edit = (food: Food) =>
     food.source === 'recipe'
-      ? router.push({ pathname: '/settings/recipe', params: { id: food.id } })
-      : router.push({ pathname: '/settings/food-edit', params: { foodId: food.id } });
+      ? router.push({ pathname: '/recipe', params: { id: food.id } })
+      : router.push({ pathname: '/food-edit', params: { foodId: food.id } });
   // As every row: it leaves at once with "Annulla"; holding it offers the same for who cannot
   // swipe. Entries already in the diary keep their values either way.
   const remove = (food: Food) =>
@@ -65,7 +65,7 @@ export default function FoodsScreen() {
       <View style={styles.gap} />
       <ListGroup>
         {list === 'custom' ? (
-          <ActionRow label="Crea alimento" onPress={() => router.push('/settings/food-edit')} />
+          <ActionRow label="Crea alimento" onPress={() => router.push('/food-edit')} />
         ) : list === 'favorites' ? (
           <ActionRow
             label="Aggiungi preferito"

@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   Alert,
@@ -23,7 +23,7 @@ import { Spacing } from '@/constants/theme';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
-import { addDays, daysBetween, type DateKey } from '@/lib/dates';
+import { addDays, daysBetween, isDateKey, type DateKey } from '@/lib/dates';
 import { mealForTime } from '@/lib/meals';
 import { formatExpiry, type ExpiryStatus } from '@/lib/provisioning';
 import { haptics } from '@/services/haptics';
@@ -38,6 +38,9 @@ export default function NutritionScreen() {
   const router = useRouter();
   const today = useToday();
   const expiry = useAppExpiry();
+  // A day opened from elsewhere, such as the calendar.
+  const params = useLocalSearchParams<{ date?: string }>();
+  const asked = isDateKey(params.date) ? params.date : null;
   const { width } = useWindowDimensions();
   const theme = useTheme();
 
@@ -47,7 +50,7 @@ export default function NutritionScreen() {
   // `base` is the day in the middle of the list; a day picked far away is first drawn in the
   // page beside the current one, slid to like any neighbour, and then the list is renumbered
   // around it so that page stays where it is.
-  const [base, setBase] = useState(today);
+  const [base, setBase] = useState(asked ?? today);
   const [incoming, setIncoming] = useState<{ index: number; date: DateKey } | null>(null);
   const days = useMemo(() => {
     const list = Array.from({ length: RANGE * 2 + 1 }, (_, i) => addDays(base, i - RANGE));
@@ -59,7 +62,7 @@ export default function NutritionScreen() {
   const list = useRef<FlatList<DateKey>>(null);
 
   // null means "today", so the diary moves to the new day when the app is reopened tomorrow.
-  const [selected, setSelected] = useState<DateKey | null>(null);
+  const [selected, setSelected] = useState<DateKey | null>(asked !== null && asked !== today ? asked : null);
   const date = selected ?? today;
   const pick = (day: DateKey) => setSelected(day === today ? null : day);
   // It opens on today, the day in the middle of the list.
@@ -170,6 +173,15 @@ export default function NutritionScreen() {
     setInteractiveDay(today);
   }, [today, selected]);
 
+  // Opened on a day from the calendar: slide to it as if it were picked above, then forget it, so
+  // the same day can be asked for again.
+  useEffect(() => {
+    if (asked === null) return;
+    if (dayAtShown.current !== asked) goTo(asked);
+    router.setParams({ date: undefined });
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [asked]);
+
   const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
     const index = Math.round(event.nativeEvent.contentOffset.x / width);
     if (moving.current) return;
@@ -211,10 +223,22 @@ export default function NutritionScreen() {
           Oggi
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
-      {/* Scanning is the quickest way to log food: the one button on the right, wider than an icon. */}
+      {/* Scanning is the quickest way to log food: the button on the far right, wider than an icon. */}
       <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Altro">
+          <Stack.Toolbar.MenuAction icon="target" onPress={() => router.push('/goals')}>
+            Obiettivi
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="fork.knife" onPress={() => router.push('/foods')}>
+            I miei alimenti
+          </Stack.Toolbar.MenuAction>
+          <Stack.Toolbar.MenuAction icon="frying.pan" onPress={() => router.push('/recipes')}>
+            Ricette e pasti salvati
+          </Stack.Toolbar.MenuAction>
+        </Stack.Toolbar.Menu>
         <Stack.Toolbar.Button
           {...WIDE}
+          separateBackground
           icon="barcode.viewfinder"
           accessibilityLabel="Scansiona codice a barre"
           onPress={() => router.push({ pathname: '/add/scan', params: { meal: mealForTime(), date } })}

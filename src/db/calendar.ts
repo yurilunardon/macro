@@ -9,6 +9,7 @@ import {
   type ActivityPlan,
   type ActivityRecord,
   type ActivityType,
+  type Occurrence,
   type Rotation,
   type StoredStatus,
   type WorkoutBrief,
@@ -459,4 +460,19 @@ export async function setPlanDay(db: SQLiteDatabase, planId: number, date: DateK
 export async function getPlanDay(db: SQLiteDatabase, planId: number, date: DateKey): Promise<ActivityRecord | null> {
   const row = await db.getFirstAsync<RecordRow>('SELECT * FROM activities WHERE plan_id = ? AND date = ?', planId, date);
   return row ? recordFromRow(row) : null;
+}
+
+/** Which day of the program a gym day is for, on that date only. */
+export async function setOccurrenceDay(
+  db: SQLiteDatabase,
+  occurrence: Pick<Occurrence, 'recordId' | 'planId' | 'date'>,
+  dayId: number | null,
+): Promise<void> {
+  if (occurrence.planId !== null) {
+    await setPlanDay(db, occurrence.planId, occurrence.date, { dayId });
+    return;
+  }
+  if (occurrence.recordId === null) return;
+  await db.runAsync('UPDATE activities SET day_id = ? WHERE id = ?', dayId, occurrence.recordId);
+  changed();
 }

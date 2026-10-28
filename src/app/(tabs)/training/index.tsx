@@ -28,13 +28,15 @@ import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Radius, Spacing } from '@/constants/theme';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
+import { setOccurrenceDay } from '@/db/calendar';
 import { prefetchLiveQuery, useLiveQuery } from '@/db/live';
 import { getNextDay, getPrograms, setNextDay } from '@/db/programs';
 import { deleteWorkout, getActiveWorkout, getWorkoutHistory, getWorkSetsBetween, startWorkout } from '@/db/workouts';
+import { useAgenda } from '@/hooks/use-agenda';
 import { useClock } from '@/hooks/use-clock';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
-import { formatDayTitle, weekOf } from '@/lib/dates';
+import { addDays, daysFrom, formatDayTitle, formatSoon, weekOf } from '@/lib/dates';
 import { MUSCLES } from '@/lib/exercises';
 import { countLabel, formatNumber } from '@/lib/format';
 import { formatDuration, formatWorkoutLength, setsPerMuscle, WEEKLY_SETS } from '@/lib/training';
@@ -59,6 +61,15 @@ export default function TrainingScreen() {
     ]);
     return { active, next, programs, history, volume };
   }, ['training']);
+  // The next gym day in the calendar, so this page says the same: "Oggi" and the same day of the program.
+  const soon = useAgenda(today, addDays(today, 13), today);
+  const gymTypeId = soon.data?.gymTypeId ?? null;
+  const nextGym =
+    daysFrom(today, addDays(today, 13))
+      .flatMap((date) => soon.agenda.get(date) ?? [])
+      .find((i) => i.kind === 'activity' && i.status === 'planned' && i.occurrence.typeId === gymTypeId) ?? null;
+  const gymPlanned = nextGym?.kind === 'activity' ? nextGym : null;
+  const hasGymDays = (soon.data?.plans ?? []).some((p) => p.typeId === gymTypeId);
   const breath = useBreath(Boolean(data?.active));
   // While the workout sheet rises, this page stays as it was; the card changes once covered.
   const [starting, setStarting] = useState(false);
@@ -96,6 +107,13 @@ export default function TrainingScreen() {
     (a, b) => (muscles.get(b.key) ?? 0) - (muscles.get(a.key) ?? 0),
   );
   const next = data?.next ?? null;
+  // A day of the program fixed by hand in the calendar wins over the rotation.
+  const plannedDay = gymPlanned?.dayId ?? null;
+  const deckDay = next && plannedDay !== null && next.program.days.some((d) => d.id === plannedDay) ? plannedDay : (next?.day.id ?? null);
+  const pickDay = (dayId: number) => {
+    if (gymPlanned && gymPlanned.occurrence.dayId !== null) void setOccurrenceDay(db, gymPlanned.occurrence, dayId);
+    else void setNextDay(db, dayId);
+  };
 
   return (
     <ScreenScroll>
@@ -156,11 +174,23 @@ export default function TrainingScreen() {
           {/* The next day on a pile of the program's days; ⌃⌄ picks another. */}
           <DayDeck
             program={next.program}
-            dayId={next.day.id}
-            onPick={(dayId) => void setNextDay(db, dayId)}
+            dayId={deckDay ?? next.day.id}
+            when={gymPlanned ? formatSoon(gymPlanned.occurrence.date, today) : null}
+            onPick={pickDay}
             onStart={(dayId) => void start(dayId)}
             onChangeProgram={() => router.push('/training/programs')}
           />
+          {/* Without gym days in the calendar there is no "today": one tap sets them up. */}
+          {soon.data && gymTypeId !== null && !hasGymDays ? (
+            <ListGroup style={styles.setup}>
+              <Row
+                icon={<Icon name="calendar.badge.plus" size={20} tone="accent" />}
+                title="Scegli i giorni di palestra"
+                subtitle="Il calendario ti dirà cosa fare ogni giorno"
+                onPress={() => router.push({ pathname: '/activity', params: { type: gymTypeId, repeat: '1' } })}
+              />
+            </ListGroup>
+          ) : null}
         </Animated.View>
       ) : data ? (
         <Card style={styles.hero}>
@@ -285,6 +315,7 @@ const styles = StyleSheet.create({
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveRing: { position: 'absolute', width: 8, height: 8, borderRadius: 4 },
   week: { gap: Spacing.md },
+  setup: { marginTop: Spacing.md },
   muscle: { gap: Spacing.xs },
   muscleTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
 });

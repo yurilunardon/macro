@@ -1,6 +1,6 @@
 import Constants from 'expo-constants';
 import * as Updates from 'expo-updates';
-import { useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { ActivityIndicator, Alert, Linking } from 'react-native';
@@ -12,11 +12,9 @@ import { toast } from '@/components/toast';
 import { pickBackup, restoreBackup, shareBackup } from '@/db/backup';
 import { exportBodyCsv, exportDiaryCsv } from '@/db/export';
 import { useLiveQuery } from '@/db/live';
-import { getTrainingSettings } from '@/db/days';
-import { getSetting, getTargets } from '@/db/settings';
+import { getSetting } from '@/db/settings';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { BackupFormatError } from '@/lib/backup';
-import { formatKcal } from '@/lib/format';
 import { formatExpiry } from '@/lib/provisioning';
 import { haptics } from '@/services/haptics';
 
@@ -37,16 +35,14 @@ export default function SettingsScreen() {
   const expiry = useAppExpiry();
 
   const { data } = useLiveQuery('settings', async (database) => {
-    const [goals, training, lastBackupAt, counts] = await Promise.all([
-      getTargets(database),
-      getTrainingSettings(database),
+    const [lastBackupAt, counts] = await Promise.all([
       getSetting(database, 'lastBackupAt'),
       database.getFirstAsync<{ entries: number; foods: number; recipes: number; meals: number }>(
         `SELECT (SELECT COUNT(*) FROM entries) AS entries, (SELECT COUNT(*) FROM foods) AS foods,
            (SELECT COUNT(*) FROM recipes) AS recipes, (SELECT COUNT(*) FROM saved_meals) AS meals`,
       ),
     ]);
-    return { ...goals, restTargets: training.restTargets, lastBackupAt, counts };
+    return { lastBackupAt, counts };
   }, ['food', 'settings']);
 
   const status = backupStatus(data?.lastBackupAt ?? null);
@@ -114,48 +110,15 @@ export default function SettingsScreen() {
 
   return (
     <ScreenScroll>
-      <SectionTitle>Obiettivi</SectionTitle>
-      <ListGroup>
-        <Row
-          title="Calorie e macro"
-          subtitle={
-            data
-              ? data.isDefault
-                ? 'Valori di esempio: impostali per te'
-                : data.restTargets
-                  ? `Allenamento ${formatKcal(data.targets.kcal)} · riposo ${formatKcal(data.restTargets.kcal)} kcal`
-                  : `P ${data.targets.protein} g · C ${data.targets.carbs} g · G ${data.targets.fat} g`
-              : null
-          }
-          detail={data && !data.restTargets ? `${formatKcal(data.targets.kcal)} kcal` : undefined}
-          icon={<Icon name="target" size={20} tone="accent" />}
-          onPress={() => router.push('/settings/goals')}
-        />
-      </ListGroup>
-
-      <SectionTitle>Alimenti</SectionTitle>
-      <ListGroup>
-        <Row
-          title="I miei alimenti"
-          subtitle="Creati da te, preferiti e salvati"
-          detail={data?.counts ? String(data.counts.foods) : undefined}
-          icon={<Icon name="fork.knife" size={20} tone="accent" />}
-          onPress={() => router.push('/settings/foods')}
-        />
-        <Row
-          title="Ricette e pasti salvati"
-          subtitle="Meal prep e pasti che ripeti spesso"
-          detail={data?.counts ? String(data.counts.recipes + data.counts.meals) : undefined}
-          icon={<Icon name="frying.pan.fill" size={20} tone="accent" />}
-          onPress={() => router.push('/settings/recipes')}
-        />
-      </ListGroup>
+      <Stack.Toolbar placement="left">
+        <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi" onPress={() => router.back()} />
+      </Stack.Toolbar>
 
       <SectionTitle>Notifiche</SectionTitle>
       <ListGroup>
         <Row
           title="Promemoria"
-          subtitle="Pesata, pasti e scadenza dell’app"
+          subtitle="Integratori, pesata, pasti, scadenza"
           icon={<Icon name="bell.fill" size={20} tone="accent" />}
           onPress={() => router.push('/settings/reminders')}
         />

@@ -11,7 +11,7 @@ export default function FoodEditScreen() {
   return (
     <>
       <Stack.Screen options={{ title: editing ? 'Correggi alimento' : 'Nuovo alimento' }} />
-      <FoodForm foodId={editing ? id : null} onSaved={() => router.back()} labelRoute="/settings/label" />
+      <FoodForm foodId={editing ? id : null} onSaved={() => router.back()} labelRoute="/label" />
     </>
   );
 }

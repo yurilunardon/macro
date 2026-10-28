@@ -162,6 +162,28 @@ export async function setDoseTaken(db: SQLiteDatabase, supplementId: number, dat
   notifyChange('calendar');
 }
 
+/** Ticks every dose of a day of these supplements, e.g. from the reminder's "Segna come presi". */
+export async function takeAllDoses(db: SQLiteDatabase, ids: readonly number[], date: DateKey): Promise<number> {
+  const now = new Date().toISOString();
+  let count = 0;
+  for (const id of ids) {
+    const row = await db.getFirstAsync<{ times_per_day: number }>('SELECT times_per_day FROM supplements WHERE id = ?', id);
+    if (!row) continue;
+    for (let index = 0; index < row.times_per_day; index++) {
+      await db.runAsync(
+        'INSERT OR IGNORE INTO supplement_doses (supplement_id, date, dose_index, taken_at) VALUES (?, ?, ?, ?)',
+        id,
+        date,
+        index,
+        now,
+      );
+    }
+    count++;
+  }
+  notifyChange('calendar');
+  return count;
+}
+
 /** Which doses of each supplement were ticked on a day, as id → indexes. */
 export async function getDosesOn(db: SQLiteDatabase, date: DateKey): Promise<Map<number, Set<number>>> {
   const rows = await db.getAllAsync<{ supplement_id: number; dose_index: number }>(

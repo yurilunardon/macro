@@ -30,6 +30,7 @@ import {
   updateActivity,
   updatePlan,
 } from '@/db/calendar';
+import { getTrainingSettings } from '@/db/days';
 import { useLiveQuery } from '@/db/live';
 import { getPrograms } from '@/db/programs';
 import { useTheme } from '@/hooks/use-theme';
@@ -58,7 +59,7 @@ type Draft = {
 
 async function loadDraft(
   db: ReturnType<typeof useSQLiteContext>,
-  params: { id?: string; plan?: string; date?: string; type?: string },
+  params: { id?: string; plan?: string; date?: string; type?: string; repeat?: string },
   today: DateKey,
 ): Promise<Draft | null> {
   const date = isDateKey(params.date) ? params.date : today;
@@ -108,7 +109,8 @@ async function loadDraft(
     dayId: null,
     note: null,
     status: 'planned',
-    weekdays: [weekdayOf(date)],
+    // Weekly from the start: the training days already chosen for the calorie targets.
+    weekdays: params.repeat === '1' ? (await getTrainingSettings(db)).trainingWeekdays : [weekdayOf(date)],
   };
 }
 
@@ -117,7 +119,7 @@ export default function ActivityScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
   const today = useToday();
-  const params = useLocalSearchParams<{ id?: string; plan?: string; date?: string; type?: string }>();
+  const params = useLocalSearchParams<{ id?: string; plan?: string; date?: string; type?: string; repeat?: string }>();
   const [draft, setDraft] = useState<Draft | null | undefined>(undefined);
   const { data: types } = useLiveQuery('activity-types', getActivityTypes, ['calendar']);
 
@@ -147,10 +149,11 @@ export default function ActivityScreen() {
       </View>
     );
   }
-  return <ActivityForm draft={draft} types={types} today={today} />;
+  // "repeat=1": a new activity that starts as a weekly one, e.g. the gym days.
+  return <ActivityForm draft={draft} types={types} today={today} weekly={draft.mode === 'plan' || (draft.mode === 'new' && params.repeat === '1')} />;
 }
 
-function ActivityForm({ draft, types, today }: { draft: Draft; types: ActivityType[]; today: DateKey }) {
+function ActivityForm({ draft, types, today, weekly }: { draft: Draft; types: ActivityType[]; today: DateKey; weekly: boolean }) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -161,7 +164,7 @@ function ActivityForm({ draft, types, today }: { draft: Draft; types: ActivityTy
   const type = types.find((t) => t.id === typeId);
   const isGym = type?.ref === GYM_REF;
   const [date, setDate] = useState(draft.date);
-  const [repeat, setRepeat] = useState(draft.mode === 'plan');
+  const [repeat, setRepeat] = useState(weekly);
   const [weekdays, setWeekdays] = useState(draft.weekdays);
   const [time, setTime] = useState(draft.time);
   const [minutes, setMinutes] = useState(draft.minutes);

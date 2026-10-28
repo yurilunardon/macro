@@ -23,7 +23,7 @@ export default function RecipesScreen() {
 
   const newRecipe = () => {
     recipeDraft.start();
-    router.push('/settings/recipe');
+    router.push('/recipe');
   };
 
   const hidden = usePendingDeletes();
@@ -41,7 +41,7 @@ export default function RecipesScreen() {
               title={food.name}
               subtitle={`${ingredientCount} ${ingredientCount === 1 ? 'ingrediente' : 'ingredienti'} · ${formatKcal(food.per100.kcal)} kcal / 100 g`}
               icon={<Icon name="frying.pan.fill" size={18} tone="accent" />}
-              onPress={() => router.push({ pathname: '/settings/recipe', params: { id: food.id } })}
+              onPress={() => router.push({ pathname: '/recipe', params: { id: food.id } })}
               onLongPress={() => removeRecipe(food.id)}
             />
           </SwipeToDelete>
@@ -61,7 +61,7 @@ export default function RecipesScreen() {
                 title={meal.name}
                 subtitle={`${meal.itemCount} ${meal.itemCount === 1 ? 'alimento' : 'alimenti'} · ${formatKcal(meal.totals.kcal)} kcal`}
                 icon={<Icon name="bookmark.fill" size={18} tone="accent" />}
-                onPress={() => router.push({ pathname: '/settings/saved-meal', params: { id: meal.id } })}
+                onPress={() => router.push({ pathname: '/saved-meal', params: { id: meal.id } })}
                 onLongPress={() => removeMeal(meal.id)}
               />
             </SwipeToDelete>

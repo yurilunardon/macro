@@ -24,9 +24,11 @@ export function WeightChart({ points, from, to }: { points: readonly WeightPoint
   const height = 180;
   const pad = { top: 12, bottom: 24, left: 36, right: 8 };
 
+  // Measured in both cases, so the chart has its width as soon as the weigh-ins arrive: the same
+  // view only changing what it holds reports no new layout.
   if (points.length === 0) {
     return (
-      <View style={[styles.empty, { height }]}>
+      <View onLayout={onLayout} style={[styles.empty, { height }]}>
         <AppText tone="textSecondary" align="center">
           Nessun peso registrato in questo periodo
         </AppText>

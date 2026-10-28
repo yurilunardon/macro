@@ -5,8 +5,9 @@ import { StyleSheet, View } from 'react-native';
 import { ActivityBadge } from '@/components/activity-badge';
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { Card, ListGroup, Row, SectionFooter } from '@/components/card';
+import { Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { ScreenScroll } from '@/components/screen';
+import { SupplementRecapRow } from '@/components/supplement-recap-row';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
@@ -85,6 +86,12 @@ export default function SupplementsScreen() {
               ? `Circa ${formatEuro(monthly)} al mese, ai prezzi delle confezioni. I giorni sono quelli che restano con le scorte.`
               : 'Con quantità e prezzo della confezione vedi quanto spendi al mese e quando finiscono.'}
           </SectionFooter>
+
+          <SectionTitle>Promemoria</SectionTitle>
+          <ListGroup>
+            <SupplementRecapRow />
+          </ListGroup>
+          <SectionFooter>Ogni integratore può avere anche un suo orario, nella sua scheda.</SectionFooter>
         </>
       ) : null}
     </ScreenScroll>

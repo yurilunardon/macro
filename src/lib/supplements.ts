@@ -219,11 +219,25 @@ export function formatEuro(value: number): string {
   return euro.format(value);
 }
 
-export type SupplementReminder = { date: DateKey; time: string; body: string };
+export type SupplementReminder = {
+  date: DateKey;
+  time: string;
+  title: string;
+  body: string;
+  /** The supplements it is about, to mark them as taken from the notification. */
+  ids: number[];
+};
+
+/** "A", "A e B", "A, B e C". */
+function joinNames(names: readonly string[]): string {
+  return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
+}
 
 /**
- * The reminders of the next `days` days: one per time of day, naming the supplements due then
- * and not ticked yet. Times already gone are left out.
+ * The reminders of the next days: one per time of day set on the supplements, naming the ones
+ * due then and not ticked yet; and, at `evening`, one with every supplement of the day still
+ * not ticked, which also stands in for the reminders set at that time or later. Times already
+ * gone are left out.
  */
 export function supplementReminders(
   supplements: readonly Supplement[],
@@ -231,20 +245,40 @@ export function supplementReminders(
   busy: ReadonlySet<DateKey>,
   dates: readonly DateKey[],
   now: { date: DateKey; time: string },
+  evening: string | null = null,
 ): SupplementReminder[] {
   const reminders: SupplementReminder[] = [];
   for (const date of dates) {
-    const byTime = new Map<string, string[]>();
-    for (const s of supplements) {
-      if (s.reminder === null || s.archived) continue;
+    const missing = supplements.filter((s) => {
+      if (s.archived) return false;
       const due = dosesDue(s, date, busy);
-      if (due === 0 || (taken.get(`${s.id}:${date}`) ?? 0) >= due) continue;
-      if (date === now.date && s.reminder <= now.time) continue;
-      const names = byTime.get(s.reminder) ?? [];
-      names.push(`${s.name} ${formatDose(s.dose, s.unit)}`);
-      byTime.set(s.reminder, names);
+      return due > 0 && (taken.get(`${s.id}:${date}`) ?? 0) < due;
+    });
+    const gone = (time: string) => date === now.date && time <= now.time;
+    const byTime = new Map<string, Supplement[]>();
+    for (const s of missing) {
+      // The evening reminder, when still to come, covers the ones set at its time or later.
+      if (s.reminder === null || gone(s.reminder) || (evening !== null && !gone(evening) && s.reminder >= evening)) continue;
+      byTime.set(s.reminder, [...(byTime.get(s.reminder) ?? []), s]);
     }
-    for (const [time, names] of [...byTime.entries()].sort()) reminders.push({ date, time, body: names.join(' · ') });
+    for (const [time, list] of [...byTime.entries()].sort()) {
+      reminders.push({
+        date,
+        time,
+        title: 'Integratori',
+        body: list.map((s) => `${s.name} ${formatDose(s.dose, s.unit)}`).join(' · '),
+        ids: list.map((s) => s.id),
+      });
+    }
+    if (evening !== null && missing.length > 0 && !gone(evening)) {
+      reminders.push({
+        date,
+        time: evening,
+        title: 'Integratori',
+        body: `Oggi non hai ancora preso ${joinNames(missing.map((s) => s.name))}.`,
+        ids: missing.map((s) => s.id),
+      });
+    }
   }
   return reminders;
 }

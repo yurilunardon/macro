@@ -5,17 +5,21 @@ import { ActivityIndicator, Pressable, StyleSheet, Switch, View } from 'react-na
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { FieldRow, Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
 import { Spacing } from '@/constants/theme';
-import { getLatestWeight } from '@/db/body';
-import { getTrainingSettings, setTrainingSettings, type TrainingSettings } from '@/db/days';
+import { getLatestWeight, getWeightsSince } from '@/db/body';
+import { getDayPlans, getTrainingSettings, setTrainingSettings, type TrainingSettings } from '@/db/days';
+import { getDailyTotals } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { getSetting, getTargets, setSetting } from '@/db/settings';
 import { useTheme } from '@/hooks/use-theme';
-import { formatKcal, numberToInput } from '@/lib/format';
+import { useToday } from '@/hooks/use-today';
+import { lastDays } from '@/lib/dates';
+import { estimateExpenditure } from '@/lib/expenditure';
+import { formatKcal, formatNumber, numberToInput } from '@/lib/format';
 import {
   ACTIVITY_LEVELS,
   GOAL_TYPES,
@@ -25,6 +29,7 @@ import {
   deriveRestTargets,
   parseProfile,
   parseTargets,
+  targetsFromExpenditure,
   totalDailyEnergy,
   type Profile,
   type ProfileFields,
@@ -241,6 +246,15 @@ function GoalsForm({
         </SectionFooter>
       ) : null}
 
+      <RealExpenditure
+        profile={parsedProfile.profile ?? profile}
+        onUse={(computed) => {
+          haptics.selection();
+          setTf(targetFields(computed));
+          setRf(targetFields(deriveRestTargets(computed)));
+        }}
+      />
+
       <SectionTitle>{split ? 'Giorni di allenamento' : 'Obiettivi giornalieri'}</SectionTitle>
       <ListGroup>
         <FieldRow label="Calorie" value={tf.kcal} onChangeText={setT('kcal')} suffix="kcal" numeric invalid={tInvalid('kcal')} />
@@ -329,7 +343,74 @@ function GoalsForm({
   );
 }
 
+/**
+ * What the body really burns, from the last four weeks of diary and weigh-ins: better than the
+ * formula above once there are enough of both. "Usa" fills the targets below with it.
+ */
+function RealExpenditure({
+  profile,
+  onUse,
+}: {
+  profile: Pick<Profile, 'goal' | 'proteinPerKg' | 'fatPercent'> | null;
+  onUse: (targets: Targets) => void;
+}) {
+  const today = useToday();
+  const { data } = useLiveQuery(`expenditure:${today}`, async (database) => {
+    const days = lastDays(today, 28);
+    const [totals, plans, weights, latest] = await Promise.all([
+      getDailyTotals(database, days[0], today),
+      getDayPlans(database, days),
+      getWeightsSince(database, days[0]),
+      getLatestWeight(database),
+    ]);
+    const eaten = new Map(totals.map((t) => [t.date, t.kcal]));
+    const intake = days.map((date) => ({ date, kcal: eaten.get(date) ?? 0, target: plans.get(date)?.targets.kcal ?? 0 }));
+    return { result: estimateExpenditure(intake, weights, today), latest: latest?.kg ?? null };
+  }, ['food', 'body', 'settings']);
+  if (!data) return null;
+  const { result, latest } = data;
+
+  return (
+    <>
+      <SectionTitle>Fabbisogno reale</SectionTitle>
+      <Card style={styles.card}>
+        {result.ok ? (
+          <>
+            <View>
+              <AppText variant="title" numeric>
+                {`${formatKcal(result.estimate.tdee)} kcal`}
+              </AppText>
+              <AppText variant="subhead" tone="textSecondary">
+                {`al giorno per mantenere il peso · stima ${result.estimate.confidence === 'high' ? 'affidabile' : 'indicativa'}`}
+              </AppText>
+            </View>
+            <AppText variant="footnote" tone="textSecondary" numeric>
+              {`Ultime 4 settimane: hai mangiato in media ${formatKcal(result.estimate.averageIntake)} kcal (${result.estimate.loggedDays} giorni completi) e il peso è cambiato di ${result.estimate.weeklyChange >= 0 ? '+' : '−'}${formatNumber(Math.abs(result.estimate.weeklyChange), 2)} kg a settimana (${result.estimate.weighIns} pesate).`}
+            </AppText>
+            <Button
+              title="Usa per gli obiettivi"
+              variant="tinted"
+              compact
+              disabled={latest === null}
+              onPress={() =>
+                latest !== null &&
+                onUse(targetsFromExpenditure(result.estimate.tdee, latest, profile ?? { goal: 'maintain', proteinPerKg: 2, fatPercent: 25 }))
+              }
+            />
+          </>
+        ) : (
+          <AppText variant="subhead" tone="textSecondary">
+            {`Incrociando calorie e peso calcolo quanto consumi davvero, meglio delle formule. ${result.reason}`}
+          </AppText>
+        )}
+      </Card>
+      {result.ok ? <SectionFooter>Con l’obiettivo, le proteine e i grassi scelti sopra. Poi tocca Salva obiettivi.</SectionFooter> : null}
+    </>
+  );
+}
+
 const styles = StyleSheet.create({
+  card: { gap: Spacing.lg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   intro: { paddingHorizontal: Spacing.xs },
   gap: { height: Spacing.md },

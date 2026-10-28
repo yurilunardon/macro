@@ -1,7 +1,7 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -44,6 +44,7 @@ import {
   type SupplementSchedule,
 } from '@/lib/supplements';
 import { haptics } from '@/services/haptics';
+import { ensureNotificationPermission } from '@/services/reminders';
 import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 /** A supplement: what, how much and when, the usual package with its price, and what is left. */
@@ -147,6 +148,8 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
     else await addSupplement(db, input, today);
     haptics.success();
     router.back();
+    // The evening reminder of the ones not taken is on from the start: ask once to send it.
+    if (!supplement && schedule !== 'asNeeded' && Platform.OS === 'ios') void ensureNotificationPermission().catch(() => {});
   };
 
   const buy = async () => {

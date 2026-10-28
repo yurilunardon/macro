@@ -1,5 +1,4 @@
 import { useRouter } from 'expo-router';
-import { NativeTabs } from 'expo-router/native-tabs';
 import { useSQLiteContext } from 'expo-sqlite';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Svg, { Circle } from 'react-native-svg';
@@ -27,7 +26,6 @@ export function WorkoutAccessory({ id, name, startedAt }: { id: number; name: st
   const router = useRouter();
   const theme = useTheme();
   const { names } = useExerciseNames();
-  const placement = NativeTabs.BottomAccessory.usePlacement();
   const rest = useRestTimer();
   const now = useClock(1000);
   const { data: workout } = useLiveQuery(`accessory:${id}`, (database) => getWorkout(database, id), ['training']);
@@ -57,25 +55,17 @@ export function WorkoutAccessory({ id, name, startedAt }: { id: number; name: st
       <Ring fraction={fraction} color={resting ? theme.warning : theme.accent} track={theme.track}>
         <Icon name={resting ? 'timer' : 'figure.strengthtraining.traditional'} size={15} tone={resting ? 'warning' : 'accent'} />
       </Ring>
-      {placement === 'inline' ? (
-        <AppText variant="headline" numeric style={ready && { color: theme.accent }}>
-          {time}
+      <View style={styles.flex}>
+        <AppText variant="headline" numberOfLines={1}>
+          {name}
         </AppText>
-      ) : (
-        <>
-          <View style={styles.flex}>
-            <AppText variant="headline" numberOfLines={1}>
-              {name}
-            </AppText>
-            <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-              {line}
-            </AppText>
-          </View>
-          <AppText numeric style={[styles.time, { color: ready ? theme.accent : resting ? theme.warning : theme.text }]}>
-            {time}
-          </AppText>
-        </>
-      )}
+        <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+          {line}
+        </AppText>
+      </View>
+      <AppText numeric style={[styles.time, { color: ready ? theme.accent : resting ? theme.warning : theme.text }]}>
+        {time}
+      </AppText>
     </Pressable>
   );
 }

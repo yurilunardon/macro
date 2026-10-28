@@ -30,3 +30,8 @@ export async function getWeightsSince(db: SQLiteDatabase, from: DateKey): Promis
 export async function getLatestWeight(db: SQLiteDatabase): Promise<Weight | null> {
   return db.getFirstAsync<Weight>('SELECT date, kg FROM weights ORDER BY date DESC LIMIT 1');
 }
+
+/** The weight of a day, or the last one logged before it; null when there is none up to that day. */
+export async function getWeightUpTo(db: SQLiteDatabase, date: DateKey): Promise<Weight | null> {
+  return db.getFirstAsync<Weight>('SELECT date, kg FROM weights WHERE date <= ? ORDER BY date DESC LIMIT 1', date);
+}

@@ -227,7 +227,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
       {heading}
       <Animated.View entering={FADE_IN}>
         {data.plan.isDefault ? (
-          <Pressable onPress={() => router.navigate('/settings/goals')} accessibilityRole="button">
+          <Pressable onPress={() => router.navigate('/goals')} accessibilityRole="button">
             <Card style={[styles.banner, { backgroundColor: theme.accentSoft }]}>
               <Icon name="target" size={22} tone="accent" />
               <View style={styles.flex}>

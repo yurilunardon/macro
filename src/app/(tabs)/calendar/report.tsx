@@ -6,11 +6,16 @@ import { ActivityBadge } from '@/components/activity-badge';
 import { AgendaRow } from '@/components/agenda-row';
 import { AppText } from '@/components/app-text';
 import { Card, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { CaloriesChart } from '@/components/charts';
 import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
+import { NutritionSummary } from '@/components/nutrition-summary';
 import { ProgressBar } from '@/components/progress';
 import { ScreenScroll } from '@/components/screen';
 import { Radius, Spacing } from '@/constants/theme';
+import { getWeightsSince } from '@/db/body';
+import { getDayPlans } from '@/db/days';
+import { getDailyTotals } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { getDosesTaken, getPurchasesBetween, getSupplements } from '@/db/supplements';
 import { getWorkoutHistory } from '@/db/workouts';
@@ -20,9 +25,11 @@ import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { busyDates, formatMinutes, summarizeActivity, type AgendaItem } from '@/lib/calendar';
 import { daysFrom, formatShortDate, isDateKey } from '@/lib/dates';
-import { countLabel, formatNumber } from '@/lib/format';
+import { countLabel, formatKcal, formatNumber } from '@/lib/format';
 import { buckets, formatDelta, formatPeriod, formatPrevious, isPeriod, periodRange, shiftPeriod, type Period } from '@/lib/report';
+import { summarizePeriod } from '@/lib/stats';
 import { adherence, formatEuro, percent } from '@/lib/supplements';
+import { formatChange } from '@/lib/weights';
 import { haptics } from '@/services/haptics';
 
 const PERIODS = [
@@ -36,7 +43,8 @@ const LOG_LIMIT = 60;
 
 /**
  * What was done in a week, a month or a year: active days, time, the gym, every kind of
- * activity and the supplements with what they cost, each against the period before.
+ * activity, what was eaten, the weight and the supplements with what they cost, each against
+ * the period before.
  */
 export default function ReportScreen() {
   const router = useRouter();
@@ -70,6 +78,42 @@ export default function ReportScreen() {
     },
     ['calendar', 'training'],
   );
+
+  // Food and weight, up to today: the days to come have nothing logged yet.
+  const lastDay = range.to < today ? range.to : today;
+  const { data: body } = useLiveQuery(
+    `report-body:${before.from}:${lastDay}`,
+    async (database) => {
+      const dates = range.from <= lastDay ? daysFrom(range.from, lastDay) : [];
+      const [totals, plans, weights] = await Promise.all([
+        dates.length > 0 ? getDailyTotals(database, range.from, lastDay) : Promise.resolve([]),
+        getDayPlans(database, dates),
+        getWeightsSince(database, before.from),
+      ]);
+      const eaten = new Map(totals.map((t) => [t.date, t]));
+      const food = dates.map((date) => {
+        const t = eaten.get(date);
+        const target = plans.get(date)?.targets;
+        return {
+          date,
+          kcal: t?.kcal ?? 0,
+          protein: t?.protein ?? 0,
+          carbs: t?.carbs ?? 0,
+          fat: t?.fat ?? 0,
+          targetKcal: target?.kcal ?? 0,
+          targetProtein: target?.protein ?? 0,
+        };
+      });
+      return { food, weights: weights.filter((w) => w.date <= lastDay) };
+    },
+    ['food', 'body', 'settings', 'calendar'],
+  );
+  const nutrition = body ? summarizePeriod(body.food) : null;
+  const weighIns = (body?.weights ?? []).filter((w) => w.date >= range.from);
+  const lastWeight = weighIns[weighIns.length - 1] ?? null;
+  // From the last weigh-in before the period, or its first one.
+  const startWeight = [...(body?.weights ?? [])].reverse().find((w) => w.date < range.from) ?? weighIns[0] ?? null;
+  const weightChange = lastWeight && startWeight && lastWeight.date !== startWeight.date ? lastWeight.kg - startWeight.kg : null;
 
   const spent = (extra?.purchases ?? []).reduce((sum, p) => sum + p.price, 0);
   const spentBefore = (extra?.previousPurchases ?? []).reduce((sum, p) => sum + p.price, 0);
@@ -125,6 +169,8 @@ export default function ReportScreen() {
         const p = percent(r.result);
         return `${r.supplement.name}: ${p !== null ? `${p}%` : `${r.taken} dosi`}`;
       }),
+      ...(nutrition ? [`Calorie in media: ${formatKcal(nutrition.average.kcal)} kcal`, `Proteine in media: ${formatNumber(nutrition.average.protein, 0)} g`] : []),
+      ...(lastWeight ? [`Peso: ${formatNumber(lastWeight.kg, 1)} kg${weightChange !== null ? ` (${formatChange(weightChange, 'kg', (n) => formatNumber(n, 1))})` : ''}`] : []),
       ...(spent > 0 ? [`Speso in integratori: ${formatEuro(spent)}`] : []),
     ];
     void Share.share({ message: lines.join('\n') });
@@ -231,6 +277,41 @@ export default function ReportScreen() {
         </>
       ) : null}
 
+      <SectionTitle>Alimentazione</SectionTitle>
+      <Card style={styles.food}>
+        {period !== 'year' && body ? (
+          <CaloriesChart days={body.food.map((d) => ({ date: d.date, kcal: d.kcal, target: d.targetKcal }))} />
+        ) : null}
+        {nutrition ? (
+          <NutritionSummary summary={nutrition} />
+        ) : (
+          <AppText variant="subhead" tone="textSecondary">
+            Nessun pasto registrato.
+          </AppText>
+        )}
+      </Card>
+      {nutrition ? (
+        <SectionFooter>
+          {`Medie sui ${nutrition.loggedDays} giorni con almeno un alimento registrato.${period !== 'year' ? ' Il tratteggio è l’obiettivo del giorno.' : ''}`}
+        </SectionFooter>
+      ) : null}
+
+      <SectionTitle>Peso</SectionTitle>
+      <ListGroup>
+        <Row
+          icon={<ActivityBadge symbol="scalemass.fill" color="blue" />}
+          title={lastWeight ? `${formatNumber(lastWeight.kg, 1)} kg` : 'Nessuna pesata'}
+          subtitle={
+            lastWeight
+              ? [weightChange !== null ? `${formatChange(weightChange, 'kg', (n) => formatNumber(n, 1))} nel periodo` : null, countLabel(weighIns.length, 'pesata', 'pesate')]
+                  .filter(Boolean)
+                  .join(' · ')
+              : null
+          }
+          onPress={() => router.push('/calendar/weight')}
+        />
+      </ListGroup>
+
       {supplementRows.length > 0 || spent > 0 ? (
         <>
           <SectionTitle>Integratori</SectionTitle>
@@ -334,6 +415,7 @@ const styles = StyleSheet.create({
     borderCurve: 'continuous',
   },
   chart: { marginTop: Spacing.lg },
+  food: { gap: Spacing.lg },
   bars: { flexDirection: 'row', gap: 6, height: 150, alignItems: 'flex-end' },
   barColumn: { flex: 1, alignItems: 'center', gap: 4, height: '100%' },
   barTotal: { height: 16 },

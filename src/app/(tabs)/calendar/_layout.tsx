@@ -11,6 +11,9 @@ export default function CalendarLayout() {
       <Stack.Screen name="supplements" options={{ title: 'Integratori' }} />
       <Stack.Screen name="activity-types" options={{ title: 'Tipi di attività' }} />
       <Stack.Screen name="report" options={{ title: 'Report' }} />
+      <Stack.Screen name="weight" options={{ title: 'Peso' }} />
+      <Stack.Screen name="weights" options={{ title: 'Pesate' }} />
+      <Stack.Screen name="measurements" options={{ title: 'Misure' }} />
     </Stack>
   );
 }

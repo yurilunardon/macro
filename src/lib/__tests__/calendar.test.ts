@@ -365,8 +365,30 @@ describe('supplementReminders', () => {
       { date: '2026-10-28', time: '09:30' },
     );
     expect(list).toEqual([
-      { date: '2026-10-29', time: '08:00', body: 'Omega 3 2 capsule' },
-      { date: '2026-10-29', time: '17:00', body: 'Caffeina 1 compressa' },
+      { date: '2026-10-29', time: '08:00', title: 'Integratori', body: 'Omega 3 2 capsule', ids: [2] },
+      { date: '2026-10-29', time: '17:00', title: 'Integratori', body: 'Caffeina 1 compressa', ids: [3] },
+    ]);
+  });
+
+  it('lists in the evening every supplement of the day not ticked yet', async () => {
+    const { supplementReminders } = await import('../supplements');
+    const creatine = supplement({ id: 1, name: 'Creatina' });
+    const omega = supplement({ id: 2, name: 'Omega 3', reminder: '08:00' });
+    const vitaminC = supplement({ id: 3, name: 'Vitamina C', reminder: '22:00' });
+    const protein = supplement({ id: 4, name: 'Proteine', schedule: 'asNeeded' });
+    const list = supplementReminders(
+      [creatine, omega, vitaminC, protein],
+      new Map([['1:2026-10-29', 1]]),
+      new Set(),
+      ['2026-10-28', '2026-10-29'],
+      { date: '2026-10-28', time: '21:45' },
+      '21:30',
+    );
+    // Today's evening reminder is gone, so the one at 22:00 stays; tomorrow the evening covers it.
+    expect(list).toEqual([
+      { date: '2026-10-28', time: '22:00', title: 'Integratori', body: 'Vitamina C 5 g', ids: [3] },
+      { date: '2026-10-29', time: '08:00', title: 'Integratori', body: 'Omega 3 5 g', ids: [2] },
+      { date: '2026-10-29', time: '21:30', title: 'Integratori', body: 'Oggi non hai ancora preso Omega 3 e Vitamina C.', ids: [2, 3] },
     ]);
   });
 });

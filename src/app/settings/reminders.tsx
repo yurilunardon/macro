@@ -7,6 +7,7 @@ import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
+import { SupplementRecapRow } from '@/components/supplement-recap-row';
 import { TimePicker } from '@/components/time-picker';
 import { useLiveQuery } from '@/db/live';
 import { getSetting, setSetting } from '@/db/settings';
@@ -119,6 +120,7 @@ export default function RemindersScreen() {
 
       <SectionTitle>Calendario</SectionTitle>
       <ListGroup>
+        <SupplementRecapRow />
         <Row
           title="Report del mese"
           subtitle="Il primo del mese, alle 9"
@@ -126,7 +128,7 @@ export default function RemindersScreen() {
           detail={switchFor(effective(settings.monthlyReport ?? true), toggleReport, 'Report del mese')}
         />
       </ListGroup>
-      <SectionFooter>I promemoria degli integratori si impostano in ognuno di essi.</SectionFooter>
+      <SectionFooter>L’avviso serale elenca gli integratori del giorno non ancora spuntati. Ogni integratore può avere anche un suo orario.</SectionFooter>
 
       <SectionTitle>AltStore</SectionTitle>
       <ListGroup>
