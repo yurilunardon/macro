@@ -216,51 +216,52 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
         </Pressable>
       ) : null}
 
-      <Card style={[styles.summary, GLASS_CARDS && styles.clear]}>
-            {GLASS_CARDS ? <GlassBackground /> : null}
-            <View style={styles.summaryHead}>
-              {dayType ? (
-                  <MenuButton
-                    inert={!interactive}
-                    icon={dayTypeIcon}
-                    title={dayTypeLabel}
-                    accessibilityLabel="Tipo di giorno: cambia gli obiettivi"
-                    groups={[
+      {/* Straight on the page, as the rings in Fitness: the day's totals are not one more box
+          among the meals. The version in a card is tagged diario-riepilogo-in-card. */}
+      <View style={styles.summary}>
+        <View style={styles.summaryHead}>
+          {dayType ? (
+              <MenuButton
+                inert={!interactive}
+                icon={dayTypeIcon}
+                title={dayTypeLabel}
+                accessibilityLabel="Tipo di giorno: cambia gli obiettivi"
+                groups={[
+                  {
+                    title: 'Obiettivi del giorno',
+                    actions: [
                       {
-                        title: 'Obiettivi del giorno',
-                        actions: [
-                          {
-                            label: 'Allenamento',
-                            icon: 'figure.strengthtraining.traditional',
-                            checked: dayType === 'training',
-                            onPress: () => changeDayType('training'),
-                          },
-                          { label: 'Riposo', icon: 'bed.double.fill', checked: dayType === 'rest', onPress: () => changeDayType('rest') },
-                        ],
+                        label: 'Allenamento',
+                        icon: 'figure.strengthtraining.traditional',
+                        checked: dayType === 'training',
+                        onPress: () => changeDayType('training'),
                       },
-                    ]}
-                  />
-              ) : (
-                <View />
-              )}
-              <AppText variant="subhead" tone="textSecondary" numeric>
-                <AppText variant="subhead" weight="600" numeric>
-                  {formatKcal(totals.kcal)}
-                </AppText>
-                {` / ${formatKcal(targets?.kcal ?? 0)} kcal`}
-              </AppText>
-            </View>
-            <View style={styles.summaryBody}>
-              <CalorieRing eaten={totals.kcal} target={targets?.kcal ?? 0} />
-              {targets ? (
-                <MacroBars
-                  totals={totals}
-                  targets={targets}
-                  onPress={(key) => router.push({ pathname: '/nutrients', params: { date, key } })}
-                />
-              ) : null}
-            </View>
-      </Card>
+                      { label: 'Riposo', icon: 'bed.double.fill', checked: dayType === 'rest', onPress: () => changeDayType('rest') },
+                    ],
+                  },
+                ]}
+              />
+          ) : (
+            <View />
+          )}
+          <AppText variant="subhead" tone="textSecondary" numeric>
+            <AppText variant="subhead" weight="600" numeric>
+              {formatKcal(totals.kcal)}
+            </AppText>
+            {` / ${formatKcal(targets?.kcal ?? 0)} kcal`}
+          </AppText>
+        </View>
+        <View style={styles.summaryBody}>
+          <CalorieRing eaten={totals.kcal} target={targets?.kcal ?? 0} />
+          {targets ? (
+            <MacroBars
+              totals={totals}
+              targets={targets}
+              onPress={(key) => router.push({ pathname: '/nutrients', params: { date, key } })}
+            />
+          ) : null}
+        </View>
+      </View>
 
       {MEALS.map((meal) => {
         const mealEntries = entries.filter((e) => e.meal === meal.key);
@@ -454,7 +455,7 @@ const styles = StyleSheet.create({
   loading: { minHeight: 700 },
   pressed: { opacity: 0.6 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
-  summary: { gap: Spacing.md, paddingTop: Spacing.md },
+  summary: { gap: Spacing.md, paddingBottom: Spacing.sm },
   summaryHead: { flexDirection: 'row', alignItems: 'center', justifyContent: 'space-between', minHeight: 32 },
   dayType: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2, paddingVertical: Spacing.xs },
   summaryBody: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
