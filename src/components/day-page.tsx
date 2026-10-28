@@ -341,8 +341,10 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                         hitSlop={4}
                         accessibilityRole="button"
                         accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}
-                        style={({ pressed }) => [styles.headerButton, pressed && styles.pressed]}>
-                        {addIcon}
+                        // A plain style: Link's Slot drops a style given as a function, and the
+                        // button then lost its size as soon as the day became interactive.
+                        style={styles.headerButton}>
+                        {({ pressed }) => <View style={pressed && styles.pressed}>{addIcon}</View>}
                       </Pressable>
                     </Link.Trigger>
                   </Link>

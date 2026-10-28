@@ -159,6 +159,13 @@ export default function NutritionScreen() {
   const onReady = (day: DateKey) => {
     if (waiting.current?.date === day) slide(waiting.current);
   };
+  // The pages get one function for good, which calls the latest: a new one on every render of
+  // the screen made all seven pages draw again at each change of day.
+  const onReadyRef = useRef(onReady);
+  useEffect(() => {
+    onReadyRef.current = onReady;
+  });
+  const [pageReady] = useState(() => (day: DateKey) => onReadyRef.current(day));
 
   // At midnight, or back after days away, today moves on: follow it if it was on screen.
   useEffect(() => {
@@ -199,7 +206,7 @@ export default function NutritionScreen() {
     <View style={[styles.page, { width }]}>
       <View onLayout={(event) => onPageLayout(item, event.nativeEvent.layout.height)}>
         <DayHeading date={item} today={today} />
-        <DayPage date={item} today={today} interactive={item === interactiveDay} onReady={onReady} />
+        <DayPage date={item} today={today} interactive={item === interactiveDay} onReady={pageReady} />
       </View>
     </View>
   );

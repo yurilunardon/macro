@@ -59,7 +59,6 @@ export default function TrainingScreen() {
     ]);
     return { active, next, programs, history, volume };
   }, ['training']);
-  const now = useClock(1000, Boolean(data?.active));
   const breath = useBreath(Boolean(data?.active));
   // While the workout sheet rises, this page stays as it was; the card changes once covered.
   const [starting, setStarting] = useState(false);
@@ -102,6 +101,18 @@ export default function TrainingScreen() {
     (a, b) => (muscles.get(b.key) ?? 0) - (muscles.get(a.key) ?? 0),
   );
   const next = data?.next ?? null;
+  const nextGroups = (upcoming: NonNullable<typeof next>) => [
+    {
+      title: `Giorni di ${upcoming.program.name}`,
+      actions: upcoming.program.days.map((d) => ({
+        label: d.name,
+        icon: dayIcon(d.name),
+        checked: d.id === upcoming.day.id,
+        onPress: () => pick(d.id),
+      })),
+    },
+    { actions: [{ label: 'Cambia scheda', icon: 'list.bullet.rectangle' as const, onPress: () => router.push('/training/programs') }] },
+  ];
 
   return (
     <ScreenScroll>
@@ -140,9 +151,7 @@ export default function TrainingScreen() {
                   <AppText variant="title" numberOfLines={1}>
                     {data.active?.name}
                   </AppText>
-                  <AppText variant="subhead" tone="textSecondary" numeric>
-                    {formatDuration((now - new Date(data.active?.startedAt ?? now).getTime()) / 1000)}
-                  </AppText>
+                  <Elapsed since={data.active.startedAt} />
                 </View>
                 {/* Small and to the side: ending is a rare, deliberate act here. */}
                 <Pressable
@@ -166,34 +175,22 @@ export default function TrainingScreen() {
             <AppText variant="footnote" weight="600" tone="textSecondary" style={styles.flex} numberOfLines={1}>
               {`PROSSIMO · ${next.program.name.toUpperCase()}`}
             </AppText>
+            {/*
+              ⌃⌄ in the card's corner, big enough to find at once: another day of this program,
+              or another program one step further, in the same menu. The name opens it too.
+            */}
+            <MenuButton icon="chevron.up.chevron.down" accessibilityLabel={`Prossimo giorno: ${next.day.name}. Scegli un altro giorno`} groups={nextGroups(next)}>
+              <View style={[styles.switch, { backgroundColor: theme.fill }]}>
+                <Icon name="chevron.up.chevron.down" size={16} tone="accent" weight="semibold" />
+              </View>
+            </MenuButton>
           </View>
-          {/*
-            The day reads as a value to pick (name and ⌃⌄), as pop-up buttons on iOS: it changes
-            the day within this program; another program is one step further, in the same menu.
-          */}
-          <MenuButton
-            icon="chevron.up.chevron.down"
-            accessibilityLabel={`Prossimo giorno: ${next.day.name}. Scegli un altro giorno`}
-            groups={[
-              {
-                title: `Giorni di ${next.program.name}`,
-                actions: next.program.days.map((d) => ({
-                  label: d.name,
-                  icon: dayIcon(d.name),
-                  checked: d.id === next.day.id,
-                  onPress: () => pick(d.id),
-                })),
-              },
-              {
-                actions: [{ label: 'Cambia scheda', icon: 'list.bullet.rectangle', onPress: () => router.push('/training/programs') }],
-              },
-            ]}>
+          <MenuButton icon="chevron.up.chevron.down" accessibilityLabel={`Prossimo giorno: ${next.day.name}. Scegli un altro giorno`} groups={nextGroups(next)}>
             <View style={styles.heroName}>
               <DayBadge name={next.day.name} size={40} />
               <AppText variant="title" numberOfLines={1} style={styles.shrink}>
                 {next.day.name}
               </AppText>
-              <Icon name="chevron.up.chevron.down" size={13} tone="textSecondary" weight="semibold" />
             </View>
           </MenuButton>
           <AppText variant="subhead" tone="textSecondary" numberOfLines={2}>
@@ -320,6 +317,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   hero: { gap: Spacing.xs },
   heroTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 32 },
+  // Over the card's padding, so the circle sits in its corner without pushing the name down.
+  switch: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginVertical: -Spacing.xs },
   pressed: { opacity: 0.6 },
   heroName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xs },
   heroButton: { marginTop: Spacing.md, gap: Spacing.xs },
@@ -341,6 +340,19 @@ const HERO_OUT = FadeOut.duration(160);
 const HERO_LAYOUT = LinearTransition.duration(260);
 const SECTION_IN = FadeIn.duration(200);
 const SECTION_OUT = FadeOut.duration(140);
+
+/**
+ * The time since the workout started. It ticks on its own: the clock in the screen redrew the
+ * whole page every second while a workout ran.
+ */
+function Elapsed({ since }: { since: string }) {
+  const now = useClock(1000);
+  return (
+    <AppText variant="subhead" tone="textSecondary" numeric>
+      {formatDuration((now - new Date(since).getTime()) / 1000)}
+    </AppText>
+  );
+}
 
 /** One beat shared by the card and its dot, so they breathe together: 0 → 1 → 0, about once a second each way. */
 function useBreath(running: boolean): SharedValue<number> {

@@ -1,7 +1,7 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useEffect, useState } from 'react';
+import { memo, useEffect, useState } from 'react';
 import Animated, {
   Easing,
   FadeIn,
@@ -123,6 +123,14 @@ export default function WorkoutScreen() {
   const [closing, setClosing] = useState(false);
   const [shown, setShown] = useState<Workout | null>(null);
   if (data?.workout && data.workout !== shown) setShown(data.workout);
+  // What a ticked set starts: the rest, with what comes next. Kept outside, so every set's
+  // handler stays the same function and a tick redraws the set ticked, not every row.
+  useEffect(() => {
+    const current = data?.workout;
+    latest.onSetDone = current
+      ? (setId, rest) => restTimer.start(rest, nextLabel(current, setId, (e) => names(e.exercise).title), { sound: data.sound })
+      : null;
+  });
 
   if (!data) {
     return (
@@ -171,10 +179,6 @@ export default function WorkoutScreen() {
     const todo = (ex: WorkoutExercise) => ex.sets.some((set) => !set.done);
     const next = exercises.slice(at + 1).find(todo) ?? exercises.slice(0, at).find(todo);
     fold(next ? [[id, true], [next.id, false]] : [[id, true]]);
-  };
-
-  const onSetDone = (setId: number, rest: number) => {
-    restTimer.start(rest, nextLabel(workout, setId, title), { sound: data.sound });
   };
 
   const removeExercise = async (ex: WorkoutExercise) => {
@@ -314,7 +318,6 @@ export default function WorkoutScreen() {
                   onEdit={() => setEditing(true)}
                   onFold={(value) => fold([[ex.id, value]])}
                   onCompleted={() => onCompleted(ex.id)}
-                  onSetDone={onSetDone}
                   onRemove={() => void removeExercise(ex)}
                 />
               </Jiggle>
@@ -363,7 +366,6 @@ type ExerciseBlockProps = {
   onFold: (collapsed: boolean) => void;
   /** Its last set was just ticked. */
   onCompleted: () => void;
-  onSetDone: (setId: number, rest: number) => void;
   onRemove: () => void;
 };
 
@@ -372,13 +374,11 @@ const folded = new Set<number>();
 /** The load suggested from last time, once taken, by exercise of the workout. */
 const taken = new Map<number, number>();
 
-function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, onEdit, onFold, onCompleted, onSetDone, onRemove }: ExerciseBlockProps) {
+function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, onEdit, onFold, onCompleted, onRemove }: ExerciseBlockProps) {
   const db = useSQLiteContext();
   // A set deleted is gone at once, with "Annulla" for a few seconds, as every row in the app.
   const hidden = usePendingDeletes();
   const item = { ...given, sets: given.sets.filter((set) => !hidden.has(`set:${set.id}`)) };
-  const removeSet = (setId: number) =>
-    deleteWithUndo({ key: `set:${setId}`, title: 'Serie eliminata', run: () => deleteSet(db, setId) });
   const theme = useTheme();
   const router = useRouter();
   const { exercise } = item;
@@ -416,15 +416,11 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
   // them under the bottom means less. Taking the suggested weight fills the sets still to do.
   const advice = complete ? null : progression(item.previous, plan, exercise.kind, loadIncrement(exercise.equipment));
   const [weight, setWeight] = useState<number | null>(() => taken.get(item.id) ?? null);
+  const [adviceOpen, setAdviceOpen] = useState(false);
   const takeWeight = (value: number) => {
     haptics.light();
     taken.set(item.id, value);
     setWeight(value);
-  };
-  const prefill = (index: number): LoggedSet | undefined => {
-    const last = item.previous[index];
-    if (weight === null) return last;
-    return last ? { ...last, weight } : { type: 'normal', weight, reps: null, seconds: null, rir: null, done: false };
   };
 
   // Folded with the set to do now inside, the exercise is picked out as that set would be.
@@ -516,20 +512,35 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
           <NoteRow text={exercise.note} icon="pin.fill" onPress={editNote} style={styles.noteRow} />
         ) : null}
         {advice ? (
+          // One line: what to do today. Why (last time's counts against the goal) on a tap.
           <View style={styles.adviceRow}>
-            <Icon
-              name={advice.direction === 'up' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'}
-              size={20}
-              tone={advice.direction === 'up' ? 'accent' : 'warning'}
-            />
-            <View style={styles.flex}>
-              <AppText variant="subhead" weight="600">
-                {adviceTitle(advice, exercise.kind)}
-              </AppText>
-              <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
-                {`L’ultima volta ${advice.counts.join(', ')} ${timed ? 's' : 'rip'}${plan ? `, obiettivo ${range}` : ''}`}
-              </AppText>
-            </View>
+            <Pressable
+              onPress={() => {
+                haptics.selection();
+                setAdviceOpen(!adviceOpen);
+              }}
+              accessibilityRole="button"
+              accessibilityState={{ expanded: adviceOpen }}
+              accessibilityHint="Mostra il perché"
+              style={styles.adviceText}>
+              <View style={styles.adviceTitle}>
+                <Icon
+                  name={advice.direction === 'up' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'}
+                  size={17}
+                  tone={advice.direction === 'up' ? 'accent' : 'warning'}
+                />
+                <AppText variant="subhead" weight="600" numberOfLines={1} style={styles.shrink}>
+                  {adviceTitle(advice, exercise.kind)}
+                </AppText>
+              </View>
+              {adviceOpen ? (
+                <Animated.View entering={DETAIL_IN}>
+                  <AppText variant="footnote" tone="textSecondary" numeric>
+                    {`L’ultima volta ${advice.counts.join(', ')} ${timed ? 's' : 'rip'}${plan ? `, obiettivo ${range}` : ''}`}
+                  </AppText>
+                </Animated.View>
+              ) : null}
+            </Pressable>
             {advice.weight !== null && weight !== advice.weight && item.sets.some((set) => !set.done) ? (
               <Pressable
                 onPress={() => advice.weight !== null && takeWeight(advice.weight)}
@@ -573,31 +584,21 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
         </View>
         {item.sets.map((set, index) => {
           const badge = set.type === 'warmup' ? 'R' : set.type === 'drop' ? 'D' : set.type === 'failure' ? 'C' : String(++ordinal);
-          const current = set.id === currentSetId;
-          const divided = index > 0;
           return (
-            <Animated.View key={set.id} entering={FadeIn.duration(200)} exiting={SET_OUT} layout={BLOCK_LAYOUT} style={styles.setSlot}>
-            <SwipeToDelete collapse={false} onDelete={() => removeSet(set.id)}>
-                <SetRow
-                  set={set}
-                  current={current}
-                  badge={badge}
-                  previous={item.previous[index]}
-                  prefill={prefill(index)}
-                  divided={divided}
-                  kind={exercise.kind}
-                  trackRir={exercise.trackRir}
-                  range={plan}
-                  onUpdate={(fields) => void updateSet(db, set.id, fields)}
-                  onComplete={async (fields) => {
-                    await updateSet(db, set.id, { ...fields, done: true });
-                    haptics.light();
-                    onSetDone(set.id, rest);
-                  }}
-                  onDelete={() => removeSet(set.id)}
-                />
-            </SwipeToDelete>
-            </Animated.View>
+            <SetRow
+              key={set.id}
+              set={set}
+              current={set.id === currentSetId}
+              badge={badge}
+              previous={item.previous[index]}
+              suggested={weight}
+              divided={index > 0}
+              kind={exercise.kind}
+              trackRir={exercise.trackRir}
+              repMin={item.repMin}
+              repMax={item.repMax}
+              rest={rest}
+            />
           );
         })}
         {/* Adding a set and the rest after each one: what is changed most while training. */}
@@ -618,44 +619,52 @@ function toText(value: number | null | undefined, decimals = 2): string {
   return value === null || value === undefined ? '' : numberToInput(value, decimals);
 }
 
+/** Started by a ticked set; see WorkoutScreen. */
+const latest: { onSetDone: ((setId: number, rest: number) => void) | null } = { onSetDone: null };
+
 type SetRowProps = {
   set: WorkoutSet;
   /** The set to do now. */
   current: boolean;
   badge: string;
+  /** What was done in the same set last time. */
   previous: LoggedSet | undefined;
-  /** What an untouched set starts from: last time's values, or the load suggested for today. */
-  prefill: LoggedSet | undefined;
+  /** The load suggested for today, once taken: an untouched set starts from it. */
+  suggested: number | null;
   /** A faint line above the set. */
   divided: boolean;
   kind: WorkoutExercise['exercise']['kind'];
   trackRir: boolean;
   /** The planned range of reps (or seconds), to flag a value well outside it. */
-  range: { min: number; max: number } | null;
-  onUpdate: (fields: SetFields) => void;
-  onComplete: (fields: SetFields) => void;
-  onDelete: () => void;
+  repMin: number | null;
+  repMax: number | null;
+  /** The rest started when it is ticked. */
+  rest: number;
 };
 
 /**
  * One set: its number (tap for warm-up, drop or failure), what was done last time, the values
  * (already filled in with last time's, to change if needed) and the tick that closes the set.
+ * It takes only data and handles its own changes, so it is drawn again only when it changes.
  */
-function SetRow({
-  set,
-  current,
-  badge,
-  previous,
-  prefill,
-  divided,
-  kind,
-  trackRir,
-  range,
-  onUpdate,
-  onComplete,
-  onDelete,
-}: SetRowProps) {
+const SetRow = memo(function SetRow({ set, current, badge, previous, suggested, divided, kind, trackRir, repMin, repMax, rest }: SetRowProps) {
+  const db = useSQLiteContext();
   const theme = useTheme();
+  const range = repMin !== null && repMax !== null ? { min: repMin, max: repMax } : null;
+  const prefill: LoggedSet | undefined =
+    suggested === null
+      ? previous
+      : previous
+        ? { ...previous, weight: suggested }
+        : { type: 'normal', weight: suggested, reps: null, seconds: null, rir: null, done: false };
+  const onUpdate = (fields: SetFields) => void updateSet(db, set.id, fields);
+  const onComplete = async (fields: SetFields) => {
+    await updateSet(db, set.id, { ...fields, done: true });
+    haptics.light();
+    latest.onSetDone?.(set.id, rest);
+  };
+  // A set deleted is gone at once, with "Annulla" for a few seconds, as every row in the app.
+  const onDelete = () => deleteWithUndo({ key: `set:${set.id}`, title: 'Serie eliminata', run: () => deleteSet(db, set.id) });
   // A set not touched yet starts from what was done last time, so most sets are just a tick.
   const touched = set.done || set.weight !== null || set.reps !== null || set.seconds !== null;
   const start = touched ? set : prefill;
@@ -784,6 +793,8 @@ function SetRow({
   );
 
   return (
+    <Animated.View entering={SET_IN} exiting={SET_OUT} layout={BLOCK_LAYOUT} style={styles.setSlot}>
+    <SwipeToDelete collapse={false} onDelete={onDelete}>
     <View style={set.done && { backgroundColor: `${theme.accent}1F` }}>
     {divided ? <View style={[styles.setDivider, { backgroundColor: theme.separator }]} /> : null}
     <Animated.View style={[styles.setRow, shakeStyle]}>
@@ -823,8 +834,10 @@ function SetRow({
       </Pressable>
     </Animated.View>
     </View>
+    </SwipeToDelete>
+    </Animated.View>
   );
-}
+});
 
 /**
  * "Termina allenamento" in a glass pill at the bottom, always in reach instead of at the end of
@@ -1037,6 +1050,7 @@ const REST_OUT = FadeOutDown.duration(320);
 const DONE_IN = FadeIn.duration(250);
 const CURRENT_IN = FadeIn.duration(260);
 const FLAG_IN = FadeIn.duration(220);
+const DETAIL_IN = FadeIn.duration(180);
 // Folding and unfolding: the sets fade across most of the card's resize, so the two read as one.
 const SETS_IN = FadeIn.duration(220).delay(80);
 const SETS_OUT = FadeOut.duration(200);
@@ -1048,6 +1062,7 @@ const COLLAPSE = { duration: 300, easing: Easing.inOut(Easing.quad) };
  * A set deleted closes its gap while the rows under it move up, on their curve, as in Mail: the
  * red of the swipe shrinks away instead of lingering under the rows sliding over it.
  */
+const SET_IN = FadeIn.duration(200);
 const SET_OUT = (values: ExitAnimationsValues): LayoutAnimation => {
   'worklet';
   return {
@@ -1125,7 +1140,10 @@ const styles = StyleSheet.create({
   exercise: {},
   exerciseFooter: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
-  adviceButton: { paddingHorizontal: Spacing.md, height: 32, borderRadius: 16, justifyContent: 'center' },
+  adviceText: { flex: 1, gap: 2 },
+  adviceTitle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2 },
+  shrink: { flexShrink: 1 },
+  adviceButton: { paddingHorizontal: Spacing.md, height: 28, borderRadius: 14, justifyContent: 'center' },
   exerciseHeader: {
     flexDirection: 'row',
     alignItems: 'center',

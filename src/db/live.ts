@@ -1,6 +1,8 @@
 import { useSQLiteContext, type SQLiteDatabase } from 'expo-sqlite';
 import { useEffect, useState, useSyncExternalStore } from 'react';
 
+import { shareEqual } from '@/lib/share-equal';
+
 /**
  * What a write touched. Screens re-read only when a topic they show has changed, so logging a
  * set does not make the diary, the stats and the settings query the database again.
@@ -34,6 +36,7 @@ type LiveState<T> = { data: T | undefined; error: unknown; loading: boolean };
 
 type Result<T> = { token: string; data: T | undefined; error: unknown };
 
+
 function versionOf(topics: readonly Topic[]): number {
   return topics.reduce((sum, topic) => sum + versions[topic], 0);
 }
@@ -54,7 +57,7 @@ export async function prefetchLiveQuery<T>(
   const token = `${key}#${versionOf(topics)}`;
   if (cache.get(key)?.token === token) return;
   try {
-    cache.set(key, { token, data: await query(db), error: undefined });
+    cache.set(key, { token, data: shareEqual(cache.get(key)?.data, await query(db)), error: undefined });
   } catch {
     // The screen runs it again and shows the error.
   }
@@ -84,7 +87,7 @@ export function useLiveQuery<T>(
     query(db).then(
       (data) => {
         if (cancelled) return;
-        const next = { token, data, error: undefined };
+        const next = { token, data: shareEqual(cache.get(key)?.data, data), error: undefined };
         cache.set(key, next);
         setResult(next);
       },

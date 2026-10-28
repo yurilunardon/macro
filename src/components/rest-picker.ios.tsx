@@ -82,33 +82,37 @@ export function RestPicker({ value, onChange }: RestPickerProps) {
             </HStack>
           </Popover.Trigger>
           <Popover.Content>
-            <VStack spacing={4} modifiers={[padding({ top: 14, horizontal: 12, bottom: 4 })]}>
-              <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(theme.textSecondary)]}>
-                Recupero dopo ogni serie
-              </Text>
-              <HStack spacing={0}>
-                <Picker
-                  selection={minutes}
-                  onSelectionChange={(m) => pick(m, seconds)}
-                  modifiers={[pickerStyle('wheel'), frame({ width: 110, height: 150 })]}>
-                  {MINUTES.map((m) => (
-                    <Text key={m} modifiers={[tag(m)]}>
-                      {`${m} min`}
-                    </Text>
-                  ))}
-                </Picker>
-                <Picker
-                  selection={seconds}
-                  onSelectionChange={(s) => pick(minutes, s)}
-                  modifiers={[pickerStyle('wheel'), frame({ width: 110, height: 150 })]}>
-                  {SECONDS.map((s) => (
-                    <Text key={s} modifiers={[tag(s)]}>
-                      {`${s} s`}
-                    </Text>
-                  ))}
-                </Picker>
-              </HStack>
-            </VStack>
+            {/* Built only while open: two wheels of SwiftUI views for every exercise, kept ready
+                and redrawn with the workout, weighed on the whole screen. */}
+            {open ? (
+              <VStack spacing={4} modifiers={[padding({ top: 14, horizontal: 12, bottom: 4 })]}>
+                <Text modifiers={[font({ size: 13, weight: 'semibold' }), foregroundStyle(theme.textSecondary)]}>
+                  Recupero dopo ogni serie
+                </Text>
+                <HStack spacing={0}>
+                  <Picker
+                    selection={minutes}
+                    onSelectionChange={(m) => pick(m, seconds)}
+                    modifiers={[pickerStyle('wheel'), frame({ width: 110, height: 150 })]}>
+                    {MINUTES.map((m) => (
+                      <Text key={m} modifiers={[tag(m)]}>
+                        {`${m} min`}
+                      </Text>
+                    ))}
+                  </Picker>
+                  <Picker
+                    selection={seconds}
+                    onSelectionChange={(s) => pick(minutes, s)}
+                    modifiers={[pickerStyle('wheel'), frame({ width: 110, height: 150 })]}>
+                    {SECONDS.map((s) => (
+                      <Text key={s} modifiers={[tag(s)]}>
+                        {`${s} s`}
+                      </Text>
+                    ))}
+                  </Picker>
+                </HStack>
+              </VStack>
+            ) : null}
           </Popover.Content>
         </Popover>
       </Host>

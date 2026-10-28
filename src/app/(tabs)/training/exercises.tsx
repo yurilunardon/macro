@@ -6,33 +6,25 @@ import { ScrollView, StyleSheet } from 'react-native';
 import { Row, SectionFooter } from '@/components/card';
 import { Chip } from '@/components/form';
 import { GroupedList } from '@/components/grouped-list';
-import { EXERCISE_SEARCH } from '@/constants/navigation';
 import { Spacing } from '@/constants/theme';
 import { searchExercises } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
 import { setSetting } from '@/db/settings';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { equipmentLabel, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
+import { exerciseSearch } from '@/services/search-query';
 
 /** The whole exercise library, to look at an exercise's history or change its blocks. */
 export default function ExercisesScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const { language, names } = useExerciseNames();
-  const [query, setQuery] = useState('');
+  const query = exerciseSearch.useQuery();
   const [muscle, setMuscle] = useState<Muscle | null>(null);
   const { data } = useLiveQuery(`exercises:${query}:${muscle ?? ''}`, (database) => searchExercises(database, { query, muscle }), ['training', 'settings']);
 
   return (
     <>
-      <Stack.Screen
-        options={{
-          headerSearchBarOptions: {
-            ...EXERCISE_SEARCH,
-            onChangeText: (event) => setQuery(event.nativeEvent.text),
-          },
-        }}
-      />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu separateBackground icon="textformat" accessibilityLabel="Lingua dei nomi">
           <Stack.Toolbar.MenuAction isOn={language === 'en'} onPress={() => void setSetting(db, 'exerciseNames', 'en')}>

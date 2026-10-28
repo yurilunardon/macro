@@ -7,7 +7,6 @@ import { AppText } from '@/components/app-text';
 import { ActionRow, Row } from '@/components/card';
 import { Chip } from '@/components/form';
 import { GroupedList } from '@/components/grouped-list';
-import { EXERCISE_SEARCH } from '@/constants/navigation';
 import { Spacing } from '@/constants/theme';
 import { applyPick, isPickerTarget, type PickerTarget } from '@/db/exercise-picks';
 import { searchExercises, type Exercise } from '@/db/exercises';
@@ -15,6 +14,7 @@ import { useLiveQuery } from '@/db/live';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { equipmentLabel, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
 import { haptics } from '@/services/haptics';
+import { pickerSearch } from '@/services/search-query';
 
 /** The exercise library to choose from: native search, a filter by muscle, the most used first. */
 export default function ExercisePickerScreen() {
@@ -23,7 +23,7 @@ export default function ExercisePickerScreen() {
   const params = useLocalSearchParams<{ target?: string; id?: string }>();
   const target: PickerTarget = isPickerTarget(params.target) ? params.target : 'workout';
   const id = Number(params.id);
-  const [query, setQuery] = useState('');
+  const query = pickerSearch.useQuery();
   const [muscle, setMuscle] = useState<Muscle | null>(null);
   const { names } = useExerciseNames();
   const { data } = useLiveQuery(`exercise-picker:${query}:${muscle ?? ''}`, (database) =>
@@ -45,10 +45,6 @@ export default function ExercisePickerScreen() {
       <Stack.Screen
         options={{
           title: target === 'replace' ? 'Sostituisci esercizio' : 'Aggiungi esercizio',
-          headerSearchBarOptions: {
-            ...EXERCISE_SEARCH,
-            onChangeText: (event) => setQuery(event.nativeEvent.text),
-          },
         }}
       />
       <Stack.Toolbar placement="left">
