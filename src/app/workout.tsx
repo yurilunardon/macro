@@ -3,7 +3,7 @@ import { Stack, useNavigation, useRouter } from 'expo-router';
 import type { NativeStackNavigationProp } from 'expo-router/native-stack';
 import type { ParamListBase } from 'expo-router/react-navigation';
 import { useSQLiteContext } from 'expo-sqlite';
-import { memo, useEffect, useState } from 'react';
+import { memo, useEffect, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react';
 import Animated, {
   Easing,
   FadeIn,
@@ -25,7 +25,18 @@ import Animated, {
   type LayoutAnimation,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View, type StyleProp, type ViewStyle } from 'react-native';
+import {
+  ActivityIndicator,
+  InputAccessoryView,
+  Keyboard,
+  Platform,
+  Pressable,
+  StyleSheet,
+  TextInput,
+  View,
+  type StyleProp,
+  type ViewStyle,
+} from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Sortable from 'react-native-sortables';
 
@@ -264,11 +275,21 @@ export default function WorkoutScreen() {
         <Stack.Toolbar placement="left">
           <Stack.Toolbar.Button icon="chevron.down" accessibilityLabel="Riduci: l’allenamento continua" onPress={() => router.back()} />
         </Stack.Toolbar>
+        {/*
+          As in Strong and Hevy, ending the workout is the one button on the right, green; the rest
+          is in ⋯. While editing, only ✓ to stop.
+        */}
         <Stack.Toolbar placement="right">
-          <Stack.Toolbar.Button {...editButton({ editing, onChange: setEditing })} />
+          {editing ? <Stack.Toolbar.Button {...editButton({ editing, onChange: setEditing })} /> : null}
+          {editing ? null : (
           <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
-            <Stack.Toolbar.MenuAction icon="flag.checkered" onPress={() => void finish()}>
-              Termina allenamento
+            <Stack.Toolbar.MenuAction
+              icon="pencil"
+              onPress={() => {
+                haptics.selection();
+                setEditing(true);
+              }}>
+              Modifica esercizi
             </Stack.Toolbar.MenuAction>
             <Stack.Toolbar.MenuAction icon="plus" onPress={addExercise}>
               Aggiungi esercizio
@@ -280,6 +301,12 @@ export default function WorkoutScreen() {
               Annulla allenamento
             </Stack.Toolbar.MenuAction>
           </Stack.Toolbar.Menu>
+          )}
+          {editing ? null : (
+            <Stack.Toolbar.Button variant="prominent" separateBackground accessibilityLabel="Termina allenamento" onPress={() => void finish()}>
+              Termina
+            </Stack.Toolbar.Button>
+          )}
         </Stack.Toolbar>
 
         {workout.notes ? (
@@ -356,7 +383,8 @@ export default function WorkoutScreen() {
         </View>
       </ScreenScroll>
       {/* Out of edit mode, "Termina" waits at the bottom whenever no rest is running. */}
-      <RestBar onFinish={editing ? undefined : () => void finish()} />
+      <RestBar />
+      <KeyboardBar />
     </>
   );
 }
@@ -463,21 +491,18 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
           {holdsCurrent && !editing ? (
             <Animated.View entering={CURRENT_IN} exiting={SETS_OUT} pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.fill }]} />
           ) : null}
+          {/* The name opens the exercise's history, charts and records, as in Strong; ⌄ folds it. */}
           <Pressable
             // In edit mode the whole block is the sortable list's, to drag.
             disabled={editing}
-            onPress={() => {
-              haptics.selection();
-              onFold(!collapsed);
-            }}
+            onPress={() => router.push({ pathname: '/exercise-info', params: { id: exercise.id } })}
             onLongPress={() => {
               haptics.medium();
               onEdit();
             }}
             delayLongPress={350}
             accessibilityRole="button"
-            accessibilityState={{ expanded: !collapsed }}
-            accessibilityHint={collapsed ? 'Mostra le serie' : 'Nascondi le serie'}
+            accessibilityHint="Mostra storico e record. Tieni premuto per modificare gli esercizi"
             style={styles.exerciseTitle}>
             {complete ? (
               <Animated.View entering={DONE_IN}>
@@ -496,6 +521,18 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
                   : [names.subtitle, range ? `${item.sets.length} × ${range}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
               </AppText>
             </View>
+          </Pressable>
+          <Pressable
+            disabled={editing}
+            onPress={() => {
+              haptics.selection();
+              onFold(!collapsed);
+            }}
+            hitSlop={4}
+            accessibilityRole="button"
+            accessibilityState={{ expanded: !collapsed }}
+            accessibilityLabel={collapsed ? 'Mostra le serie' : 'Nascondi le serie'}
+            style={styles.fold}>
             <FoldChevron open={!collapsed} />
           </Pressable>
           {/* Still there in edit mode, so nothing moves; only the drag takes the block then. */}
@@ -609,7 +646,6 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
             <SetRow
               key={set.id}
               set={set}
-              current={set.id === currentSetId}
               badge={badge}
               previous={item.previous[index]}
               suggested={weight}
@@ -619,6 +655,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
               repMin={item.repMin}
               repMax={item.repMax}
               rest={rest}
+              loadStep={loadIncrement(exercise.equipment)}
               settled={settled}
             />
           );
@@ -641,13 +678,83 @@ function toText(value: number | null | undefined, decimals = 2): string {
   return value === null || value === undefined ? '' : numberToInput(value, decimals);
 }
 
+/** The bar over the keyboard of every value box: − and + by a step, and "Fine". */
+const KEYBOARD_BAR = Platform.OS === 'ios' ? 'workout-keyboard' : undefined;
+
+/** The value box being typed in: how far − and + move it, and how. */
+type Nudge = { step: number; by: (delta: number) => void };
+const nudge = (() => {
+  let current: Nudge | null = null;
+  const listeners = new Set<() => void>();
+  return {
+    set(next: Nudge | null) {
+      current = next;
+      for (const listener of listeners) listener();
+    },
+    subscribe(listener: () => void) {
+      listeners.add(listener);
+      return () => {
+        listeners.delete(listener);
+      };
+    },
+    get: () => current,
+  };
+})();
+
+/**
+ * Over the keyboard while a value is typed: − and + by the step of that box (the load by the
+ * smallest plates of its equipment, reps by one), as the keypad of Strong, so a load changes with
+ * a thumb instead of retyping it. "Fine" closes the keyboard.
+ */
+function KeyboardBar() {
+  const theme = useTheme();
+  const target = useSyncExternalStore(nudge.subscribe, nudge.get);
+  if (!KEYBOARD_BAR) return null;
+  const step = target ? formatNumber(target.step, 2) : '';
+  const press = (delta: number) => {
+    haptics.selection();
+    target?.by(delta);
+  };
+  return (
+    <InputAccessoryView nativeID={KEYBOARD_BAR} backgroundColor="transparent">
+      <View style={styles.keyboardBar}>
+        {target ? (
+          <>
+            <Pressable
+              onPress={() => press(-target.step)}
+              accessibilityRole="button"
+              accessibilityLabel={`Togli ${step}`}
+              style={({ pressed }) => [styles.keyButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
+              <AppText variant="headline" numeric>{`−${step}`}</AppText>
+            </Pressable>
+            <Pressable
+              onPress={() => press(target.step)}
+              accessibilityRole="button"
+              accessibilityLabel={`Aggiungi ${step}`}
+              style={({ pressed }) => [styles.keyButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
+              <AppText variant="headline" numeric>{`+${step}`}</AppText>
+            </Pressable>
+          </>
+        ) : null}
+        <View style={styles.flex} />
+        <Pressable
+          onPress={() => Keyboard.dismiss()}
+          accessibilityRole="button"
+          style={({ pressed }) => [styles.keyButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
+          <AppText variant="headline" tone="accent">
+            Fine
+          </AppText>
+        </Pressable>
+      </View>
+    </InputAccessoryView>
+  );
+}
+
 /** Started by a ticked set; see WorkoutScreen. */
 const latest: { onSetDone: ((setId: number, rest: number) => void) | null } = { onSetDone: null };
 
 type SetRowProps = {
   set: WorkoutSet;
-  /** The set to do now. */
-  current: boolean;
   badge: string;
   /** What was done in the same set last time. */
   previous: LoggedSet | undefined;
@@ -662,6 +769,8 @@ type SetRowProps = {
   repMax: number | null;
   /** The rest started when it is ticked. */
   rest: number;
+  /** What − and + over the keyboard take off or add to the load. */
+  loadStep: number;
   /** The sheet is up: the set's native menu can be built. */
   settled: boolean;
 };
@@ -671,7 +780,7 @@ type SetRowProps = {
  * (already filled in with last time's, to change if needed) and the tick that closes the set.
  * It takes only data and handles its own changes, so it is drawn again only when it changes.
  */
-const SetRow = memo(function SetRow({ set, current, badge, previous, suggested, divided, kind, trackRir, repMin, repMax, rest, settled }: SetRowProps) {
+const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, kind, trackRir, repMin, repMax, rest, loadStep, settled }: SetRowProps) {
   const db = useSQLiteContext();
   const theme = useTheme();
   const range = repMin !== null && repMax !== null ? { min: repMin, max: repMax } : null;
@@ -776,7 +885,16 @@ const SetRow = memo(function SetRow({ set, current, badge, previous, suggested, 
     onComplete(filled);
   };
 
-  const field = (value: string, onChange: (text: string) => void, placeholder: string, label: string, flagged = false) => (
+  /** A value box. `step` is what − and + over the keyboard move it by while it is being typed in. */
+  const field = (
+    value: string,
+    onChange: Dispatch<SetStateAction<string>>,
+    placeholder: string,
+    label: string,
+    step: number,
+    decimals: number,
+    flagged = false,
+  ) => (
     <>
     <TextInput
       value={value}
@@ -784,11 +902,20 @@ const SetRow = memo(function SetRow({ set, current, badge, previous, suggested, 
         setMissing(false);
         onChange(text);
       }}
+      onFocus={() =>
+        nudge.set({
+          step,
+          by: (delta) => {
+            setMissing(false);
+            onChange((text) => toText(Math.max(0, Math.round(((parseDecimal(text) ?? 0) + delta) * 100) / 100), decimals));
+          },
+        })
+      }
       onEndEditing={() => onUpdate(values())}
       placeholder={placeholder}
       placeholderTextColor={theme.textTertiary}
       keyboardType="decimal-pad"
-      inputAccessoryViewButtonLabel="Fine"
+      inputAccessoryViewID={KEYBOARD_BAR}
       selectTextOnFocus
       editable={!set.done}
       accessibilityLabel={label}
@@ -822,26 +949,23 @@ const SetRow = memo(function SetRow({ set, current, badge, previous, suggested, 
     <View style={set.done && { backgroundColor: `${theme.accent}1F` }}>
     {divided ? <View style={[styles.setDivider, { backgroundColor: theme.separator }]} /> : null}
     <Animated.View style={[styles.setRow, shakeStyle]}>
-      {/* The set to do now: its number in a green circle, as today in the week strip. Only that
-          changes, so the eye goes straight to it. */}
+      {/* No mark for the set to do now, as in Strong and Hevy: the sets done turn green, and the
+          next one is the first still white. */}
       <View style={styles.colSet}>
-        {current ? (
-          <Animated.View entering={CURRENT_IN} pointerEvents="none" style={[styles.currentBadge, { backgroundColor: theme.accent }]} />
-        ) : null}
-        <SetTypeMenu inert={!settled} badge={badge} type={set.type} done={set.done} current={current} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
+        <SetTypeMenu inert={!settled} badge={badge} type={set.type} done={set.done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
       </View>
       <AppText variant="subhead" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
         {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
       </AppText>
       {kind === 'time' ? (
-        <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi', outside !== null)}</View>
+        <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi', 5, 0, outside !== null)}</View>
       ) : (
         <>
-          <View style={styles.colInput}>{field(weight, setWeight, 'kg', 'Chili')}</View>
-          <View style={styles.colInput}>{field(reps, setReps, 'rip', 'Ripetizioni', outside !== null)}</View>
+          <View style={styles.colInput}>{field(weight, setWeight, 'kg', 'Chili', loadStep, 2)}</View>
+          <View style={styles.colInput}>{field(reps, setReps, 'rip', 'Ripetizioni', 1, 0, outside !== null)}</View>
         </>
       )}
-      {trackRir ? <View style={styles.colRir}>{field(rir, setRir, '–', 'Ripetizioni in riserva')}</View> : null}
+      {trackRir ? <View style={styles.colRir}>{field(rir, setRir, '–', 'Ripetizioni in riserva', 1, 1)}</View> : null}
       <Pressable
         onPress={tick}
         hitSlop={6}
@@ -862,35 +986,6 @@ const SetRow = memo(function SetRow({ set, current, badge, previous, suggested, 
     </Animated.View>
   );
 });
-
-/**
- * "Termina allenamento" in a glass pill at the bottom, always in reach instead of at the end of
- * the page. It makes way for the rest bar while resting, and comes back after.
- */
-function FinishPill({ onPress, bottom }: { onPress: () => void; bottom: number }) {
-  const theme = useTheme();
-  const label = (
-    <>
-      <Icon name="flag.checkered" size={18} tone="danger" weight="semibold" />
-      <AppText variant="headline" tone="danger">
-        Termina allenamento
-      </AppText>
-    </>
-  );
-  return (
-    <Animated.View entering={PILL_IN} exiting={PILL_OUT} pointerEvents="box-none" style={[styles.pillSlot, { bottom }]}>
-      <Pressable onPress={onPress} accessibilityRole="button" style={({ pressed }) => pressed && styles.pressed}>
-        {glass ? (
-          <GlassView style={styles.pill} glassEffectStyle="regular" isInteractive>
-            {label}
-          </GlassView>
-        ) : (
-          <View style={[styles.pill, styles.restSolid, { backgroundColor: theme.card, borderColor: theme.separator }]}>{label}</View>
-        )}
-      </Pressable>
-    </Animated.View>
-  );
-}
 
 /**
  * The time of the workout, big in the bar at the top, with its name small above it. It ticks on
@@ -941,7 +1036,7 @@ function bestSet(sets: readonly WorkoutSet[]): WorkoutSet | null {
  * When it is over it turns into "Vai!" and stays, with the phone buzzing, until "Vai" is
  * pressed or the next set is ticked.
  */
-function RestBar({ onFinish }: { onFinish?: () => void }) {
+function RestBar() {
   const theme = useTheme();
   const insets = useSafeAreaInsets();
   const rest = useRestTimer();
@@ -986,7 +1081,7 @@ function RestBar({ onFinish }: { onFinish?: () => void }) {
     );
   };
 
-  if (!rest) return onFinish ? <FinishPill onPress={onFinish} bottom={insets.bottom + Spacing.sm} /> : null;
+  if (!rest) return null;
   const left = (rest.endsAt - now) / 1000;
   const over = left <= 0 && !skipping;
   // Green with the whole rest ahead, through orange, to red as it runs out.
@@ -1067,8 +1162,6 @@ function mix(from: string, to: string, t: number): string {
   return `#${parts.map((p) => p.toString(16).padStart(2, '0')).join('')}`;
 }
 
-const PILL_IN = FadeInDown.duration(260).delay(120);
-const PILL_OUT = FadeOutDown.duration(160);
 const REST_IN = FadeInDown.springify().damping(18).stiffness(180);
 const REST_OUT = FadeOutDown.duration(320);
 const DONE_IN = FadeIn.duration(250);
@@ -1178,22 +1271,22 @@ const styles = StyleSheet.create({
     minHeight: 60,
   },
   exerciseTitle: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingRight: Spacing.xs },
+  fold: { width: 36, height: 44, alignItems: 'center', justifyContent: 'center' },
   noteRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm, minHeight: 36 },
   tableHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
   // Clips a deleted set as it closes.
   setSlot: { overflow: 'hidden' },
-  setDivider: { position: 'absolute', top: 0, left: Spacing.md + 44, right: Spacing.md, height: StyleSheet.hairlineWidth, opacity: 0.6 },
+  setDivider: { position: 'absolute', top: 0, left: Spacing.md + 40, right: Spacing.md, height: StyleSheet.hairlineWidth, opacity: 0.6 },
   // On the top right corner of the reps box.
   flag: { position: 'absolute', top: -8, right: -9 },
   setRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
-  colSet: { width: 44, alignItems: 'center', justifyContent: 'center', textAlign: 'center' },
-  currentBadge: { position: 'absolute', width: 30, height: 30, borderRadius: 15 },
+  colSet: { width: 40, alignItems: 'center', justifyContent: 'center', textAlign: 'center' },
   colPrev: { flex: 1 },
   colInput: { width: 62, textAlign: 'center' },
   colRir: { width: 44, textAlign: 'center' },
-  colCheck: { width: 40 },
+  colCheck: { width: 44 },
   input: {
-    height: 40,
+    height: 44,
     borderRadius: Radius.sm,
     borderCurve: 'continuous',
     textAlign: 'center',
@@ -1201,16 +1294,16 @@ const styles = StyleSheet.create({
     fontWeight: '600',
     fontVariant: ['tabular-nums'],
   },
-  check: { height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  // 44 points high, the least Apple asks for a target: tapped mid-workout, often in a hurry.
+  check: { height: 44, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   footer: { paddingTop: Spacing.xl, gap: Spacing.md },
   dimmed: { opacity: 0.4 },
   bottomSpace: { height: 170 },
   skipped: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   restDisabled: { opacity: 0.35 },
   restSlot: { position: 'absolute', left: Spacing.md, right: Spacing.md },
-  pillSlot: { position: 'absolute', left: 0, right: 0, alignItems: 'center' },
-  pressed: { opacity: 0.6 },
-  pill: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, height: 56, paddingHorizontal: Spacing.xl + Spacing.sm, borderRadius: 28 },
+  keyboardBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+  keyButton: { minWidth: 64, height: 40, paddingHorizontal: Spacing.md, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   restTimeRow: { alignSelf: 'flex-start', transformOrigin: 'left center' },
   bump: { position: 'absolute', left: 84, top: 0, width: 64 },
   restBar: {

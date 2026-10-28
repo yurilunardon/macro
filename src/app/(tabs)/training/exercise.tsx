@@ -21,8 +21,12 @@ import { formatNumber } from '@/lib/format';
 import { estimateOneRepMax, formatSet, isWorkSet } from '@/lib/training';
 
 
-/** One exercise: progress of the estimated 1RM, records, every session, and its optional blocks. */
-export default function ExerciseScreen() {
+/**
+ * One exercise: progress of the estimated 1RM, records, every session, and its optional blocks.
+ * With `sheet`, the same over a workout in progress (see exercise-info): closed with ✕, without
+ * deleting the exercise or leaving for a past session.
+ */
+export default function ExerciseScreen({ sheet = false }: { sheet?: boolean }) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -86,6 +90,11 @@ export default function ExerciseScreen() {
   return (
     <ScreenScroll>
       <Stack.Screen options={{ title: names(exercise).title }} />
+      {sheet ? (
+        <Stack.Toolbar placement="left">
+          <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi" onPress={() => router.back()} />
+        </Stack.Toolbar>
+      ) : (
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sull’esercizio">
           <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
@@ -93,6 +102,7 @@ export default function ExerciseScreen() {
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
+      )}
 
       <AppText variant="subhead" tone="textSecondary" style={styles.subtitle}>
         {`${names(exercise).subtitle ? `${names(exercise).subtitle}\n` : ''}${muscleLabel(exercise.muscle)}${exercise.secondary.length ? ` (e ${exercise.secondary.map(muscleLabel).join(', ').toLowerCase()})` : ''} · ${equipmentLabel(exercise.equipment)}`}
@@ -157,7 +167,7 @@ export default function ExerciseScreen() {
               title={formatDayTitle(s.date, today)}
               subtitle={s.sets.filter(isWorkSet).map((set) => formatSet(set, exercise.kind)).join(' · ')}
               detail={s.oneRepMax !== null ? `${formatNumber(s.oneRepMax, 0)} kg` : undefined}
-              onPress={() => router.push({ pathname: '/training/session', params: { id: s.workoutId } })}
+              onPress={sheet ? undefined : () => router.push({ pathname: '/training/session', params: { id: s.workoutId } })}
             />
           ))}
         </ListGroup>

@@ -7,7 +7,7 @@ import { AppText } from './app-text';
 import type { SetTypeMenuProps } from './set-type-menu.types';
 
 /** Fallback without SwiftUI menus. On iOS set-type-menu.ios.tsx is used. */
-export function SetTypeMenu({ badge, type, done, current = false, onChange, onDelete }: SetTypeMenuProps) {
+export function SetTypeMenu({ badge, type, done, onChange, onDelete }: SetTypeMenuProps) {
   const theme = useTheme();
   const open = () =>
     Alert.alert('Tipo di serie', undefined, [
@@ -17,7 +17,7 @@ export function SetTypeMenu({ badge, type, done, current = false, onChange, onDe
     ]);
   return (
     <Pressable onPress={open} style={styles.badge} accessibilityRole="button" accessibilityLabel={`Serie ${badge}, cambia tipo`}>
-      <AppText weight="700" style={{ color: current ? theme.onAccent : done ? theme.accent : theme.text }}>
+      <AppText weight="700" style={{ color: done ? theme.accent : theme.text }}>
         {badge}
       </AppText>
     </Pressable>

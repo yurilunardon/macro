@@ -14,10 +14,10 @@ import type { SetTypeMenuProps } from './set-type-menu.types';
 const ICONS = { normal: 'number', warmup: 'flame', drop: 'arrow.down.right', failure: 'bolt.fill' } as const;
 
 /** The set number: tapping it opens the native menu to mark a warm-up, drop or failure set. */
-export function SetTypeMenu({ badge, type, done, current = false, onChange, onDelete, inert = false }: SetTypeMenuProps) {
+export function SetTypeMenu({ badge, type, done, onChange, onDelete, inert = false }: SetTypeMenuProps) {
   const theme = useTheme();
   const scheme = useColorScheme();
-  const color = current ? theme.onAccent : type === 'warmup' ? theme.warning : type === 'normal' ? (done ? theme.accent : theme.text) : theme.danger;
+  const color = type === 'warmup' ? theme.warning : type === 'normal' ? (done ? theme.accent : theme.text) : theme.danger;
   if (inert) {
     return (
       <View style={[styles.host, styles.center]}>

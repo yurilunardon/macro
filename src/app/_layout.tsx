@@ -62,6 +62,7 @@ export default function RootLayout() {
                 name="exercise-picker"
                 options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Esercizi', headerSearchBarOptions: PICKER_SEARCH }}
               />
+              <Stack.Screen name="exercise-info" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Esercizio' }} />
               <Stack.Screen
                 name="exercise-new"
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.75, 1], sheetGrabberVisible: true, headerShown: false }}
