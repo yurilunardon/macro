@@ -418,7 +418,7 @@ const styles = StyleSheet.create({
   pressed: { opacity: 0.6 },
   heading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingTop: Spacing.md, paddingBottom: Spacing.sm, minHeight: 64 },
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
-  summary: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg, paddingVertical: Spacing.sm },
+  summary: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingVertical: Spacing.sm },
   meal: { marginTop: Spacing.lg },
   mealHeader: {
     flexDirection: 'row',

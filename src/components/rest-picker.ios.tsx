@@ -32,7 +32,7 @@ const SECONDS = Array.from({ length: 60 / REST_STEP }, (_, i) => i * REST_STEP);
  * seconds wheel, as in the Timer of Clock, for any rest rather than a few presets. The pill
  * follows the wheels as they turn, and each value is kept as soon as it is picked.
  */
-export function RestPicker({ value, onChange }: RestPickerProps) {
+export function RestPicker({ value, onChange, inert = false }: RestPickerProps) {
   const theme = useTheme();
   const scheme = useColorScheme();
   const [open, setOpen] = useState(false);
@@ -66,6 +66,7 @@ export function RestPicker({ value, onChange }: RestPickerProps) {
           {formatDuration(shown)}
         </AppText>
       </View>
+      {inert ? null : (
       <Host style={StyleSheet.absoluteFill} colorScheme={scheme === 'dark' ? 'dark' : 'light'}>
         <Popover isPresented={open} onIsPresentedChange={present} arrowEdge="bottom">
           <Popover.Trigger>
@@ -116,6 +117,7 @@ export function RestPicker({ value, onChange }: RestPickerProps) {
           </Popover.Content>
         </Popover>
       </Host>
+      )}
     </View>
   );
 }

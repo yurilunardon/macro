@@ -153,8 +153,10 @@ export default function TrainingScreen() {
         </Animated.View>
       ) : next ? (
         <Animated.View key="next" entering={HERO_IN} exiting={HERO_OUT}>
-          {/* The program's days as a pile of sheets: ⌃⌄ lists them to pick the next one. */}
+          {/* The program's days as a pile of sheets: swiped, or picked from ⌃⌄. */}
           <DayDeck
+            // Another program is another pile, from its own next day.
+            key={next.program.id}
             program={next.program}
             dayId={next.day.id}
             onPick={(dayId) => void setNextDay(db, dayId)}

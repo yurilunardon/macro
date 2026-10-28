@@ -1,5 +1,7 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useNavigation, useRouter } from 'expo-router';
+import type { NativeStackNavigationProp } from 'expo-router/native-stack';
+import type { ParamListBase } from 'expo-router/react-navigation';
 import { useSQLiteContext } from 'expo-sqlite';
 import { memo, useEffect, useState } from 'react';
 import Animated, {
@@ -121,6 +123,22 @@ export default function WorkoutScreen() {
   // Ending or cancelling it, the sheet keeps showing the workout while the summary covers it or
   // it slides away, instead of flashing "Nessun allenamento in corso".
   const [closing, setClosing] = useState(false);
+  // While the sheet slides up, the native menus and pickers of every set and exercise are drawn
+  // as plain views: built all at once, their SwiftUI views made the slide stutter. They take
+  // over once the sheet is up.
+  const navigation = useNavigation<NativeStackNavigationProp<ParamListBase>>();
+  const [settled, setSettled] = useState(false);
+  useEffect(() => {
+    const done = () => setSettled(true);
+    const fallback = setTimeout(done, 700);
+    const unsubscribe = navigation.addListener('transitionEnd', (event) => {
+      if (!event.data.closing) done();
+    });
+    return () => {
+      clearTimeout(fallback);
+      unsubscribe();
+    };
+  }, [navigation]);
   const [shown, setShown] = useState<Workout | null>(null);
   if (data?.workout && data.workout !== shown) setShown(data.workout);
   // What a ticked set starts: the rest, with what comes next. Kept outside, so every set's
@@ -313,6 +331,7 @@ export default function WorkoutScreen() {
                   item={ex}
                   currentSetId={currentSetId}
                   names={names(ex.exercise)}
+                  settled={settled}
                   editing={editing}
                   collapsed={editing || foldedIds.has(ex.id)}
                   onEdit={() => setEditing(true)}
@@ -360,6 +379,8 @@ type ExerciseBlockProps = {
   names: { title: string; subtitle: string | null };
   /** Edit mode: folded, and only to drag or remove. */
   editing: boolean;
+  /** The sheet is up: native menus and pickers can be built. */
+  settled: boolean;
   collapsed: boolean;
   /** Held on its name: edit mode starts. */
   onEdit: () => void;
@@ -374,7 +395,7 @@ const folded = new Set<number>();
 /** The load suggested from last time, once taken, by exercise of the workout. */
 const taken = new Map<number, number>();
 
-function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, onEdit, onFold, onCompleted, onRemove }: ExerciseBlockProps) {
+function ExerciseBlock({ item: given, currentSetId, names, editing, settled, collapsed, onEdit, onFold, onCompleted, onRemove }: ExerciseBlockProps) {
   const db = useSQLiteContext();
   // A set deleted is gone at once, with "Annulla" for a few seconds, as every row in the app.
   const hidden = usePendingDeletes();
@@ -479,7 +500,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
           </Pressable>
           {/* Still there in edit mode, so nothing moves; only the drag takes the block then. */}
           <MenuButton
-            inert={editing}
+            inert={editing || !settled}
             icon="ellipsis.circle"
             accessibilityLabel={`Opzioni per ${names.title}`}
             groups={[
@@ -598,6 +619,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
               repMin={item.repMin}
               repMax={item.repMax}
               rest={rest}
+              settled={settled}
             />
           );
         })}
@@ -606,7 +628,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, collapsed, o
           <View style={styles.flex}>
             <ActionRow label="Aggiungi serie" symbol="plus" onPress={() => void addSet(db, item.id)} />
           </View>
-          <RestPicker value={rest} onChange={(seconds) => void setWorkoutExerciseRest(db, item.id, seconds)} />
+          <RestPicker inert={!settled} value={rest} onChange={(seconds) => void setWorkoutExerciseRest(db, item.id, seconds)} />
         </Animated.View>
         </Animated.View>
         )}
@@ -640,6 +662,8 @@ type SetRowProps = {
   repMax: number | null;
   /** The rest started when it is ticked. */
   rest: number;
+  /** The sheet is up: the set's native menu can be built. */
+  settled: boolean;
 };
 
 /**
@@ -647,7 +671,7 @@ type SetRowProps = {
  * (already filled in with last time's, to change if needed) and the tick that closes the set.
  * It takes only data and handles its own changes, so it is drawn again only when it changes.
  */
-const SetRow = memo(function SetRow({ set, current, badge, previous, suggested, divided, kind, trackRir, repMin, repMax, rest }: SetRowProps) {
+const SetRow = memo(function SetRow({ set, current, badge, previous, suggested, divided, kind, trackRir, repMin, repMax, rest, settled }: SetRowProps) {
   const db = useSQLiteContext();
   const theme = useTheme();
   const range = repMin !== null && repMax !== null ? { min: repMin, max: repMax } : null;
@@ -804,7 +828,7 @@ const SetRow = memo(function SetRow({ set, current, badge, previous, suggested, 
         {current ? (
           <Animated.View entering={CURRENT_IN} pointerEvents="none" style={[styles.currentBadge, { backgroundColor: theme.accent }]} />
         ) : null}
-        <SetTypeMenu badge={badge} type={set.type} done={set.done} current={current} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
+        <SetTypeMenu inert={!settled} badge={badge} type={set.type} done={set.done} current={current} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
       </View>
       <AppText variant="subhead" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
         {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}

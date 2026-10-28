@@ -52,9 +52,10 @@ type CalorieRingProps = { eaten: number; target: number; size?: number };
  * close the day is to the goal; it fills and changes colour smoothly when food is added or the
  * day changes.
  */
-export function CalorieRing({ eaten, target, size = 136 }: CalorieRingProps) {
+export function CalorieRing({ eaten, target, size = 176 }: CalorieRingProps) {
   const theme = useTheme();
-  const stroke = 13;
+  // The day's main number: a big ring, with a stroke that grows with it.
+  const stroke = Math.round(size * 0.09);
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const r = ratio(eaten, target);
@@ -98,7 +99,7 @@ export function CalorieRing({ eaten, target, size = 136 }: CalorieRingProps) {
         />
       </Svg>
       <View style={styles.ringCenter} pointerEvents="none">
-        <AppText variant="title" numeric tone={over ? 'danger' : 'text'}>
+        <AppText variant="title" numeric tone={over ? 'danger' : 'text'} style={styles.ringNumber}>
           {formatKcal(left)}
         </AppText>
         <AppText variant="footnote" tone="textSecondary">
@@ -118,4 +119,5 @@ const styles = StyleSheet.create({
   track: { width: '100%', borderRadius: Radius.pill, overflow: 'hidden' },
   fill: { height: '100%', borderRadius: Radius.pill },
   ringCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', gap: 2 },
+  ringNumber: { fontSize: 36, lineHeight: 42, letterSpacing: -0.5 },
 });

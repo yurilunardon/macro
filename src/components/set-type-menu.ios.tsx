@@ -1,4 +1,4 @@
-import { StyleSheet } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 
 import { Button, Host, Menu, Section, Text } from '@expo/ui/swift-ui';
 import { font, foregroundStyle, frame } from '@expo/ui/swift-ui/modifiers';
@@ -7,15 +7,26 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { SET_TYPES } from '@/lib/training';
 
+import { AppText } from './app-text';
+
 import type { SetTypeMenuProps } from './set-type-menu.types';
 
 const ICONS = { normal: 'number', warmup: 'flame', drop: 'arrow.down.right', failure: 'bolt.fill' } as const;
 
 /** The set number: tapping it opens the native menu to mark a warm-up, drop or failure set. */
-export function SetTypeMenu({ badge, type, done, current = false, onChange, onDelete }: SetTypeMenuProps) {
+export function SetTypeMenu({ badge, type, done, current = false, onChange, onDelete, inert = false }: SetTypeMenuProps) {
   const theme = useTheme();
   const scheme = useColorScheme();
   const color = current ? theme.onAccent : type === 'warmup' ? theme.warning : type === 'normal' ? (done ? theme.accent : theme.text) : theme.danger;
+  if (inert) {
+    return (
+      <View style={[styles.host, styles.center]}>
+        <AppText weight="700" style={[styles.badge, { color }]}>
+          {badge}
+        </AppText>
+      </View>
+    );
+  }
   return (
     // A fixed size: a host that measured its content would start at 0 × 0 and make the row jump.
     <Host style={styles.host} colorScheme={scheme === 'dark' ? 'dark' : 'light'}>
@@ -43,4 +54,6 @@ export function SetTypeMenu({ badge, type, done, current = false, onChange, onDe
 
 const styles = StyleSheet.create({
   host: { width: 36, height: 36 },
+  center: { alignItems: 'center', justifyContent: 'center' },
+  badge: { fontSize: 15, lineHeight: 20 },
 });
