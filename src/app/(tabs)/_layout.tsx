@@ -23,6 +23,14 @@ export default function TabsLayout() {
         <NativeTabs.Trigger.Label>Allenamento</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="dumbbell.fill" md="fitness_center" />
       </NativeTabs.Trigger>
+      {/*
+        In the middle, on its own surface: on iOS 27 the prominent tab stands apart from the
+        others and stays visible when the bar shrinks while scrolling.
+      */}
+      <NativeTabs.Trigger name="calendar" prominent>
+        <NativeTabs.Trigger.Label>Calendario</NativeTabs.Trigger.Label>
+        <NativeTabs.Trigger.Icon sf="calendar" md="calendar_month" />
+      </NativeTabs.Trigger>
       <NativeTabs.Trigger name="progress">
         <NativeTabs.Trigger.Label>Progressi</NativeTabs.Trigger.Label>
         <NativeTabs.Trigger.Icon sf="chart.xyaxis.line" md="monitoring" />

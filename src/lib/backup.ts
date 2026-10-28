@@ -7,10 +7,10 @@ import { isDateKey } from './dates';
 export const BACKUP_APP = 'macro';
 /**
  * 2 added `ref` and `category` to foods. 3 added recipes, saved meals and day types, and
- * dropped water. 4 added measurements and fasts, 5 dropped fasts, 6 added training. Older files
- * are still accepted.
+ * dropped water. 4 added measurements and fasts, 5 dropped fasts, 6 added training, 7 the
+ * calendar and supplements. Older files are still accepted.
  */
-export const BACKUP_VERSION = 6;
+export const BACKUP_VERSION = 7;
 
 export type FoodRow = {
   id: number;
@@ -165,6 +165,60 @@ export type WorkoutSetRow = {
   done_at: string | null;
 };
 
+export type ActivityTypeRow = {
+  id: number;
+  ref: string | null;
+  name: string;
+  symbol: string;
+  color: string;
+  minutes: number | null;
+  position: number;
+  archived: number;
+  created_at: string;
+};
+export type ActivityPlanRow = {
+  id: number;
+  type_id: number;
+  weekdays: string;
+  time: string | null;
+  minutes: number | null;
+  day_id: number | null;
+  note: string | null;
+  start_date: string;
+  end_date: string | null;
+  created_at: string;
+};
+export type ActivityRow = {
+  id: number;
+  type_id: number;
+  plan_id: number | null;
+  date: string;
+  time: string | null;
+  minutes: number | null;
+  day_id: number | null;
+  note: string | null;
+  status: string;
+  created_at: string;
+};
+export type SupplementRow = {
+  id: number;
+  name: string;
+  dose: number;
+  unit: string;
+  times_per_day: number;
+  schedule: string;
+  weekdays: string;
+  reminder: string | null;
+  package_amount: number | null;
+  package_price: number | null;
+  position: number;
+  archived: number;
+  started_on: string;
+  created_at: string;
+};
+export type SupplementDoseRow = { supplement_id: number; date: string; dose_index: number; taken_at: string };
+export type SupplementPurchaseRow = { id: number; supplement_id: number; date: string; amount: number; price: number; created_at: string };
+
 export type BackupData = {
   app: typeof BACKUP_APP;
   version: number;
@@ -186,6 +240,12 @@ export type BackupData = {
   workouts: WorkoutRow[];
   workout_exercises: WorkoutExerciseRow[];
   workout_sets: WorkoutSetRow[];
+  activity_types: ActivityTypeRow[];
+  activity_plans: ActivityPlanRow[];
+  activities: ActivityRow[];
+  supplements: SupplementRow[];
+  supplement_doses: SupplementDoseRow[];
+  supplement_purchases: SupplementPurchaseRow[];
 };
 
 export class BackupFormatError extends Error {}
@@ -358,6 +418,72 @@ const WORKOUT_SET_COLUMNS: Record<keyof WorkoutSetRow, Check> = {
   done_at: 'string?',
 };
 
+const ACTIVITY_TYPE_COLUMNS: Record<keyof ActivityTypeRow, Check> = {
+  id: 'number',
+  ref: 'string?',
+  name: 'string',
+  symbol: 'string',
+  color: 'string',
+  minutes: 'number?',
+  position: 'number',
+  archived: 'number',
+  created_at: 'string',
+};
+const ACTIVITY_PLAN_COLUMNS: Record<keyof ActivityPlanRow, Check> = {
+  id: 'number',
+  type_id: 'number',
+  weekdays: 'string',
+  time: 'string?',
+  minutes: 'number?',
+  day_id: 'number?',
+  note: 'string?',
+  start_date: 'string',
+  end_date: 'string?',
+  created_at: 'string',
+};
+const ACTIVITY_COLUMNS: Record<keyof ActivityRow, Check> = {
+  id: 'number',
+  type_id: 'number',
+  plan_id: 'number?',
+  date: 'string',
+  time: 'string?',
+  minutes: 'number?',
+  day_id: 'number?',
+  note: 'string?',
+  status: 'string',
+  created_at: 'string',
+};
+const SUPPLEMENT_COLUMNS: Record<keyof SupplementRow, Check> = {
+  id: 'number',
+  name: 'string',
+  dose: 'number',
+  unit: 'string',
+  times_per_day: 'number',
+  schedule: 'string',
+  weekdays: 'string',
+  reminder: 'string?',
+  package_amount: 'number?',
+  package_price: 'number?',
+  position: 'number',
+  archived: 'number',
+  started_on: 'string',
+  created_at: 'string',
+};
+const SUPPLEMENT_DOSE_COLUMNS: Record<keyof SupplementDoseRow, Check> = {
+  supplement_id: 'number',
+  date: 'string',
+  dose_index: 'number',
+  taken_at: 'string',
+};
+const SUPPLEMENT_PURCHASE_COLUMNS: Record<keyof SupplementPurchaseRow, Check> = {
+  id: 'number',
+  supplement_id: 'number',
+  date: 'string',
+  amount: 'number',
+  price: 'number',
+  created_at: 'string',
+};
+
 /** Settings of features that were removed: water (before version 3) and fasting (version 4). */
 const OBSOLETE_SETTINGS = new Set(['waterGoalMl', 'fasting']);
 
@@ -419,6 +545,12 @@ export function parseBackup(json: unknown): BackupData {
     workouts: readRows<WorkoutRow>(data, 'workouts', WORKOUT_COLUMNS, 6),
     workout_exercises: readRows<WorkoutExerciseRow>(data, 'workout_exercises', WORKOUT_EXERCISE_COLUMNS, 6),
     workout_sets: readRows<WorkoutSetRow>(data, 'workout_sets', WORKOUT_SET_COLUMNS, 6),
+    activity_types: readRows<ActivityTypeRow>(data, 'activity_types', ACTIVITY_TYPE_COLUMNS, 7),
+    activity_plans: readRows<ActivityPlanRow>(data, 'activity_plans', ACTIVITY_PLAN_COLUMNS, 7),
+    activities: readRows<ActivityRow>(data, 'activities', ACTIVITY_COLUMNS, 7),
+    supplements: readRows<SupplementRow>(data, 'supplements', SUPPLEMENT_COLUMNS, 7),
+    supplement_doses: readRows<SupplementDoseRow>(data, 'supplement_doses', SUPPLEMENT_DOSE_COLUMNS, 7),
+    supplement_purchases: readRows<SupplementPurchaseRow>(data, 'supplement_purchases', SUPPLEMENT_PURCHASE_COLUMNS, 7),
   };
   for (const row of [...backup.entries, ...backup.weights, ...backup.day_types, ...backup.measurements]) {
     if (!isDateKey(row.date)) throw new BackupFormatError(`Data non valida nel backup: ${row.date}`);
@@ -458,6 +590,26 @@ export function parseBackup(json: unknown): BackupData {
   backup.workout_sets = backup.workout_sets.filter((s) => workoutExerciseIds.has(s.workout_exercise_id));
   for (const w of backup.workouts) {
     if (!isDateKey(w.date)) throw new BackupFormatError(`Data non valida nel backup: ${w.date}`);
+  }
+
+  // The calendar hangs off its kinds, and gym days off the program's days.
+  const typeIds = new Set(backup.activity_types.map((t) => t.id));
+  backup.activity_plans = backup.activity_plans.filter((p) => typeIds.has(p.type_id));
+  const planIds = new Set(backup.activity_plans.map((p) => p.id));
+  backup.activities = backup.activities.filter((a) => typeIds.has(a.type_id) && (a.plan_id === null || planIds.has(a.plan_id)));
+  for (const row of [...backup.activity_plans, ...backup.activities]) if (row.day_id !== null && !dayIds.has(row.day_id)) row.day_id = null;
+  const supplementIds = new Set(backup.supplements.map((s) => s.id));
+  backup.supplement_doses = backup.supplement_doses.filter((d) => supplementIds.has(d.supplement_id));
+  backup.supplement_purchases = backup.supplement_purchases.filter((p) => supplementIds.has(p.supplement_id));
+  const dated = [
+    ...backup.activity_plans.flatMap((p) => (p.end_date === null ? [p.start_date] : [p.start_date, p.end_date])),
+    ...backup.activities.map((a) => a.date),
+    ...backup.supplements.map((s) => s.started_on),
+    ...backup.supplement_doses.map((d) => d.date),
+    ...backup.supplement_purchases.map((p) => p.date),
+  ];
+  for (const date of dated) {
+    if (!isDateKey(date)) throw new BackupFormatError(`Data non valida nel backup: ${date}`);
   }
   return backup;
 }

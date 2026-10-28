@@ -1,7 +1,9 @@
 import * as Notifications from 'expo-notifications';
 
+import { formatMonthName, fromDateKey, monthOf, toDateKey } from '@/lib/dates';
 import { formatExpiry } from '@/lib/provisioning';
-import { DEFAULT_REMINDERS, expiryReminderAt, REMINDERS, type ReminderSettings } from '@/lib/reminders';
+import { DEFAULT_REMINDERS, expiryReminderAt, monthlyReportAt, REMINDERS, type ReminderSettings } from '@/lib/reminders';
+import type { SupplementReminder } from '@/lib/supplements';
 
 /** Every notification this app schedules starts with this, so it can replace only its own. */
 const PREFIX = 'macro-';
@@ -29,12 +31,14 @@ export async function ensureNotificationPermission(): Promise<boolean> {
 }
 
 /**
- * Replaces the scheduled notifications with what the settings ask for: daily reminders and the
- * evening before the app expires. Never asks for permission.
+ * Replaces the scheduled notifications with what the settings ask for: daily reminders, the
+ * supplements still to take, the monthly report and the evening before the app expires. Never
+ * asks for permission.
  */
 export async function syncNotifications(input: {
   settings: ReminderSettings | null;
   expiresAt: Date | null;
+  supplements: readonly SupplementReminder[];
 }): Promise<void> {
   const settings = input.settings ?? DEFAULT_REMINDERS;
   if (!(await Notifications.getPermissionsAsync()).granted) return;
@@ -53,6 +57,32 @@ export async function syncNotifications(input: {
       identifier: `${PREFIX}${reminder.key}`,
       content: { title: reminder.title, body: reminder.body },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DAILY, hour: setting.hour, minute: setting.minute },
+    });
+  }
+
+  for (const r of input.supplements) {
+    const at = fromDateKey(r.date);
+    const [hour, minute] = r.time.split(':').map(Number);
+    at.setHours(hour, minute, 0, 0);
+    if (at.getTime() <= Date.now()) continue;
+    await Notifications.scheduleNotificationAsync({
+      identifier: `${PREFIX}supplements-${r.date}-${r.time}`,
+      content: { title: 'Integratori', body: r.body, data: { url: '/calendar' } },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
+    });
+  }
+
+  if (settings.monthlyReport ?? true) {
+    const at = monthlyReportAt();
+    const month = monthOf(toDateKey(new Date(at.getFullYear(), at.getMonth() - 1, 1, 12)));
+    await Notifications.scheduleNotificationAsync({
+      identifier: `${PREFIX}monthly-report`,
+      content: {
+        title: `Il report di ${formatMonthName(month).toLowerCase()}`,
+        body: 'Allenamenti, attività e integratori del mese, con quanto hai speso.',
+        data: { url: `/calendar/report?period=month&anchor=${month}-01` },
+      },
+      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
     });
   }
 

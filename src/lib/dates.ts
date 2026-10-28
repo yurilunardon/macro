@@ -92,3 +92,46 @@ export function formatLongDate(key: DateKey): string {
 export function weekdayOf(key: DateKey): number {
   return fromDateKey(key).getDay();
 }
+
+/** A month as "YYYY-MM". */
+export type MonthKey = string;
+
+const monthYear = new Intl.DateTimeFormat('it-IT', { month: 'long', year: 'numeric' });
+const monthOnly = new Intl.DateTimeFormat('it-IT', { month: 'long' });
+
+export function monthOf(key: DateKey): MonthKey {
+  return key.slice(0, 7);
+}
+
+export function addMonths(month: MonthKey, count: number): MonthKey {
+  const date = fromDateKey(`${month}-01`);
+  date.setMonth(date.getMonth() + count, 1);
+  return monthOf(toDateKey(date));
+}
+
+/** First and last day of a month. */
+export function monthRange(month: MonthKey): { from: DateKey; to: DateKey } {
+  return { from: `${month}-01`, to: addDays(`${addMonths(month, 1)}-01`, -1) };
+}
+
+/** The six weeks shown for a month, Monday first, as in Calendar: always 42 days, so it never changes height. */
+export function monthGrid(month: MonthKey): DateKey[] {
+  const monday = weekOf(`${month}-01`)[0];
+  return Array.from({ length: 42 }, (_, i) => addDays(monday, i));
+}
+
+/** "Ottobre 2026". */
+export function formatMonth(month: MonthKey): string {
+  return capitalize(monthYear.format(fromDateKey(`${month}-01`)));
+}
+
+/** "Ottobre". */
+export function formatMonthName(month: MonthKey): string {
+  return capitalize(monthOnly.format(fromDateKey(`${month}-01`)));
+}
+
+/** Every day from `from` to `to`, both included. */
+export function daysFrom(from: DateKey, to: DateKey): DateKey[] {
+  const count = daysBetween(from, to) + 1;
+  return Array.from({ length: Math.max(0, count) }, (_, i) => addDays(from, i));
+}

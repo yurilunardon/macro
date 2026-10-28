@@ -1,0 +1,16 @@
+import { Stack } from 'expo-router';
+
+import { LARGE_TITLE, TAB_STACK_OPTIONS } from '@/constants/navigation';
+
+export const unstable_settings = { anchor: 'index' };
+
+export default function CalendarLayout() {
+  return (
+    <Stack screenOptions={TAB_STACK_OPTIONS}>
+      <Stack.Screen name="index" options={{ ...LARGE_TITLE, title: 'Calendario' }} />
+      <Stack.Screen name="supplements" options={{ title: 'Integratori' }} />
+      <Stack.Screen name="activity-types" options={{ title: 'Tipi di attività' }} />
+      <Stack.Screen name="report" options={{ title: 'Report' }} />
+    </Stack>
+  );
+}

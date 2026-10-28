@@ -1,8 +1,9 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import { weekdayOf, type DateKey } from '@/lib/dates';
+import { todayKey, weekdayOf, type DateKey } from '@/lib/dates';
 import { dayTypeFor, type DayType, type Targets } from '@/lib/goals';
 
+import { getActivityDates } from './calendar';
 import { notifyChange } from './live';
 import { deleteSetting, getSetting, getTargets, setSetting } from './settings';
 
@@ -57,10 +58,12 @@ export async function getDayPlans(db: SQLiteDatabase, dates: readonly DateKey[])
     ]);
     for (const row of rows) overrides.set(row.date, row.type);
     for (const row of workouts) workoutDays.add(row.date);
+    const sorted = [...dates].sort();
+    for (const date of await getActivityDates(db, sorted[0], sorted[sorted.length - 1], todayKey())) workoutDays.add(date);
   }
   for (const date of dates) {
     const override = overrides.get(date) ?? null;
-    // A day with a workout is a training day, unless it was set by hand.
+    // A day with a workout, or an activity in the calendar, is a training day, unless it was set by hand.
     const dayType = dayTypeFor(weekdayOf(date), training.trainingWeekdays, override ?? (workoutDays.has(date) ? 'training' : null));
     plans.set(date, {
       targets: dayType === 'rest' ? training.restTargets : targets,

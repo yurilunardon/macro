@@ -3,7 +3,8 @@ import type { ReactNode } from 'react';
 
 export type MenuAction = {
   label: string;
-  icon: SFSymbol;
+  /** Left out for plain choices, such as units, where a symbol would say nothing. */
+  icon?: SFSymbol;
   onPress: () => void;
   destructive?: boolean;
   /** The current choice: shown with a checkmark instead of its icon. */

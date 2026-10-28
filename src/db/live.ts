@@ -7,16 +7,16 @@ import { shareEqual } from '@/lib/share-equal';
  * What a write touched. Screens re-read only when a topic they show has changed, so logging a
  * set does not make the diary, the stats and the settings query the database again.
  */
-export type Topic = 'food' | 'body' | 'settings' | 'training';
+export type Topic = 'food' | 'body' | 'settings' | 'training' | 'calendar';
 
-const ALL_TOPICS: readonly Topic[] = ['food', 'body', 'settings', 'training'];
+const ALL_TOPICS: readonly Topic[] = ['food', 'body', 'settings', 'training', 'calendar'];
 
 /**
  * A tiny change feed: every write calls `notifyChange(topic)`, and the `useLiveQuery` hooks that
  * watch that topic re-run. The database is small, so re-reading a screen's data after a write
  * is simpler than fine-grained invalidation.
  */
-const versions: Record<Topic, number> = { food: 0, body: 0, settings: 0, training: 0 };
+const versions: Record<Topic, number> = { food: 0, body: 0, settings: 0, training: 0, calendar: 0 };
 const listeners = new Set<() => void>();
 
 /** With no topic, everything is considered changed (e.g. after restoring a backup). */

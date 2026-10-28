@@ -63,6 +63,9 @@ export default function RootLayout() {
                 options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Esercizi', headerSearchBarOptions: PICKER_SEARCH }}
               />
               <Stack.Screen name="exercise-info" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Esercizio' }} />
+              <Stack.Screen name="activity" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Attività' }} />
+              <Stack.Screen name="activity-type" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Tipo di attività' }} />
+              <Stack.Screen name="supplement" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Integratore' }} />
               <Stack.Screen
                 name="exercise-new"
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.75, 1], sheetGrabberVisible: true, headerShown: false }}

@@ -7,6 +7,8 @@ export type ReminderSetting = { enabled: boolean; hour: number; minute: number }
 export type ReminderSettings = Record<ReminderKey, ReminderSetting> & {
   /** A notification the day before the AltStore signature expires. */
   expiry: boolean;
+  /** On the first of each month, the report of the month before. Missing in settings saved before it. */
+  monthlyReport?: boolean;
 };
 
 export const REMINDERS: readonly { key: ReminderKey; label: string; title: string; body: string }[] = [
@@ -22,6 +24,7 @@ export const DEFAULT_REMINDERS: ReminderSettings = {
   lunch: { enabled: false, hour: 14, minute: 0 },
   dinner: { enabled: false, hour: 21, minute: 0 },
   expiry: true,
+  monthlyReport: true,
 };
 
 /** Accepts "7:30", "07.30", "730" or "7". Returns null if it is not a time of day. */
@@ -46,4 +49,9 @@ export function expiryReminderAt(expiresAt: Date, now: Date = new Date()): Date 
   if (evening > now && evening < expiresAt) return evening;
   const soon = new Date(expiresAt.getTime() - 2 * 3_600_000);
   return soon > now ? soon : null;
+}
+
+/** The first of next month at 9:00, when last month's report is ready. */
+export function monthlyReportAt(now: Date = new Date()): Date {
+  return new Date(now.getFullYear(), now.getMonth() + 1, 1, 9, 0);
 }

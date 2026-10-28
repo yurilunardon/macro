@@ -76,3 +76,29 @@ export const Radius = {
 } as const;
 
 export const MaxContentWidth = 640;
+
+/** The colours a kind of activity can have in the calendar: iOS system colours, as in Calendar. */
+export const ActivityColors = {
+  light: {
+    green: '#34C759',
+    orange: '#FF9500',
+    red: '#FF3B30',
+    blue: '#007AFF',
+    purple: '#AF52DE',
+    teal: '#30B0C7',
+    pink: '#FF2D55',
+    yellow: '#FFCC00',
+    indigo: '#5856D6',
+  },
+  dark: {
+    green: '#30D158',
+    orange: '#FF9F0A',
+    red: '#FF453A',
+    blue: '#0A84FF',
+    purple: '#BF5AF2',
+    teal: '#40C8E0',
+    pink: '#FF375F',
+    yellow: '#FFD60A',
+    indigo: '#5E5CE6',
+  },
+} as const;

@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import { seedActivityTypes } from './calendar';
 import { refreshSearchText } from './foods';
 import { seedExercises } from './exercises';
 import { seedGenericFoods } from './generic';
@@ -246,6 +247,85 @@ export const MIGRATIONS: readonly Migration[] = [
   `
   ALTER TABLE programs ADD COLUMN draft INTEGER NOT NULL DEFAULT 0;
   `,
+  // 9: the calendar. Kinds of activity (the gym, volleyball…), activities repeated every week
+  // (plans) or on one date (records, which also hold one day of a plan changed by hand), and the
+  // supplements with the doses ticked and the packages bought.
+  `
+  CREATE TABLE activity_types (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    ref TEXT,
+    name TEXT NOT NULL,
+    symbol TEXT NOT NULL,
+    color TEXT NOT NULL,
+    minutes INTEGER,
+    position INTEGER NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    created_at TEXT NOT NULL
+  );
+  CREATE UNIQUE INDEX activity_types_ref ON activity_types (ref);
+
+  CREATE TABLE activity_plans (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type_id INTEGER NOT NULL REFERENCES activity_types (id) ON DELETE CASCADE,
+    weekdays TEXT NOT NULL,
+    time TEXT,
+    minutes INTEGER,
+    day_id INTEGER REFERENCES program_days (id) ON DELETE SET NULL,
+    note TEXT,
+    start_date TEXT NOT NULL,
+    end_date TEXT,
+    created_at TEXT NOT NULL
+  );
+
+  CREATE TABLE activities (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    type_id INTEGER NOT NULL REFERENCES activity_types (id) ON DELETE CASCADE,
+    plan_id INTEGER REFERENCES activity_plans (id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    time TEXT,
+    minutes INTEGER,
+    day_id INTEGER REFERENCES program_days (id) ON DELETE SET NULL,
+    note TEXT,
+    status TEXT NOT NULL DEFAULT 'planned',
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX activities_date ON activities (date);
+  CREATE UNIQUE INDEX activities_plan_date ON activities (plan_id, date) WHERE plan_id IS NOT NULL;
+
+  CREATE TABLE supplements (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    name TEXT NOT NULL,
+    dose REAL NOT NULL,
+    unit TEXT NOT NULL,
+    times_per_day INTEGER NOT NULL DEFAULT 1,
+    schedule TEXT NOT NULL DEFAULT 'daily',
+    weekdays TEXT NOT NULL DEFAULT '',
+    reminder TEXT,
+    package_amount REAL,
+    package_price REAL,
+    position INTEGER NOT NULL,
+    archived INTEGER NOT NULL DEFAULT 0,
+    started_on TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE TABLE supplement_doses (
+    supplement_id INTEGER NOT NULL REFERENCES supplements (id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    dose_index INTEGER NOT NULL,
+    taken_at TEXT NOT NULL,
+    PRIMARY KEY (supplement_id, date, dose_index)
+  );
+  CREATE INDEX supplement_doses_date ON supplement_doses (date);
+  CREATE TABLE supplement_purchases (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    supplement_id INTEGER NOT NULL REFERENCES supplements (id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    amount REAL NOT NULL,
+    price REAL NOT NULL,
+    created_at TEXT NOT NULL
+  );
+  CREATE INDEX supplement_purchases_supplement ON supplement_purchases (supplement_id, date);
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;
@@ -273,6 +353,7 @@ export async function migrateDatabase(db: SQLiteDatabase): Promise<void> {
   await db.runAsync('DELETE FROM programs WHERE draft = 1');
   await seedGenericFoods(db);
   await seedExercises(db);
+  await seedActivityTypes(db);
   if (process.env.EXPO_PUBLIC_SAMPLE_DATA === '1') {
     const { seedSampleData } = await import('./sample-data');
     await seedSampleData(db);

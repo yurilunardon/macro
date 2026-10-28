@@ -24,11 +24,18 @@ import {
   type SavedMealRow,
   type SettingRow,
   type WeightRow,
+  type ActivityPlanRow,
+  type ActivityRow,
+  type ActivityTypeRow,
+  type SupplementDoseRow,
+  type SupplementPurchaseRow,
+  type SupplementRow,
   type WorkoutExerciseRow,
   type WorkoutRow,
   type WorkoutSetRow,
 } from '@/lib/backup';
 
+import { seedActivityTypes } from './calendar';
 import { refreshExerciseSearchText, seedExercises } from './exercises';
 import { refreshSearchText } from './foods';
 import { seedGenericFoods } from './generic';
@@ -80,6 +87,24 @@ const WORKOUT_SET_COLUMNS = [
   'done', 'done_at',
 ] as const satisfies readonly (keyof WorkoutSetRow)[];
 
+const ACTIVITY_TYPE_COLUMNS = [
+  'id', 'ref', 'name', 'symbol', 'color', 'minutes', 'position', 'archived', 'created_at',
+] as const satisfies readonly (keyof ActivityTypeRow)[];
+const ACTIVITY_PLAN_COLUMNS = [
+  'id', 'type_id', 'weekdays', 'time', 'minutes', 'day_id', 'note', 'start_date', 'end_date', 'created_at',
+] as const satisfies readonly (keyof ActivityPlanRow)[];
+const ACTIVITY_COLUMNS = [
+  'id', 'type_id', 'plan_id', 'date', 'time', 'minutes', 'day_id', 'note', 'status', 'created_at',
+] as const satisfies readonly (keyof ActivityRow)[];
+const SUPPLEMENT_COLUMNS = [
+  'id', 'name', 'dose', 'unit', 'times_per_day', 'schedule', 'weekdays', 'reminder', 'package_amount', 'package_price',
+  'position', 'archived', 'started_on', 'created_at',
+] as const satisfies readonly (keyof SupplementRow)[];
+const SUPPLEMENT_DOSE_COLUMNS = ['supplement_id', 'date', 'dose_index', 'taken_at'] as const satisfies readonly (keyof SupplementDoseRow)[];
+const SUPPLEMENT_PURCHASE_COLUMNS = [
+  'id', 'supplement_id', 'date', 'amount', 'price', 'created_at',
+] as const satisfies readonly (keyof SupplementPurchaseRow)[];
+
 function select(columns: readonly string[], table: string, order: string): string {
   return `SELECT ${columns.join(', ')} FROM ${table} ORDER BY ${order}`;
 }
@@ -114,6 +139,12 @@ export async function readBackup(db: SQLiteDatabase): Promise<BackupData> {
     workouts: await db.getAllAsync<WorkoutRow>(select(WORKOUT_COLUMNS, 'workouts', 'id')),
     workout_exercises: await db.getAllAsync<WorkoutExerciseRow>(select(WORKOUT_EXERCISE_COLUMNS, 'workout_exercises', 'id')),
     workout_sets: await db.getAllAsync<WorkoutSetRow>(select(WORKOUT_SET_COLUMNS, 'workout_sets', 'id')),
+    activity_types: await db.getAllAsync<ActivityTypeRow>(select(ACTIVITY_TYPE_COLUMNS, 'activity_types', 'id')),
+    activity_plans: await db.getAllAsync<ActivityPlanRow>(select(ACTIVITY_PLAN_COLUMNS, 'activity_plans', 'id')),
+    activities: await db.getAllAsync<ActivityRow>(select(ACTIVITY_COLUMNS, 'activities', 'id')),
+    supplements: await db.getAllAsync<SupplementRow>(select(SUPPLEMENT_COLUMNS, 'supplements', 'id')),
+    supplement_doses: await db.getAllAsync<SupplementDoseRow>(select(SUPPLEMENT_DOSE_COLUMNS, 'supplement_doses', 'date, supplement_id, dose_index')),
+    supplement_purchases: await db.getAllAsync<SupplementPurchaseRow>(select(SUPPLEMENT_PURCHASE_COLUMNS, 'supplement_purchases', 'id')),
   };
 }
 
@@ -157,6 +188,8 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
   await db.withExclusiveTransactionAsync(async (tx) => {
     // Children before parents, so foreign keys never point at a missing row.
     await tx.execAsync(`
+      DELETE FROM supplement_doses; DELETE FROM supplement_purchases; DELETE FROM supplements;
+      DELETE FROM activities; DELETE FROM activity_plans; DELETE FROM activity_types;
       DELETE FROM saved_meal_items; DELETE FROM saved_meals;
       DELETE FROM recipe_ingredients; DELETE FROM recipes;
       DELETE FROM entries; DELETE FROM foods;
@@ -181,12 +214,19 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
     await insertRows<WorkoutRow>(tx, 'workouts', WORKOUT_COLUMNS, backup.workouts);
     await insertRows<WorkoutExerciseRow>(tx, 'workout_exercises', WORKOUT_EXERCISE_COLUMNS, backup.workout_exercises);
     await insertRows<WorkoutSetRow>(tx, 'workout_sets', WORKOUT_SET_COLUMNS, backup.workout_sets);
+    await insertRows<ActivityTypeRow>(tx, 'activity_types', ACTIVITY_TYPE_COLUMNS, backup.activity_types);
+    await insertRows<ActivityPlanRow>(tx, 'activity_plans', ACTIVITY_PLAN_COLUMNS, backup.activity_plans);
+    await insertRows<ActivityRow>(tx, 'activities', ACTIVITY_COLUMNS, backup.activities);
+    await insertRows<SupplementRow>(tx, 'supplements', SUPPLEMENT_COLUMNS, backup.supplements);
+    await insertRows<SupplementDoseRow>(tx, 'supplement_doses', SUPPLEMENT_DOSE_COLUMNS, backup.supplement_doses);
+    await insertRows<SupplementPurchaseRow>(tx, 'supplement_purchases', SUPPLEMENT_PURCHASE_COLUMNS, backup.supplement_purchases);
     await insertRows<SettingRow>(tx, 'settings', ['key', 'value'], backup.settings);
     await refreshSearchText(tx);
     await refreshExerciseSearchText(tx);
   });
   await seedGenericFoods(db, { force: true });
   await seedExercises(db, { force: true });
+  await seedActivityTypes(db);
   notifyChange();
 }
 

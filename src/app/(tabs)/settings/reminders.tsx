@@ -62,6 +62,12 @@ export default function RemindersScreen() {
     else apply();
   };
 
+  const toggleReport = (monthlyReport: boolean) => {
+    const apply = () => save({ ...settings, monthlyReport });
+    if (monthlyReport) void enable(apply);
+    else apply();
+  };
+
   const toggleExpiry = (expiry: boolean) => {
     const apply = () => save({ ...settings, expiry });
     if (expiry) void enable(apply);
@@ -110,6 +116,17 @@ export default function RemindersScreen() {
           );
         })}
       </ListGroup>
+
+      <SectionTitle>Calendario</SectionTitle>
+      <ListGroup>
+        <Row
+          title="Report del mese"
+          subtitle="Il primo del mese, alle 9"
+          chevron={false}
+          detail={switchFor(effective(settings.monthlyReport ?? true), toggleReport, 'Report del mese')}
+        />
+      </ListGroup>
+      <SectionFooter>I promemoria degli integratori si impostano in ognuno di essi.</SectionFooter>
 
       <SectionTitle>AltStore</SectionTitle>
       <ListGroup>

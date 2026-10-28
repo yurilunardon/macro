@@ -27,6 +27,8 @@ type SettingsMap = {
   exerciseNames: 'en' | 'it';
   /** The day picked as the next workout, until a workout starts after `chosenAt`. */
   nextDay: { dayId: number; chosenAt: string };
+  /** The month whose report was opened or dismissed from the calendar, "YYYY-MM". */
+  reportSeen: string;
   /** Meals folded in the diary. */
   collapsedMeals: ('breakfast' | 'lunch' | 'dinner' | 'snack')[];
 };
