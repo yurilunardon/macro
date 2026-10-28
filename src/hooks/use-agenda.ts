@@ -10,12 +10,17 @@ export type Agenda = {
   types: Map<number, ActivityType>;
 };
 
-/** The calendar's days from `from` to `to`, kept up to date with the activities and the workouts. */
+/**
+ * The calendar's days from `from` to `to`, kept up to date with the activities and the workouts.
+ * Days to come are counted from today, so the gym days of a later week get the program's days in
+ * the right turn.
+ */
 export function useAgenda(from: DateKey, to: DateKey, today: DateKey): Agenda {
-  const { data } = useLiveQuery(`calendar:${from}:${to}`, (database) => getCalendar(database, from, to), ['calendar', 'training']);
+  const start = from < today ? from : today;
+  const { data } = useLiveQuery(`calendar:${start}:${to}`, (database) => getCalendar(database, start, to), ['calendar', 'training']);
   const agenda = data
     ? buildAgenda({
-        occurrences: expandActivities(data.plans, data.records, from, to),
+        occurrences: expandActivities(data.plans, data.records, start, to),
         workouts: data.workouts,
         gymTypeId: data.gymTypeId,
         today,

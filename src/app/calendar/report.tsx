@@ -17,7 +17,7 @@ import { getWeightsSince } from '@/db/body';
 import { getDayPlans } from '@/db/days';
 import { getDailyTotals } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
-import { getDosesTaken, getPurchasesBetween, getSupplements } from '@/db/supplements';
+import { getDoseTicks, getDosesTaken, getPurchasesBetween, getSupplements } from '@/db/supplements';
 import { getWorkoutHistory } from '@/db/workouts';
 import { useActivityColors } from '@/hooks/use-activity-colors';
 import { useAgenda } from '@/hooks/use-agenda';
@@ -29,8 +29,10 @@ import { countLabel, formatKcal, formatNumber } from '@/lib/format';
 import { buckets, formatDelta, formatPeriod, formatPrevious, isPeriod, periodRange, shiftPeriod, type Period } from '@/lib/report';
 import { summarizePeriod } from '@/lib/stats';
 import { adherence, formatEuro, percent } from '@/lib/supplements';
+import { averageClock, partsOfDay, tickTimes, workoutTimes } from '@/lib/timeline';
 import { formatChange } from '@/lib/weights';
 import { haptics } from '@/services/haptics';
+import { openAgendaItem } from '@/services/open-agenda-item';
 
 const PERIODS = [
   { key: 'week', label: 'Settimana' },
@@ -67,14 +69,15 @@ export default function ReportScreen() {
   const { data: extra } = useLiveQuery(
     `report:${before.from}:${range.to}`,
     async (database) => {
-      const [supplements, doses, purchases, previousPurchases, workouts] = await Promise.all([
+      const [supplements, doses, purchases, previousPurchases, workouts, ticks] = await Promise.all([
         getSupplements(database, { archived: true }),
         getDosesTaken(database, range.from, range.to),
         getPurchasesBetween(database, range.from, range.to),
         getPurchasesBetween(database, before.from, before.to),
         getWorkoutHistory(database, 2000),
+        getDoseTicks(database, range.from, range.to),
       ]);
-      return { supplements, doses, purchases, previousPurchases, workouts };
+      return { supplements, doses, purchases, previousPurchases, workouts, ticks };
     },
     ['calendar', 'training'],
   );
@@ -150,6 +153,14 @@ export default function ReportScreen() {
     }
   }
 
+  // When things happen: the workouts' start and each supplement's ticks.
+  const startTimes = workoutTimes(agenda, range.from, range.to);
+  const usualStart = averageClock(startTimes);
+  const parts = partsOfDay(startTimes);
+  const supplementTimes = (extra?.supplements ?? [])
+    .map((s) => ({ name: s.name, at: averageClock(tickTimes((extra?.ticks ?? []).filter((t) => t.supplementId === s.id))) }))
+    .filter((r): r is { name: string; at: string } => r.at !== null);
+
   const isCurrent = range.from <= today && today <= range.to;
   const canGoForward = shiftPeriod(period, anchor, 1) <= today;
   const go = (direction: number) => {
@@ -169,6 +180,7 @@ export default function ReportScreen() {
         const p = percent(r.result);
         return `${r.supplement.name}: ${p !== null ? `${p}%` : `${r.taken} dosi`}`;
       }),
+      ...(usualStart ? [`Allenamento in media alle ${usualStart}`] : []),
       ...(nutrition ? [`Calorie in media: ${formatKcal(nutrition.average.kcal)} kcal`, `Proteine in media: ${formatNumber(nutrition.average.protein, 0)} g`] : []),
       ...(lastWeight ? [`Peso: ${formatNumber(lastWeight.kg, 1)} kg${weightChange !== null ? ` (${formatChange(weightChange, 'kg', (n) => formatNumber(n, 1))})` : ''}`] : []),
       ...(spent > 0 ? [`Speso in integratori: ${formatEuro(spent)}`] : []),
@@ -272,8 +284,38 @@ export default function ReportScreen() {
             {topDays.length > 0 ? (
               <Row title="Giorni fatti" subtitle={topDays.map(([name, n]) => `${name} ${n}`).join(' · ')} chevron={false} />
             ) : null}
-            <Row title="Tutti gli allenamenti" onPress={() => router.push('/training/history')} />
+            <Row title="Tutti gli allenamenti" onPress={() => router.push('/calendar/history')} />
           </ListGroup>
+        </>
+      ) : null}
+
+      {usualStart || supplementTimes.length > 0 ? (
+        <>
+          <SectionTitle>Orari</SectionTitle>
+          <ListGroup>
+            {usualStart ? (
+              <View style={styles.hours}>
+                <View style={styles.supplementTop}>
+                  <AppText style={styles.flex}>Inizio allenamento</AppText>
+                  <AppText tone="textSecondary" numeric>{`in media alle ${usualStart}`}</AppText>
+                </View>
+                <TimeStrip times={startTimes} />
+                <AppText variant="footnote" tone="textSecondary" numeric>
+                  {[
+                    parts.morning > 0 ? `mattina ${parts.morning}` : null,
+                    parts.afternoon > 0 ? `pomeriggio ${parts.afternoon}` : null,
+                    parts.evening > 0 ? `sera ${parts.evening}` : null,
+                  ]
+                    .filter(Boolean)
+                    .join(' · ')}
+                </AppText>
+              </View>
+            ) : null}
+            {supplementTimes.map((r) => (
+              <Row key={r.name} title={r.name} chevron={false} detail={`alle ${r.at}`} />
+            ))}
+          </ListGroup>
+          <SectionFooter>Gli integratori all’ora in cui li hai spuntati.</SectionFooter>
         </>
       ) : null}
 
@@ -361,17 +403,7 @@ export default function ReportScreen() {
                 gymTypeId={gymTypeId}
                 dayNames={data?.dayNames ?? new Map()}
                 prefix={formatShortDate(item.kind === 'workout' ? item.workout.date : item.occurrence.date)}
-                onPress={() => {
-                  if (item.kind === 'workout') router.push({ pathname: '/training/session', params: { id: item.workout.id } });
-                  else
-                    router.push({
-                      pathname: '/activity',
-                      params:
-                        item.occurrence.planId === null
-                          ? { id: item.occurrence.recordId ?? undefined }
-                          : { plan: item.occurrence.planId, date: item.occurrence.date },
-                    });
-                }}
+                onPress={() => openAgendaItem(router, item)}
               />
             ))}
           </ListGroup>
@@ -379,6 +411,28 @@ export default function ReportScreen() {
         </>
       ) : null}
     </ScreenScroll>
+  );
+}
+
+/** The day from midnight to midnight, with a dot at each time. */
+function TimeStrip({ times }: { times: readonly string[] }) {
+  const theme = useTheme();
+  return (
+    <View accessible accessibilityLabel={`Orari: ${times.join(', ')}`}>
+      <View style={[styles.strip, { backgroundColor: theme.fill }]}>
+        {times.map((time, i) => {
+          const [h, m] = time.split(':').map(Number);
+          return <View key={i} style={[styles.stripDot, { left: `${((h * 60 + m) / 1440) * 100}%`, backgroundColor: theme.accent, borderColor: theme.card }]} />;
+        })}
+      </View>
+      <View style={styles.stripLabels}>
+        {['0', '6', '12', '18', '24'].map((label) => (
+          <AppText key={label} variant="caption" tone="textTertiary" numeric>
+            {label}
+          </AppText>
+        ))}
+      </View>
+    </View>
   );
 }
 
@@ -423,4 +477,8 @@ const styles = StyleSheet.create({
   barStack: { width: '100%', flexDirection: 'column-reverse' },
   supplement: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: 6 },
   supplementTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  hours: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.sm },
+  strip: { height: 14, borderRadius: 7, justifyContent: 'center' },
+  stripDot: { position: 'absolute', width: 12, height: 12, borderRadius: 6, marginLeft: -6, borderWidth: 2, opacity: 0.9 },
+  stripLabels: { flexDirection: 'row', justifyContent: 'space-between', marginTop: 4 },
 });

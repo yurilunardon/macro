@@ -6,8 +6,8 @@ import { WorkoutAccessory } from '@/components/workout-accessory';
 import { useLiveQuery } from '@/db/live';
 import { getActiveWorkout } from '@/db/workouts';
 
-/** The side tabs; the calendar is the round button between them. */
-const SIDES = {
+/** The two tabs; the calendar opens from the round button between them. */
+const TABS = {
   '(diary)': { label: 'Alimentazione', icon: 'fork.knife' },
   training: { label: 'Allenamento', icon: 'dumbbell', selectedIcon: 'dumbbell.fill' },
 } as const;
@@ -22,13 +22,13 @@ export default function TabsLayout() {
         tabBar={(props) => (
           <TabBar
             {...props}
-            center="calendar"
-            sides={SIDES}
+            left="(diary)"
+            right="training"
+            tabs={TABS}
             accessory={active ? <WorkoutAccessory id={active.id} name={active.name} startedAt={active.startedAt} /> : null}
           />
         )}>
         <Tabs.Screen name="(diary)" options={{ title: 'Alimentazione' }} />
-        <Tabs.Screen name="calendar" options={{ title: 'Calendario' }} />
         <Tabs.Screen name="training" options={{ title: 'Allenamento' }} />
       </Tabs>
     </TabBarInsetProvider>

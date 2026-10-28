@@ -1,6 +1,7 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { addDays, type DateKey } from '@/lib/dates';
+import type { DoseTick } from '@/lib/timeline';
 import {
   daysLeft,
   dosesPerDay,
@@ -259,4 +260,14 @@ export async function getSupplementStock(db: SQLiteDatabase, supplements: readon
     stock.set(s.id, { left, daysLeft: daysLeft(s, left, dosesPerDay(s, recent)), monthly: monthlyCost(s, recent) });
   }
   return stock;
+}
+
+/** Every dose ticked from `from` to `to`, with when it was ticked. */
+export async function getDoseTicks(db: SQLiteDatabase, from: DateKey, to: DateKey): Promise<DoseTick[]> {
+  const rows = await db.getAllAsync<{ supplement_id: number; date: string; taken_at: string }>(
+    'SELECT supplement_id, date, taken_at FROM supplement_doses WHERE date BETWEEN ? AND ? ORDER BY taken_at',
+    from,
+    to,
+  );
+  return rows.map((r) => ({ supplementId: r.supplement_id, date: r.date, takenAt: r.taken_at }));
 }

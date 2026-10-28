@@ -58,7 +58,8 @@ export default function HistoryScreen() {
                 subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
                   (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,
                 )} · ${countLabel(w.workSets, 'serie', 'serie')}${w.tonnage > 0 ? ` · ${formatNumber(w.tonnage, 0)} kg` : ''}`}
-                onPress={() => router.push({ pathname: '/training/session', params: { id: w.id } })}
+                // Relative, so from the calendar's stack it stays there.
+                onPress={() => router.push({ pathname: './session', params: { id: w.id } })}
               />
               </SwipeToDelete>
             ))}

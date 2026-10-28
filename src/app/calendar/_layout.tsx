@@ -4,6 +4,10 @@ import { LARGE_TITLE, TAB_STACK_OPTIONS } from '@/constants/navigation';
 
 export const unstable_settings = { anchor: 'index' };
 
+/**
+ * Over everything, opened from the round button between the tabs: it grows out of the button and
+ * shrinks back into it (see TabBar).
+ */
 export default function CalendarLayout() {
   return (
     <Stack screenOptions={TAB_STACK_OPTIONS}>
@@ -14,6 +18,9 @@ export default function CalendarLayout() {
       <Stack.Screen name="weight" options={{ title: 'Peso' }} />
       <Stack.Screen name="weights" options={{ title: 'Pesate' }} />
       <Stack.Screen name="measurements" options={{ title: 'Misure' }} />
+      <Stack.Screen name="day" options={{ title: '' }} />
+      <Stack.Screen name="session" options={{ title: 'Allenamento' }} />
+      <Stack.Screen name="history" options={{ title: 'Storico' }} />
     </Stack>
   );
 }

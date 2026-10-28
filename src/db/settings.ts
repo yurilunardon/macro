@@ -13,7 +13,7 @@ type SettingsMap = {
   restTargets: Targets;
   /** Days of the week (Date.getDay(), 0 = Sunday) that are training days. */
   trainingWeekdays: number[];
-  /** Weight to reach, in kg, for the forecast in Progressi. */
+  /** Weight to reach, in kg, for the forecast on the weight page. */
   goalWeight: number;
   reminders: ReminderSettings;
   lastBackupAt: string;
@@ -29,6 +29,8 @@ type SettingsMap = {
   nextDay: { dayId: number; chosenAt: string };
   /** The month whose report was opened or dismissed from the calendar, "YYYY-MM". */
   reportSeen: string;
+  /** How the calendar shows the days: a week with the times, or the month. */
+  calendarView: 'week' | 'month';
   /** Meals folded in the diary. */
   collapsedMeals: ('breakfast' | 'lunch' | 'dinner' | 'snack')[];
 };
