@@ -18,7 +18,7 @@ import type { MenuButtonProps } from './menu-button.types';
  * the tap. A SwiftUI host that sized itself to its content would be 0 × 0 on its first frame and
  * then grow, which made the cards around it jump.
  */
-export function MenuButton({ icon, title, accessibilityLabel: label, groups, inert = false, children, onPrimaryAction }: MenuButtonProps) {
+export function MenuButton({ icon, title, accessibilityLabel: label, groups, inert = false, children }: MenuButtonProps) {
   const theme = useTheme();
   const scheme = useColorScheme();
   const look = children ?? <MenuButtonLook icon={icon} title={title} />;
@@ -35,7 +35,6 @@ export function MenuButton({ icon, title, accessibilityLabel: label, groups, ine
               <Image systemName={icon} size={14} color={theme.accent} />
             </HStack>
           }
-          onPrimaryAction={onPrimaryAction}
           modifiers={[accessibilityLabel(label)]}>
           {visible.map((group, index) => (
             <Section key={group.title ?? index} title={group.title}>

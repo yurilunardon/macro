@@ -7,7 +7,7 @@ import type { MenuButtonProps } from './menu-button.types';
 export type { MenuAction, MenuGroup } from './menu-button.types';
 
 /** Fallback for platforms without native SwiftUI menus: the same actions in an alert. */
-export function MenuButton({ icon, title, accessibilityLabel, groups, children, onPrimaryAction }: MenuButtonProps) {
+export function MenuButton({ icon, title, accessibilityLabel, groups, children }: MenuButtonProps) {
   const actions = groups.flatMap((group) => group.actions);
   const open = () =>
     Alert.alert(accessibilityLabel, undefined, [
@@ -19,7 +19,7 @@ export function MenuButton({ icon, title, accessibilityLabel, groups, children, 
       { text: 'Annulla', style: 'cancel' as const },
     ]);
   return (
-    <Pressable onPress={onPrimaryAction ?? open} onLongPress={onPrimaryAction ? open : undefined} hitSlop={12} accessibilityRole="button" accessibilityLabel={accessibilityLabel} style={!children && styles.row}>
+    <Pressable onPress={open} hitSlop={12} accessibilityRole="button" accessibilityLabel={accessibilityLabel} style={!children && styles.row}>
       {children ?? (
         <>
           <Icon name={icon} size={title ? 14 : 22} tone="accent" />

@@ -249,134 +249,138 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
           ) : null}
         </View>
 
+        {/*
+          Each meal is one block, as in MyFitnessPal and FoodNoms: its name and calories at the
+          top, the foods, and "Aggiungi alimento" at the bottom, so what is added plainly goes to
+          that meal. Blocks are apart by a gap of the page, like groups in Settings.
+        */}
         {MEALS.map((meal) => {
           const mealEntries = entries.filter((e) => e.meal === meal.key);
           const mealKcal = sumNutrients(mealEntries.map((e) => e.totals)).kcal;
           const count = mealEntries.length;
           const canCopy = count === 0 && data.yesterdayMeals.has(meal.key);
-          const addIcon = <Icon name="plus.circle.fill" size={26} tone="accent" />;
+          const addRow = (pressed: boolean) => (
+            <View style={[styles.addRow, pressed && { backgroundColor: theme.cardPressed }]}>
+              <Icon name="plus.circle.fill" size={20} tone="accent" />
+              <AppText weight="600" tone="accent">
+                Aggiungi alimento
+              </AppText>
+            </View>
+          );
           return (
-            // The section follows its content's size smoothly, and the ones below follow it.
+            // The block follows its content's size smoothly, and the ones below follow it.
             <Animated.View key={meal.key} layout={MEAL_LAYOUT} style={styles.meal}>
-              <View style={styles.mealHeader}>
-                <AppText variant="title2" style={styles.mealName} numberOfLines={1}>
-                  {meal.label}
-                </AppText>
-                {count > 0 ? (
-                  <AppText variant="subhead" tone="textSecondary" numeric>
-                    {`${formatKcal(mealKcal)} kcal`}
+              <ListGroup>
+                <View style={[styles.mealHeader, count > 0 && styles.mealHeaderWithMenu]}>
+                  <Icon name={meal.symbol} size={16} tone="textSecondary" />
+                  <AppText variant="headline" style={styles.flex} numberOfLines={1}>
+                    {meal.label}
                   </AppText>
-                ) : null}
-                {/* An empty meal that was there yesterday: one tap fills it the same way. */}
-                {canCopy ? (
-                  <Pressable
-                    disabled={!interactive}
-                    onPress={() => void copyFromYesterday(meal.key)}
-                    accessibilityRole="button"
-                    accessibilityLabel={`Copia ${meal.label.toLowerCase()} da ieri`}
-                    style={({ pressed }) => [styles.copy, { backgroundColor: theme.fill }, pressed && styles.pressed]}>
-                    <Icon name="clock.arrow.circlepath" size={13} tone="textSecondary" />
-                    <AppText variant="footnote" weight="600" tone="textSecondary">
-                      Copia da ieri
+                  {count > 0 ? (
+                    <AppText variant="subhead" weight="600" tone="textSecondary" numeric>
+                      {`${formatKcal(mealKcal)} kcal`}
                     </AppText>
-                  </Pressable>
-                ) : null}
-                {count > 0 ? (
-                  <MenuButton
-                    inert={!interactive}
-                    icon="ellipsis.circle"
-                    accessibilityLabel={`Azioni per ${meal.label.toLowerCase()}`}
-                    // What the + beside it does not: keep the meal for another day, or clear it.
-                    groups={[
-                      {
-                        actions: [
-                          { label: 'Salva come pasto', icon: 'bookmark', onPress: () => saveAsMeal(meal.key, count) },
-                          {
-                            label: `Svuota ${meal.label.toLowerCase()}`,
-                            icon: 'trash',
-                            destructive: true,
-                            onPress: () => void clearMeal(meal.key, count, mealKcal),
-                          },
-                        ],
-                      },
-                    ]}>
-                    {/* Grey, so the + beside it reads as the meal's main action. */}
-                    <View style={styles.headerButton}>
-                      <Icon name="ellipsis.circle" size={22} tone="textSecondary" />
+                  ) : null}
+                  {/* An empty meal that was there yesterday: one tap fills it the same way. */}
+                  {canCopy ? (
+                    <Pressable
+                      disabled={!interactive}
+                      onPress={() => void copyFromYesterday(meal.key)}
+                      accessibilityRole="button"
+                      accessibilityLabel={`Copia ${meal.label.toLowerCase()} da ieri`}
+                      style={({ pressed }) => [styles.copy, { backgroundColor: theme.fill }, pressed && styles.pressed]}>
+                      <Icon name="clock.arrow.circlepath" size={13} tone="textSecondary" />
+                      <AppText variant="footnote" weight="600" tone="textSecondary">
+                        Copia da ieri
+                      </AppText>
+                    </Pressable>
+                  ) : null}
+                  {count > 0 ? (
+                    <MenuButton
+                      inert={!interactive}
+                      icon="ellipsis.circle"
+                      accessibilityLabel={`Azioni per ${meal.label.toLowerCase()}`}
+                      // What the row at the bottom does not: keep the meal for another day, or clear it.
+                      groups={[
+                        {
+                          actions: [
+                            { label: 'Salva come pasto', icon: 'bookmark', onPress: () => saveAsMeal(meal.key, count) },
+                            {
+                              label: `Svuota ${meal.label.toLowerCase()}`,
+                              icon: 'trash',
+                              destructive: true,
+                              onPress: () => void clearMeal(meal.key, count, mealKcal),
+                            },
+                          ],
+                        },
+                      ]}>
+                      <View style={styles.headerButton}>
+                        <Icon name="ellipsis.circle" size={22} tone="textSecondary" />
+                      </View>
+                    </MenuButton>
+                  ) : null}
+                </View>
+                {mealEntries.map((entry) => {
+                  const row = (pressed: boolean) => (
+                    <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
+                      <View style={styles.entryText}>
+                        <AppText numberOfLines={1}>{entry.name}</AppText>
+                        {entryDetail(entry) ? (
+                          <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                            {entryDetail(entry)}
+                          </AppText>
+                        ) : null}
+                      </View>
+                      <Kcal value={entry.totals.kcal} />
                     </View>
-                  </MenuButton>
-                ) : null}
-                {/* Adding is the one thing done to every meal, many times a day: always in sight
-                    and always last on the right. The sheet grows out of the + and back into it. */}
+                  );
+                  if (!interactive) return <View key={entry.id}>{row(false)}</View>;
+                  return (
+                    <SwipeToDelete key={entry.id} onDelete={() => removeEntry(entry)}>
+                      <Link href={`/entry/${entry.id}`} asChild>
+                        <Link.Trigger>
+                          <Pressable
+                            accessibilityRole="button"
+                            accessibilityHint="Tocca per modificare, tieni premuto per altre azioni, scorri a sinistra per eliminare">
+                            {({ pressed }) => row(pressed)}
+                          </Pressable>
+                        </Link.Trigger>
+                        <Link.Menu>
+                          <Link.MenuAction icon="pencil" onPress={() => router.push(`/entry/${entry.id}`)}>
+                            {entry.quick ? 'Modifica' : 'Modifica quantità'}
+                          </Link.MenuAction>
+                          <Link.Menu title="Sposta in" icon="arrow.up.arrow.down">
+                            {MEALS.filter((m) => m.key !== entry.meal).map((m) => (
+                              <Link.MenuAction key={m.key} icon={m.symbol} onPress={() => void moveEntryTo(entry, m.key)}>
+                                {m.label}
+                              </Link.MenuAction>
+                            ))}
+                          </Link.Menu>
+                          <Link.MenuAction icon="doc.on.doc" onPress={() => void copyEntryTo(entry)}>
+                            {`Copia in ${copyTarget.label}`}
+                          </Link.MenuAction>
+                          <Link.MenuAction icon="trash" destructive onPress={() => removeEntry(entry)}>
+                            Elimina
+                          </Link.MenuAction>
+                        </Link.Menu>
+                      </Link>
+                    </SwipeToDelete>
+                  );
+                })}
+                {/* The sheet to add grows out of this row and shrinks back into it. */}
                 {interactive ? (
-                  <Link href={{ pathname: '/add', params: { meal: meal.key, date } }} asChild>
+                  <Link key="add" href={{ pathname: '/add', params: { meal: meal.key, date } }} asChild>
                     <Link.Trigger withAppleZoom>
-                      <Pressable
-                        hitSlop={4}
-                        accessibilityRole="button"
-                        accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}
-                        // A plain style: Link's Slot drops a style given as a function, and the
-                        // button then lost its size as soon as the day became interactive.
-                        style={styles.headerButton}>
-                        {({ pressed }) => <View style={pressed && styles.pressed}>{addIcon}</View>}
+                      {/* A plain style: Link's Slot drops a style given as a function. */}
+                      <Pressable accessibilityRole="button" accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}>
+                        {({ pressed }) => addRow(pressed)}
                       </Pressable>
                     </Link.Trigger>
                   </Link>
                 ) : (
-                  <View style={styles.headerButton}>{addIcon}</View>
+                  <View key="add">{addRow(false)}</View>
                 )}
-              </View>
-              {count > 0 ? (
-                <ListGroup>
-                  {mealEntries.map((entry) => {
-                    const row = (pressed: boolean) => (
-                      <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
-                        <View style={styles.entryText}>
-                          <AppText numberOfLines={1}>{entry.name}</AppText>
-                          {entryDetail(entry) ? (
-                            <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                              {entryDetail(entry)}
-                            </AppText>
-                          ) : null}
-                        </View>
-                        <Kcal value={entry.totals.kcal} />
-                      </View>
-                    );
-                    if (!interactive) return <View key={entry.id}>{row(false)}</View>;
-                    return (
-                      <SwipeToDelete key={entry.id} onDelete={() => removeEntry(entry)}>
-                        <Link href={`/entry/${entry.id}`} asChild>
-                          <Link.Trigger>
-                            <Pressable
-                              accessibilityRole="button"
-                              accessibilityHint="Tocca per modificare, tieni premuto per altre azioni, scorri a sinistra per eliminare">
-                              {({ pressed }) => row(pressed)}
-                            </Pressable>
-                          </Link.Trigger>
-                          <Link.Menu>
-                            <Link.MenuAction icon="pencil" onPress={() => router.push(`/entry/${entry.id}`)}>
-                              {entry.quick ? 'Modifica' : 'Modifica quantità'}
-                            </Link.MenuAction>
-                            <Link.Menu title="Sposta in" icon="arrow.up.arrow.down">
-                              {MEALS.filter((m) => m.key !== entry.meal).map((m) => (
-                                <Link.MenuAction key={m.key} icon={m.symbol} onPress={() => void moveEntryTo(entry, m.key)}>
-                                  {m.label}
-                                </Link.MenuAction>
-                              ))}
-                            </Link.Menu>
-                            <Link.MenuAction icon="doc.on.doc" onPress={() => void copyEntryTo(entry)}>
-                              {`Copia in ${copyTarget.label}`}
-                            </Link.MenuAction>
-                            <Link.MenuAction icon="trash" destructive onPress={() => removeEntry(entry)}>
-                              Elimina
-                            </Link.MenuAction>
-                          </Link.Menu>
-                        </Link>
-                      </SwipeToDelete>
-                    );
-                  })}
-                </ListGroup>
-              ) : null}
+              </ListGroup>
             </Animated.View>
           );
         })}
@@ -416,17 +420,16 @@ const styles = StyleSheet.create({
   banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md },
   summary: { flexDirection: 'row', alignItems: 'center', gap: Spacing.lg, paddingVertical: Spacing.sm },
   meal: { marginTop: Spacing.lg },
-  // Lined up with the foods' names in the card below; the + with their calories.
   mealHeader: {
     flexDirection: 'row',
     alignItems: 'center',
-    gap: Spacing.xs,
-    paddingLeft: Spacing.lg,
-    paddingRight: Spacing.sm,
-    minHeight: 44,
-    marginBottom: Spacing.xs,
+    gap: Spacing.sm,
+    paddingHorizontal: Spacing.lg,
+    minHeight: 48,
   },
-  mealName: { flex: 1, fontSize: 20, lineHeight: 25 },
+  // The ⋯ is drawn in a 40-wide button: this puts it in line with the calories under it.
+  mealHeaderWithMenu: { paddingRight: Spacing.sm },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, minHeight: 48 },
   entry: {
     flexDirection: 'row',
     alignItems: 'center',

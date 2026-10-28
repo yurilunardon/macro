@@ -153,11 +153,11 @@ export default function TrainingScreen() {
         </Animated.View>
       ) : next ? (
         <Animated.View key="next" entering={HERO_IN} exiting={HERO_OUT}>
-          {/* The program's days as a pile of sheets: ⌃⌄ turns to the next one. */}
+          {/* The program's days as a pile of sheets: ⌃⌄ lists them to pick the next one. */}
           <DayDeck
             program={next.program}
             dayId={next.day.id}
-            onChange={(dayId) => void setNextDay(db, dayId)}
+            onPick={(dayId) => void setNextDay(db, dayId)}
             onStart={(dayId) => void start(dayId)}
             onChangeProgram={() => router.push('/training/programs')}
           />

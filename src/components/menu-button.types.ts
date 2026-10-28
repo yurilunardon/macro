@@ -26,8 +26,4 @@ export type MenuButtonProps = {
   inert?: boolean;
   /** Draws the button with these views instead of the icon and title, e.g. a value to pick. */
   children?: ReactNode;
-  /**
-   * What a tap does, as Safari's back button: the menu then opens on a long press instead.
-   */
-  onPrimaryAction?: () => void;
 };
