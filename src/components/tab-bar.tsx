@@ -14,6 +14,8 @@ import { weekdayShort } from '@/lib/calendar';
 import { weekdayOf } from '@/lib/dates';
 import { haptics } from '@/services/haptics';
 
+import { NOTCHED_TAB_BAR_HEIGHT, NotchedTabBarView } from '../../modules/notched-tab-bar';
+
 import { AppText } from './app-text';
 import { Icon } from './icon';
 
@@ -23,9 +25,8 @@ const glass = isLiquidGlassAvailable();
 const BAR = 62;
 const BAR_WIDTH = 300;
 /** The calendar's button, floating over the middle of the capsule with its centre near the top edge. */
-const FAB = 64;
-const RISE = 30;
-const HEIGHT = BAR + RISE;
+const FAB = 60;
+const HEIGHT = NOTCHED_TAB_BAR_HEIGHT;
 /** The lens under the tab on screen, a little inside the capsule. */
 const LENS_INSET = 4;
 const LENS_SPRING = { duration: 380, dampingRatio: 0.78 };
@@ -87,16 +88,14 @@ type TabBarProps = BottomTabBarProps & {
 
 /**
  * A floating action button over a tab bar, in Liquid Glass. The capsule holds the two tabs and
- * runs on under the calendar's green circle, which floats on its own over the middle. Holding
- * and sliding along the capsule moves its lens from one tab to the other, under the circle,
- * and picks the tab on release; the circle only opens the calendar when tapped.
+ * runs on under the calendar's green circle, which floats on its own in a cradle cut into the
+ * middle of the capsule. Holding and sliding along the capsule moves its lens from one tab to
+ * the other, under the circle, and picks the tab on release; the circle only opens the calendar
+ * when tapped.
  */
 export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left, right, calendar, tabs, accessory }: TabBarProps) {
   const theme = useTheme();
-  const scheme = useColorScheme();
   const width = Math.min(screen - 2 * Spacing.xl, BAR_WIDTH);
-  const slot = slotWidth(width);
-  const rest: Record<Side, number> = { left: restOf('left', width), right: restOf('right', width) };
 
   const focusedName = state.routes[state.index]?.name;
   const focused: Side | 'calendar' | null =
@@ -112,6 +111,78 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
     haptics.selection();
     navigateToTab(route.key);
   };
+  const bar: BarProps = { width, focused, tabs, left, right, calendar, press };
+
+  return (
+    <View pointerEvents="box-none" style={[styles.root, { bottom: barBottom(safeBottom) }]}>
+      {accessory ? (
+        <View style={[styles.accessorySlot, { width: Math.min(screen - 2 * Spacing.xl, ACCESSORY_WIDTH) }]}>
+          {glass ? (
+            <GlassView style={styles.accessory} glassEffectStyle="regular" isInteractive>
+              {accessory}
+            </GlassView>
+          ) : (
+            <View style={[styles.accessory, styles.solid, { backgroundColor: theme.card, borderColor: theme.separator }]}>{accessory}</View>
+          )}
+        </View>
+      ) : null}
+      {NotchedTabBarView ? <SwiftUIBar {...bar} /> : <ReactBar {...bar} />}
+    </View>
+  );
+}
+
+type BarProps = {
+  width: number;
+  focused: Side | 'calendar' | null;
+  tabs: Record<string, Tab>;
+  left: string;
+  right: string;
+  calendar: string;
+  press: (name: string) => void;
+};
+
+/**
+ * Drawn in SwiftUI (modules/notched-tab-bar), the only way to give Liquid Glass the cradle's
+ * shape and have it react to touches as iOS's own bars do.
+ */
+function SwiftUIBar({ width, focused, tabs, left, right, calendar, press }: BarProps) {
+  const theme = useTheme();
+  const today = useToday();
+  const last = useRef({ tab: '', at: 0 });
+  if (!NotchedTabBarView) return null;
+  const leftTab = tabs[left];
+  const rightTab = tabs[right];
+  return (
+    <NotchedTabBarView
+      accessibilityRole="tablist"
+      style={{ width, height: HEIGHT }}
+      leftLabel={leftTab?.label ?? ''}
+      leftIcon={leftTab?.icon ?? 'circle'}
+      leftSelectedIcon={leftTab?.selectedIcon}
+      rightLabel={rightTab?.label ?? ''}
+      rightIcon={rightTab?.icon ?? 'circle'}
+      rightSelectedIcon={rightTab?.selectedIcon}
+      selected={focused ?? 'none'}
+      weekday={weekdayShort(weekdayOf(today)).toUpperCase()}
+      day={String(Number(today.slice(8)))}
+      accent={theme.accent}
+      onSelect={({ nativeEvent: { tab } }) => {
+        // A tap that is also a short slide can report the same pick twice.
+        const now = Date.now();
+        if (last.current.tab === tab && now - last.current.at < 400) return;
+        last.current = { tab, at: now };
+        press(tab === 'left' ? left : tab === 'right' ? right : calendar);
+      }}
+    />
+  );
+}
+
+/** The same bar in React Native, where the native one is missing (the web): without the cradle. */
+function ReactBar({ width, focused, tabs, left, right, calendar, press }: BarProps) {
+  const theme = useTheme();
+  const scheme = useColorScheme();
+  const slot = slotWidth(width);
+  const rest: Record<Side, number> = { left: restOf('left', width), right: restOf('right', width) };
 
   // The lens rests under the tab on screen and is hidden while the calendar is.
   const lensX = useSharedValue(rest[focused === 'right' ? 'right' : 'left']);
@@ -221,44 +292,30 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
   );
 
   return (
-    <View pointerEvents="box-none" style={[styles.root, { bottom: barBottom(safeBottom) }]}>
-      {accessory ? (
-        <View style={[styles.accessorySlot, { width: Math.min(screen - 2 * Spacing.xl, ACCESSORY_WIDTH) }]}>
+    <View accessibilityRole="tablist" style={{ width, height: HEIGHT }}>
+      <GestureDetector gesture={pan}>
+        <View style={styles.capsuleSlot}>
           {glass ? (
-            <GlassView style={styles.accessory} glassEffectStyle="regular" isInteractive>
-              {accessory}
+            <GlassView style={styles.capsule} glassEffectStyle="regular" isInteractive>
+              {capsuleContent}
             </GlassView>
           ) : (
-            <View style={[styles.accessory, styles.solid, { backgroundColor: theme.card, borderColor: theme.separator }]}>{accessory}</View>
+            <View style={[styles.capsule, styles.solid, { backgroundColor: theme.card, borderColor: theme.separator }]}>
+              {capsuleContent}
+            </View>
           )}
         </View>
-      ) : null}
+      </GestureDetector>
 
-      <View accessibilityRole="tablist" style={{ width, height: HEIGHT }}>
-        <GestureDetector gesture={pan}>
-          <View style={styles.capsuleSlot}>
-            {glass ? (
-              <GlassView style={styles.capsule} glassEffectStyle="regular" isInteractive>
-                {capsuleContent}
-              </GlassView>
-            ) : (
-              <View style={[styles.capsule, styles.solid, { backgroundColor: theme.card, borderColor: theme.separator }]}>
-                {capsuleContent}
-              </View>
-            )}
-          </View>
-        </GestureDetector>
-
-        {/* On its own, not melted into the capsule: the calendar is a button, not a tab to slide to. */}
-        <View style={[styles.fabSlot, { left: (width - FAB) / 2 }]}>
-          {glass ? (
-            <GlassView style={styles.fab} glassEffectStyle="regular" tintColor={theme.accent} isInteractive>
-              {fab}
-            </GlassView>
-          ) : (
-            <View style={[styles.fab, styles.fabShadow, { backgroundColor: theme.accent }]}>{fab}</View>
-          )}
-        </View>
+      {/* On its own, not melted into the capsule: the calendar is a button, not a tab to slide to. */}
+      <View style={[styles.fabSlot, { left: (width - FAB) / 2 }]}>
+        {glass ? (
+          <GlassView style={styles.fab} glassEffectStyle="regular" tintColor={theme.accent} isInteractive>
+            {fab}
+          </GlassView>
+        ) : (
+          <View style={[styles.fab, styles.fabShadow, { backgroundColor: theme.accent }]}>{fab}</View>
+        )}
       </View>
     </View>
   );
