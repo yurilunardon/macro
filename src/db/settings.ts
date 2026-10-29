@@ -31,6 +31,8 @@ type SettingsMap = {
   reportSeen: string;
   /** How the calendar shows the days: a week with the times, or the month. */
   calendarView: 'week' | 'month';
+  /** The look of the tab bar: see components/tab-bar. */
+  tabBarStyle: 'capsule' | 'circles' | 'fab';
   /** Meals folded in the diary. */
   collapsedMeals: ('breakfast' | 'lunch' | 'dinner' | 'snack')[];
 };

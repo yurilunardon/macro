@@ -1,41 +1,45 @@
-import { NativeTabs } from 'expo-router/native-tabs';
-import type { SFSymbol } from 'expo-symbols';
+import { Tabs } from 'expo-router/js-tabs';
+import { useWindowDimensions } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
+import { TabBar, TabBarInsetProvider, tabBarInset } from '@/components/tab-bar';
 import { WorkoutAccessory } from '@/components/workout-accessory';
 import { useLiveQuery } from '@/db/live';
+import { getSetting } from '@/db/settings';
 import { getActiveWorkout } from '@/db/workouts';
-import { useTheme } from '@/hooks/use-theme';
-import { useToday } from '@/hooks/use-today';
+
+/** The calendar in the middle, where the app opens (see +native-intent); a tab on each side. */
+const ROUTES = { left: '(diary)', center: 'calendar', right: 'training' } as const;
+const TABS = {
+  '(diary)': { label: 'Alimentazione', icon: 'fork.knife' },
+  training: { label: 'Allenamento', icon: 'dumbbell', selectedIcon: 'dumbbell.fill' },
+} as const;
 
 export default function TabsLayout() {
-  const theme = useTheme();
-  const today = useToday();
+  const insets = useSafeAreaInsets();
+  const { width: screen } = useWindowDimensions();
   const { data: active } = useLiveQuery('active-workout', getActiveWorkout, ['training']);
-  // Today's date on the page, as on the Calendar app's icon.
-  const calendarIcon = `${Number(today.slice(8))}.calendar` as SFSymbol;
+  const { data: style } = useLiveQuery('tab-bar-style', (database) => getSetting(database, 'tabBarStyle'), ['settings']);
+  const look = style ?? 'capsule';
   return (
-    <NativeTabs tintColor={theme.accent}>
-      {active ? (
-        <NativeTabs.BottomAccessory>
-          <WorkoutAccessory id={active.id} name={active.name} startedAt={active.startedAt} />
-        </NativeTabs.BottomAccessory>
-      ) : null}
-      <NativeTabs.Trigger name="(diary)">
-        <NativeTabs.Trigger.Label>Alimentazione</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf="fork.knife" md="restaurant" />
-      </NativeTabs.Trigger>
-      {/*
-        In the middle, and where the app opens (see +native-intent). On iOS 27 it also gets a
-        surface of its own, which stays when the bar shrinks while scrolling.
-      */}
-      <NativeTabs.Trigger name="calendar" prominent>
-        <NativeTabs.Trigger.Label>Calendario</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={calendarIcon} md="calendar_month" />
-      </NativeTabs.Trigger>
-      <NativeTabs.Trigger name="training">
-        <NativeTabs.Trigger.Label>Allenamento</NativeTabs.Trigger.Label>
-        <NativeTabs.Trigger.Icon sf={{ default: 'dumbbell', selected: 'dumbbell.fill' }} md="fitness_center" />
-      </NativeTabs.Trigger>
-    </NativeTabs>
+    <TabBarInsetProvider value={tabBarInset(insets.bottom, Boolean(active), look, screen)}>
+      <Tabs
+        screenOptions={{ headerShown: false }}
+        tabBar={(props) => (
+          <TabBar
+            {...props}
+            look={look}
+            screen={screen}
+            safeBottom={insets.bottom}
+            routes={ROUTES}
+            tabs={TABS}
+            accessory={active ? <WorkoutAccessory id={active.id} name={active.name} startedAt={active.startedAt} /> : null}
+          />
+        )}>
+        <Tabs.Screen name="(diary)" options={{ title: 'Alimentazione' }} />
+        <Tabs.Screen name="calendar" options={{ title: 'Calendario' }} />
+        <Tabs.Screen name="training" options={{ title: 'Allenamento' }} />
+      </Tabs>
+    </TabBarInsetProvider>
   );
 }
