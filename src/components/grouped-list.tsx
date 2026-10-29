@@ -4,9 +4,7 @@ import { FlatList, StyleSheet, View } from 'react-native';
 import { MaxContentWidth, Radius, Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-import { bottomInset, webPadding } from './screen';
 import { closeOpenSwipeRow } from './swipe-to-delete';
-import { useTabBarInset } from './tab-bar';
 
 type GroupedListProps<T> = {
   data: readonly T[];
@@ -24,20 +22,18 @@ type GroupedListProps<T> = {
  */
 export function GroupedList<T>({ data, keyOf, renderRow, header, footer }: GroupedListProps<T>) {
   const theme = useTheme();
-  const tabBar = useTabBarInset();
   const last = data.length - 1;
   return (
     <FlatList
       data={data}
       keyExtractor={keyOf}
       contentInsetAdjustmentBehavior="automatic"
-      {...bottomInset(tabBar)}
       keyboardShouldPersistTaps="handled"
       keyboardDismissMode="on-drag"
       onScrollBeginDrag={closeOpenSwipeRow}
       initialNumToRender={16}
       style={{ backgroundColor: theme.background }}
-      contentContainerStyle={[styles.content, webPadding(tabBar)]}
+      contentContainerStyle={styles.content}
       ListHeaderComponent={header}
       ListFooterComponent={footer}
       renderItem={({ item, index }) => (

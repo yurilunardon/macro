@@ -149,8 +149,8 @@ export function DayDetail({ date, today, items, calendar, types, busy, header = 
                   : 'Niente registrato'
               }
               onPress={() => {
-                // The diary is under the calendar: close it and show that day there.
-                router.dismissTo({ pathname: '/', params: { date } });
+                // That day in the diary's tab.
+                router.navigate({ pathname: '/', params: { date } });
               }}
             />
             <Row

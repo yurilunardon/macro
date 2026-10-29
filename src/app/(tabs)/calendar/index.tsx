@@ -138,9 +138,6 @@ export default function CalendarScreen() {
 
   return (
     <ScreenScroll>
-      <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi il calendario" onPress={() => router.back()} />
-      </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         {/* As in Calendar: always in the bar, dimmed while today is on screen. */}
         <Stack.Toolbar.Button disabled={atToday} accessibilityLabel="Torna a oggi" onPress={goToday}>
