@@ -16,6 +16,14 @@ if [[ "$(uname)" != "Darwin" ]]; then
 fi
 command -v xcodebuild >/dev/null || { echo "xcodebuild non trovato: installa Xcode dall'App Store e aprilo una volta." >&2; exit 1; }
 command -v pod >/dev/null || { echo "CocoaPods non trovato: installalo con 'brew install cocoapods'." >&2; exit 1; }
+# Expo's ExpoModulesJSI package needs Swift 6.2 and the tab bar uses iOS 26 Liquid Glass.
+XCODE="$(xcodebuild -version)"
+XCODE="${XCODE%%$'\n'*}"
+XCODE_MAJOR="$(sed -E 's/^Xcode ([0-9]+).*/\1/' <<<"$XCODE")"
+if [[ ! "$XCODE_MAJOR" =~ ^[0-9]+$ ]] || (( XCODE_MAJOR < 26 )); then
+  echo "Serve Xcode 26 o successivo: c'è $XCODE in $(xcode-select -p). Aggiornalo dall'App Store, aprilo una volta e riprova." >&2
+  exit 1
+fi
 
 echo "› Installo le dipendenze"
 npm install
@@ -36,8 +44,8 @@ if ! xcodebuild \
   -archivePath "$BUILD/$SCHEME.xcarchive" \
   CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO CODE_SIGN_IDENTITY="" \
   archive >"$LOG" 2>&1; then
-  echo "Compilazione fallita. Ultime righe del log:" >&2
-  tail -n 40 "$LOG" >&2
+  echo "Compilazione fallita. Errori nel log:" >&2
+  grep -E "error:|\[ExpoModulesJSI\]" "$LOG" | tail -n 40 >&2 || tail -n 40 "$LOG" >&2
   exit 1
 fi
 
