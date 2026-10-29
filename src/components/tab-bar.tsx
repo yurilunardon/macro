@@ -2,7 +2,7 @@ import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
 import { Link } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import type { SFSymbol } from 'expo-symbols';
-import { createContext, use, useEffect, useRef, useState, type ReactNode } from 'react';
+import { createContext, use, useEffect, useRef, useState, type ComponentRef, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -18,6 +18,7 @@ import { haptics } from '@/services/haptics';
 import { NOTCHED_TAB_BAR_BUTTON, NOTCHED_TAB_BAR_HEIGHT, NotchedTabBarView } from '../../modules/notched-tab-bar';
 
 import { AppText } from './app-text';
+import { setCalendarOrigin } from './calendar-reveal';
 import { Icon } from './icon';
 
 const glass = isLiquidGlassAvailable();
@@ -139,25 +140,25 @@ type BarProps = {
   press: (name: string) => void;
 };
 
-/** The calendar's button: the calendar opens out of it with the system's zoom (iOS 18+). */
+/** The calendar's button: the calendar grows out of it (see CalendarReveal). */
 function CalendarLink({ onPressIn, onPressOut, children }: { onPressIn?: () => void; onPressOut?: () => void; children?: ReactNode }) {
+  const button = useRef<ComponentRef<typeof Pressable>>(null);
   return (
     <Link href="/calendar" asChild>
-      <Link.Trigger withAppleZoom>
-        <Pressable
-          onPressIn={() => {
-            haptics.light();
-            onPressIn?.();
-          }}
-          onPressOut={onPressOut}
-          accessibilityRole="button"
-          accessibilityLabel="Calendario"
-          accessibilityHint="Apre il calendario"
-          // A Link.Trigger's child takes one plain style: the web passes it on as is.
-          style={styles.fabTouch}>
-          {children}
-        </Pressable>
-      </Link.Trigger>
+      <Pressable
+        ref={button}
+        onPressIn={() => {
+          haptics.light();
+          button.current?.measureInWindow((x, y, size) => setCalendarOrigin({ x: x + size / 2, y: y + size / 2, size }));
+          onPressIn?.();
+        }}
+        onPressOut={onPressOut}
+        accessibilityRole="button"
+        accessibilityLabel="Calendario"
+        accessibilityHint="Apre il calendario"
+        style={styles.fabTouch}>
+        {children}
+      </Pressable>
     </Link>
   );
 }
@@ -165,7 +166,7 @@ function CalendarLink({ onPressIn, onPressOut, children }: { onPressIn?: () => v
 /**
  * Drawn in SwiftUI (modules/notched-tab-bar), the only way to give Liquid Glass the cradle's
  * shape. The calendar's button is drawn there too, under a transparent React Native one that
- * the calendar zooms out of.
+ * opens the calendar.
  */
 function SwiftUIBar({ width, focused, tabs, left, right, press }: BarProps) {
   const theme = useTheme();

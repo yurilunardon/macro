@@ -26,7 +26,7 @@ public final class NotchedTabBarProps: ExpoSwiftUI.ViewProps {
   @Field var day: String = ""
   @Field var accent: Color = .green
   /// While a finger is down on the calendar's button. React Native handles that touch, so the
-  /// calendar can open out of the button with the system's zoom.
+  /// calendar can grow out of the button.
   @Field var calendarPressed: Bool = false
   /// `{ tab: "left" | "right" }` when a tab is picked.
   var onSelect = EventDispatcher()
@@ -112,40 +112,34 @@ struct NotchedCapsule: Shape {
   }
 }
 
-/// Where the lens is for a given centre along the capsule. At the tabs it fills the capsule's
-/// height; towards the middle it squeezes down into the channel under the cradle, wider and
-/// flatter, like a drop of liquid pushed through.
-struct LensGeometry {
-  var width: CGFloat
+/// The lens: a capsule as tall as the inside of the bar, with the cradle (grown by the same
+/// inset) cut out of it. It fills all the room there is, so the part passing under the button
+/// flattens into the channel there while the rest stays full height, like liquid poured through.
+struct LensShape: Shape {
+  var center: CGFloat
   var slot: CGFloat
-  var reach: CGFloat
 
-  var restLeft: CGFloat { Metrics.lensInset + slot / 2 }
-  var restRight: CGFloat { width - Metrics.lensInset - slot / 2 }
+  /// The bar's outline, the same inset in from every edge.
+  private static let inside = NotchedCapsule(
+    sink: Metrics.fabSink - Metrics.lensInset,
+    radius: Metrics.cradleRadius + Metrics.lensInset,
+    shoulder: Metrics.shoulder - Metrics.lensInset)
 
-  func frame(center: CGFloat) -> CGRect {
-    let full = Metrics.bar - 2 * Metrics.lensInset
-    // Under the cradle the lens reaches just past its bottom, close enough to melt into the button.
-    let channel = Metrics.bar - Metrics.fabSink - Metrics.cradleRadius - Metrics.lensInset + 2
-    // Squeezing starts just before the lens's edge meets the cradle and is complete near the middle.
-    let start = reach + slot / 2 + 8
-    let distance = abs(center - width / 2)
-    let progress = min(max((start - distance) / (start * 0.6), 0), 1)
-    let squeeze = progress * progress * (3 - 2 * progress)
-    let height = full + (channel - full) * squeeze
-    let lensWidth = slot * (1 + 0.12 * squeeze)
-    let bottom = Metrics.bar - Metrics.lensInset
-    return CGRect(x: center - lensWidth / 2, y: bottom - height, width: lensWidth, height: height)
+  func path(in rect: CGRect) -> Path {
+    let room = rect.insetBy(dx: Metrics.lensInset, dy: Metrics.lensInset)
+    let lens = CGRect(x: center - slot / 2, y: room.minY, width: slot, height: room.height)
+    let capsule = CGPath(
+      roundedRect: lens, cornerWidth: room.height / 2, cornerHeight: room.height / 2, transform: nil)
+    return Path(capsule.intersection(Self.inside.path(in: room).cgPath))
   }
 }
 
-/// Places the lens frame by frame, so it also squeezes under the cradle while it animates from
-/// one tab to the other, not only while a finger drags it.
-struct LensPlacement: ViewModifier, Animatable {
+/// Draws the lens frame by frame, so it also flows through the channel while it springs from one
+/// tab to the other, not only while a finger drags it.
+struct LensGlass: ViewModifier, Animatable {
   var center: CGFloat
-  var geometry: LensGeometry
-  /// The capsule's top edge in the view.
-  var top: CGFloat
+  var slot: CGFloat
+  var tint: Color
 
   var animatableData: CGFloat {
     get { center }
@@ -153,10 +147,7 @@ struct LensPlacement: ViewModifier, Animatable {
   }
 
   func body(content: Content) -> some View {
-    let frame = geometry.frame(center: center)
-    return content
-      .frame(width: frame.width, height: frame.height)
-      .position(x: frame.midX, y: top + frame.midY)
+    content.barGlass(in: LensShape(center: center, slot: slot), tint: tint)
   }
 }
 
@@ -177,7 +168,6 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
       let width = geometry.size.width
       // Each tab has the capsule's end up to the cradle, less a little air.
       let slot = max(width / 2 - shape.reach - 2 * Metrics.lensInset, 44)
-      let lens = LensGeometry(width: width, slot: slot, reach: shape.reach)
       ZStack(alignment: .topLeading) {
         // The capsule's glass, with the cradle.
         Color.clear
@@ -189,7 +179,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
         // passes under the cradle.
         GlassGroup(spacing: Metrics.melt) {
           ZStack(alignment: .topLeading) {
-            lensView(lens)
+            lensView(width: width, slot: slot)
             calendarButton
               .position(x: width / 2, y: Metrics.fab / 2)
           }
@@ -207,23 +197,25 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
 
   private var selectedSide: Side? { Side(rawValue: props.selected) }
 
-  private func lensView(_ lens: LensGeometry) -> some View {
+  private func lensView(width: CGFloat, slot: CGFloat) -> some View {
+    let restLeft = Metrics.lensInset + slot / 2
+    let restRight = width - restLeft
     let center: CGFloat
     if let dragX {
-      center = min(max(dragX, lens.restLeft), lens.restRight)
+      center = min(max(dragX, restLeft), restRight)
     } else {
-      center = selectedSide == .right ? lens.restRight : lens.restLeft
+      center = selectedSide == .right ? restRight : restLeft
     }
     let lifted = dragX != nil
     return Color.clear
-      .barGlass(in: Capsule(), tint: Color.primary.opacity(lifted ? 0.06 : 0.1))
-      .scaleEffect(lifted ? 1.06 : 1)
-      .modifier(LensPlacement(center: center, geometry: lens, top: Metrics.rise))
+      .frame(width: width, height: Metrics.bar)
+      .modifier(LensGlass(center: center, slot: slot, tint: Color.primary.opacity(lifted ? 0.06 : 0.1)))
+      .position(x: width / 2, y: Metrics.rise + Metrics.bar / 2)
       .opacity(lifted || selectedSide != nil ? 1 : 0)
       .animation(
         lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .spring(response: 0.5, dampingFraction: 0.72),
         value: center)
-      .animation(.spring(response: 0.3, dampingFraction: 0.7), value: lifted)
+      .animation(.easeOut(duration: 0.2), value: lifted)
       .allowsHitTesting(false)
   }
 
@@ -290,7 +282,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
 
   // MARK: The calendar's button
 
-  /// Drawn only: React Native lays a transparent button over it, which the calendar zooms out of.
+  /// Drawn only: React Native lays a transparent button over it, which the calendar grows out of.
   private var calendarButton: some View {
     VStack(spacing: 0) {
       Text(props.weekday)

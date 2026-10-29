@@ -6,6 +6,7 @@ import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { ActivityBadge } from '@/components/activity-badge';
 import { AppText } from '@/components/app-text';
+import { useCloseCalendar } from '@/components/calendar-reveal';
 import { ListGroup, Row, SectionTitle } from '@/components/card';
 import { DayDetail } from '@/components/day-detail';
 import { Segmented } from '@/components/form';
@@ -54,6 +55,7 @@ const DAY_IN = FadeIn.duration(180);
 export default function CalendarScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const closeCalendar = useCloseCalendar();
   const theme = useTheme();
   const today = useToday();
 
@@ -139,7 +141,7 @@ export default function CalendarScreen() {
   return (
     <ScreenScroll>
       <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi il calendario" onPress={() => router.back()} />
+        <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi il calendario" onPress={closeCalendar} />
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         {/* As in Calendar: always in the bar, dimmed while today is on screen. */}

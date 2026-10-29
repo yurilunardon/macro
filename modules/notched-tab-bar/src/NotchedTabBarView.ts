@@ -19,7 +19,7 @@ export type NotchedTabBarProps = ViewProps & {
   accent: ColorValue;
   /**
    * While a finger is down on the calendar's button. The touch is React Native's: a transparent
-   * button laid over the drawn one, so the calendar can zoom out of it.
+   * button laid over the drawn one, so the calendar can grow out of it.
    */
   calendarPressed: boolean;
   onSelect: (event: NativeSyntheticEvent<{ tab: NotchedTabBarTab }>) => void;
