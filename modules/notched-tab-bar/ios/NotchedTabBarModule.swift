@@ -47,10 +47,9 @@ private enum Metrics {
   /// between it and the cradle.
   static let lensInset: CGFloat = 4
   static let cradleGap: CGFloat = 2
-  /// Glass this close together melts into one piece: the lens and the button, once the lens is
-  /// this near the middle.
-  static let melt: CGFloat = 20
-  static let meltZone: CGFloat = 36
+  /// Glass this close together melts into one piece: less than the air around the cradle, so
+  /// the lens keeps clear of the button on its way and only joins it through its own neck.
+  static let melt: CGFloat = 8
   /// How far the button rises above the capsule: the view is `rise + bar` tall.
   static var rise: CGFloat { fab / 2 - fabSink }
   static var cradleRadius: CGFloat { fab / 2 + cradleMargin }
@@ -118,10 +117,9 @@ struct NotchedCapsule: Shape {
 /// The lens: a capsule as tall as the inside of the bar, with the cradle (grown by the same
 /// inset, and a little air) cut out of it. It fills all the room there is, so the part passing
 /// under the button flattens into the channel there while the rest stays full height, like
-/// liquid poured through. It spans `from` to `to`, stretched when a tab pulls it.
+/// liquid poured through. Near the middle a neck rises out of it into the button.
 struct LensShape: Shape {
-  var from: CGFloat
-  var to: CGFloat
+  var center: CGFloat
   var slot: CGFloat
 
   /// The bar's outline, the same inset in from every edge.
@@ -132,16 +130,64 @@ struct LensShape: Shape {
 
   func path(in rect: CGRect) -> Path {
     let room = rect.insetBy(dx: Metrics.lensInset, dy: Metrics.lensInset)
-    let left = min(from, to) - slot / 2
-    let lens = CGRect(x: left, y: room.minY, width: abs(to - from) + slot, height: room.height)
+    let lens = CGRect(x: center - slot / 2, y: room.minY, width: slot, height: room.height)
     let capsule = CGPath(
       roundedRect: lens, cornerWidth: room.height / 2, cornerHeight: room.height / 2, transform: nil)
-    return Path(capsule.intersection(Self.inside.path(in: room).cgPath))
+    let body = capsule.intersection(Self.inside.path(in: room).cgPath)
+    guard let neck = neck(in: rect) else { return Path(body) }
+    return Path(body.union(neck))
+  }
+
+  /// A drop drawn up out of the channel towards the button as the lens nears the middle, thin at
+  /// the waist like liquid pulled between two drops, until it runs into the button.
+  private func neck(in rect: CGRect) -> CGPath? {
+    let middle = rect.midX
+    let near = 1 - min(abs(center - middle) / (slot * 0.5), 1)
+    let pull = near * near * (3 - 2 * near)
+    guard pull > 0.01 else { return nil }
+    let channelTop = rect.minY + Metrics.fabSink + Metrics.cradleRadius + Metrics.lensInset + Metrics.cradleGap
+    let buttonBottom = rect.minY + Metrics.fabSink + Metrics.fab / 2
+    let bottom = channelTop + 4
+    let top = bottom - pull * (bottom - (buttonBottom - 5))
+    let base = middle + (center - middle) * 0.5
+    let baseHalf = 8 + 8 * pull
+    let topHalf = 4 + 8 * pull
+    let waist = 2 + 6 * pull
+    let midY = (bottom + top) / 2
+    let midX = (base + middle) / 2
+
+    let path = CGMutablePath()
+    path.move(to: CGPoint(x: base - baseHalf, y: bottom))
+    path.addQuadCurve(to: CGPoint(x: middle - topHalf, y: top), control: CGPoint(x: midX - waist, y: midY))
+    path.addQuadCurve(to: CGPoint(x: middle + topHalf, y: top), control: CGPoint(x: middle, y: top - topHalf))
+    path.addQuadCurve(to: CGPoint(x: base + baseHalf, y: bottom), control: CGPoint(x: midX + waist, y: midY))
+    path.closeSubpath()
+    return path
   }
 }
 
-/// The lens and the calendar's button, drawn frame by frame as the lens moves, so it flows
-/// through the channel while it springs from one tab to the other, not only under a finger.
+/// Where the lens rests under a tab, a drop of glass that stays there as the lens leaves,
+/// stretching after it and shrinking away, and swells to meet it as it arrives.
+struct RestDrop: Shape {
+  var rest: CGFloat
+  var center: CGFloat
+  var slot: CGFloat
+
+  func path(in rect: CGRect) -> Path {
+    let size = 1 - min(abs(center - rest) / (slot * 0.9), 1)
+    guard size > 0.02 else { return Path() }
+    let room = rect.insetBy(dx: Metrics.lensInset, dy: Metrics.lensInset)
+    let width = slot * size
+    let height = room.height * (0.4 + 0.6 * size)
+    return Path(
+      roundedRect: CGRect(x: rest - width / 2, y: room.midY - height / 2, width: width, height: height),
+      cornerRadius: min(width, height) / 2)
+  }
+}
+
+/// The lens, the drops under the tabs and the calendar's button, drawn frame by frame as the lens
+/// moves, so it flows through the channel while it springs from one tab to the other, not only
+/// under a finger.
 struct LensLayer<CalendarButton: View>: View, Animatable {
   var center: CGFloat
   var width: CGFloat
@@ -158,18 +204,14 @@ struct LensLayer<CalendarButton: View>: View, Animatable {
 
   var body: some View {
     let rest = Metrics.lensInset + slot / 2
-    let near = center < width / 2 ? rest : width - rest
-    let pulled = Self.magnet(center, to: near, range: slot * 0.6)
-    // The lens melts into the button only near the middle; on the way it keeps clear of it.
-    let middle = 1 - min(abs(pulled - width / 2) / Metrics.meltZone, 1)
-    let melt = Metrics.melt * middle * middle * (3 - 2 * middle)
-    return GlassGroup(spacing: melt) {
+    return GlassGroup(spacing: Metrics.melt) {
       ZStack(alignment: .topLeading) {
-        Color.clear
-          .frame(width: width, height: Metrics.bar)
-          .barGlass(in: LensShape(from: center, to: pulled, slot: slot), tint: tint)
-          .position(x: width / 2, y: Metrics.rise + Metrics.bar / 2)
-          .opacity(shown ? 1 : 0)
+        Group {
+          glass(RestDrop(rest: rest, center: center, slot: slot))
+          glass(RestDrop(rest: width - rest, center: center, slot: slot))
+          glass(LensShape(center: center, slot: slot))
+        }
+        .opacity(shown ? 1 : 0)
         button
           .position(x: width / 2, y: Metrics.fab / 2)
       }
@@ -177,12 +219,11 @@ struct LensLayer<CalendarButton: View>: View, Animatable {
     }
   }
 
-  /// Near a tab the lens is drawn to it like a magnet: it runs ahead to the tab and stays
-  /// stretched back to where it would be.
-  private static func magnet(_ center: CGFloat, to rest: CGFloat, range: CGFloat) -> CGFloat {
-    let offset = center - rest
-    guard abs(offset) < range else { return center }
-    return rest + offset * abs(offset) / range
+  private func glass<S: Shape>(_ shape: S) -> some View {
+    Color.clear
+      .frame(width: width, height: Metrics.bar)
+      .barGlass(in: shape, tint: tint)
+      .position(x: width / 2, y: Metrics.rise + Metrics.bar / 2)
   }
 }
 
