@@ -1,9 +1,14 @@
 # Builds the unsigned IPA on a GitHub macOS runner, as an alternative to building on your Mac.
-# Run it from the Actions tab ("Run workflow"), then download the "Macro-ipa" artifact.
+# Run it from the Actions tab ("Run workflow"). The IPA is published as a release, so the phone
+# can download it straight into SideStore:
+# https://github.com/yurilunardon/macro/releases/latest/download/Macro.ipa
 name: Build IPA
 
 on:
   workflow_dispatch:
+
+permissions:
+  contents: write
 
 jobs:
   build:
@@ -36,3 +41,15 @@ jobs:
           name: Macro-ipa
           path: build/Macro.ipa
           retention-days: 14
+
+      # One release per app version; building the same version again replaces its IPA.
+      - name: Publish release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          VERSION="v$(node -p "require('./app.json').expo.version")"
+          if gh release view "$VERSION" >/dev/null 2>&1; then
+            gh release upload "$VERSION" build/Macro.ipa --clobber
+          else
+            gh release create "$VERSION" build/Macro.ipa --target "$GITHUB_SHA" --title "Fuel $VERSION" --notes "Built from ${GITHUB_REF_NAME} at ${GITHUB_SHA::7}."
+          fi

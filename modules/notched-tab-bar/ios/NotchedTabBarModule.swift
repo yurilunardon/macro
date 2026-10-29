@@ -43,11 +43,14 @@ private enum Metrics {
   static let fabSink: CGFloat = 4
   /// The rounding where the top edge turns down into the cradle.
   static let shoulder: CGFloat = 10
-  /// The lens under the tab on screen, a little inside the capsule.
+  /// The lens under the tab on screen, a little inside the capsule, and a little more air
+  /// between it and the cradle.
   static let lensInset: CGFloat = 4
-  /// Glass this close together melts into one piece: the lens and the button, as the lens
-  /// passes under the cradle.
+  static let cradleGap: CGFloat = 2
+  /// Glass this close together melts into one piece: the lens and the button, once the lens is
+  /// this near the middle.
   static let melt: CGFloat = 20
+  static let meltZone: CGFloat = 36
   /// How far the button rises above the capsule: the view is `rise + bar` tall.
   static var rise: CGFloat { fab / 2 - fabSink }
   static var cradleRadius: CGFloat { fab / 2 + cradleMargin }
@@ -113,41 +116,73 @@ struct NotchedCapsule: Shape {
 }
 
 /// The lens: a capsule as tall as the inside of the bar, with the cradle (grown by the same
-/// inset) cut out of it. It fills all the room there is, so the part passing under the button
-/// flattens into the channel there while the rest stays full height, like liquid poured through.
+/// inset, and a little air) cut out of it. It fills all the room there is, so the part passing
+/// under the button flattens into the channel there while the rest stays full height, like
+/// liquid poured through. It spans `from` to `to`, stretched when a tab pulls it.
 struct LensShape: Shape {
-  var center: CGFloat
+  var from: CGFloat
+  var to: CGFloat
   var slot: CGFloat
 
   /// The bar's outline, the same inset in from every edge.
   private static let inside = NotchedCapsule(
     sink: Metrics.fabSink - Metrics.lensInset,
-    radius: Metrics.cradleRadius + Metrics.lensInset,
+    radius: Metrics.cradleRadius + Metrics.lensInset + Metrics.cradleGap,
     shoulder: Metrics.shoulder - Metrics.lensInset)
 
   func path(in rect: CGRect) -> Path {
     let room = rect.insetBy(dx: Metrics.lensInset, dy: Metrics.lensInset)
-    let lens = CGRect(x: center - slot / 2, y: room.minY, width: slot, height: room.height)
+    let left = min(from, to) - slot / 2
+    let lens = CGRect(x: left, y: room.minY, width: abs(to - from) + slot, height: room.height)
     let capsule = CGPath(
       roundedRect: lens, cornerWidth: room.height / 2, cornerHeight: room.height / 2, transform: nil)
     return Path(capsule.intersection(Self.inside.path(in: room).cgPath))
   }
 }
 
-/// Draws the lens frame by frame, so it also flows through the channel while it springs from one
-/// tab to the other, not only while a finger drags it.
-struct LensGlass: ViewModifier, Animatable {
+/// The lens and the calendar's button, drawn frame by frame as the lens moves, so it flows
+/// through the channel while it springs from one tab to the other, not only under a finger.
+struct LensLayer<CalendarButton: View>: View, Animatable {
   var center: CGFloat
+  var width: CGFloat
+  var height: CGFloat
   var slot: CGFloat
   var tint: Color
+  var shown: Bool
+  var button: CalendarButton
 
   var animatableData: CGFloat {
     get { center }
     set { center = newValue }
   }
 
-  func body(content: Content) -> some View {
-    content.barGlass(in: LensShape(center: center, slot: slot), tint: tint)
+  var body: some View {
+    let rest = Metrics.lensInset + slot / 2
+    let near = center < width / 2 ? rest : width - rest
+    let pulled = Self.magnet(center, to: near, range: slot * 0.6)
+    // The lens melts into the button only near the middle; on the way it keeps clear of it.
+    let middle = 1 - min(abs(pulled - width / 2) / Metrics.meltZone, 1)
+    let melt = Metrics.melt * middle * middle * (3 - 2 * middle)
+    return GlassGroup(spacing: melt) {
+      ZStack(alignment: .topLeading) {
+        Color.clear
+          .frame(width: width, height: Metrics.bar)
+          .barGlass(in: LensShape(from: center, to: pulled, slot: slot), tint: tint)
+          .position(x: width / 2, y: Metrics.rise + Metrics.bar / 2)
+          .opacity(shown ? 1 : 0)
+        button
+          .position(x: width / 2, y: Metrics.fab / 2)
+      }
+      .frame(width: width, height: height, alignment: .topLeading)
+    }
+  }
+
+  /// Near a tab the lens is drawn to it like a magnet: it runs ahead to the tab and stays
+  /// stretched back to where it would be.
+  private static func magnet(_ center: CGFloat, to rest: CGFloat, range: CGFloat) -> CGFloat {
+    let offset = center - rest
+    guard abs(offset) < range else { return center }
+    return rest + offset * abs(offset) / range
   }
 }
 
@@ -177,14 +212,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
 
         // The lens and the button in one container, so their glass melts together when the lens
         // passes under the cradle.
-        GlassGroup(spacing: Metrics.melt) {
-          ZStack(alignment: .topLeading) {
-            lensView(width: width, slot: slot)
-            calendarButton
-              .position(x: width / 2, y: Metrics.fab / 2)
-          }
-          .frame(width: width, height: geometry.size.height, alignment: .topLeading)
-        }
+        lensLayer(width: width, height: geometry.size.height, slot: slot)
 
         tabs(width: width, slot: slot)
           .position(x: width / 2, y: Metrics.rise + Metrics.bar / 2)
@@ -197,7 +225,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
 
   private var selectedSide: Side? { Side(rawValue: props.selected) }
 
-  private func lensView(width: CGFloat, slot: CGFloat) -> some View {
+  private func lensLayer(width: CGFloat, height: CGFloat, slot: CGFloat) -> some View {
     let restLeft = Metrics.lensInset + slot / 2
     let restRight = width - restLeft
     let center: CGFloat
@@ -207,16 +235,16 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
       center = selectedSide == .right ? restRight : restLeft
     }
     let lifted = dragX != nil
-    return Color.clear
-      .frame(width: width, height: Metrics.bar)
-      .modifier(LensGlass(center: center, slot: slot, tint: Color.primary.opacity(lifted ? 0.06 : 0.1)))
-      .position(x: width / 2, y: Metrics.rise + Metrics.bar / 2)
-      .opacity(lifted || selectedSide != nil ? 1 : 0)
-      .animation(
-        lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .spring(response: 0.5, dampingFraction: 0.72),
-        value: center)
-      .animation(.easeOut(duration: 0.2), value: lifted)
-      .allowsHitTesting(false)
+    return LensLayer(
+      center: center, width: width, height: height, slot: slot,
+      tint: Color.primary.opacity(lifted ? 0.06 : 0.1), shown: lifted || selectedSide != nil,
+      button: calendarButton
+    )
+    .animation(
+      lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .spring(response: 0.5, dampingFraction: 0.72),
+      value: center)
+    .animation(.easeOut(duration: 0.2), value: lifted)
+    .allowsHitTesting(false)
   }
 
   // MARK: The tabs
