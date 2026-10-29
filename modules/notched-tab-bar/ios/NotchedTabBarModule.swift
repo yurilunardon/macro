@@ -19,17 +19,20 @@ public final class NotchedTabBarProps: ExpoSwiftUI.ViewProps {
   @Field var rightLabel: String = ""
   @Field var rightIcon: String = "circle"
   @Field var rightSelectedIcon: String?
-  /// The button on screen: "left", "right", "calendar", or anything else for none.
+  /// The tab on screen: "left", "right", or anything else for none.
   @Field var selected: String = "left"
   /// Today on the calendar's button, as on the Calendar app's icon.
   @Field var weekday: String = ""
   @Field var day: String = ""
   @Field var accent: Color = .green
-  /// `{ tab: "left" | "right" | "calendar" }` when a button is picked.
+  /// While a finger is down on the calendar's button. React Native handles that touch, so the
+  /// calendar can open out of the button with the system's zoom.
+  @Field var calendarPressed: Bool = false
+  /// `{ tab: "left" | "right" }` when a tab is picked.
   var onSelect = EventDispatcher()
 }
 
-/// Sizes shared with the JavaScript side (modules/notched-tab-bar/index.ts).
+/// Sizes shared with the JavaScript side (modules/notched-tab-bar/src/NotchedTabBarView.ts).
 private enum Metrics {
   /// The capsule, as tall as iOS's own tab bar.
   static let bar: CGFloat = 62
@@ -42,8 +45,12 @@ private enum Metrics {
   static let shoulder: CGFloat = 10
   /// The lens under the tab on screen, a little inside the capsule.
   static let lensInset: CGFloat = 4
+  /// Glass this close together melts into one piece: the lens and the button, as the lens
+  /// passes under the cradle.
+  static let melt: CGFloat = 20
   /// How far the button rises above the capsule: the view is `rise + bar` tall.
   static var rise: CGFloat { fab / 2 - fabSink }
+  static var cradleRadius: CGFloat { fab / 2 + cradleMargin }
 }
 
 private enum Side: String {
@@ -105,6 +112,54 @@ struct NotchedCapsule: Shape {
   }
 }
 
+/// Where the lens is for a given centre along the capsule. At the tabs it fills the capsule's
+/// height; towards the middle it squeezes down into the channel under the cradle, wider and
+/// flatter, like a drop of liquid pushed through.
+struct LensGeometry {
+  var width: CGFloat
+  var slot: CGFloat
+  var reach: CGFloat
+
+  var restLeft: CGFloat { Metrics.lensInset + slot / 2 }
+  var restRight: CGFloat { width - Metrics.lensInset - slot / 2 }
+
+  func frame(center: CGFloat) -> CGRect {
+    let full = Metrics.bar - 2 * Metrics.lensInset
+    // Under the cradle the lens reaches just past its bottom, close enough to melt into the button.
+    let channel = Metrics.bar - Metrics.fabSink - Metrics.cradleRadius - Metrics.lensInset + 2
+    // Squeezing starts just before the lens's edge meets the cradle and is complete near the middle.
+    let start = reach + slot / 2 + 8
+    let distance = abs(center - width / 2)
+    let progress = min(max((start - distance) / (start * 0.6), 0), 1)
+    let squeeze = progress * progress * (3 - 2 * progress)
+    let height = full + (channel - full) * squeeze
+    let lensWidth = slot * (1 + 0.12 * squeeze)
+    let bottom = Metrics.bar - Metrics.lensInset
+    return CGRect(x: center - lensWidth / 2, y: bottom - height, width: lensWidth, height: height)
+  }
+}
+
+/// Places the lens frame by frame, so it also squeezes under the cradle while it animates from
+/// one tab to the other, not only while a finger drags it.
+struct LensPlacement: ViewModifier, Animatable {
+  var center: CGFloat
+  var geometry: LensGeometry
+  /// The capsule's top edge in the view.
+  var top: CGFloat
+
+  var animatableData: CGFloat {
+    get { center }
+    set { center = newValue }
+  }
+
+  func body(content: Content) -> some View {
+    let frame = geometry.frame(center: center)
+    return content
+      .frame(width: frame.width, height: frame.height)
+      .position(x: frame.midX, y: top + frame.midY)
+  }
+}
+
 struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
   @ObservedObject var props: NotchedTabBarProps
   /// Where a finger sliding along the capsule is, and the tab under it.
@@ -115,59 +170,74 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     self.props = props
   }
 
-  private let shape = NotchedCapsule(
-    sink: Metrics.fabSink, radius: Metrics.fab / 2 + Metrics.cradleMargin, shoulder: Metrics.shoulder)
+  private let shape = NotchedCapsule(sink: Metrics.fabSink, radius: Metrics.cradleRadius, shoulder: Metrics.shoulder)
 
   var body: some View {
     GeometryReader { geometry in
       let width = geometry.size.width
-      ZStack(alignment: .top) {
-        bar(width: width)
-          .padding(.top, Metrics.rise)
-        calendarButton
+      // Each tab has the capsule's end up to the cradle, less a little air.
+      let slot = max(width / 2 - shape.reach - 2 * Metrics.lensInset, 44)
+      let lens = LensGeometry(width: width, slot: slot, reach: shape.reach)
+      ZStack(alignment: .topLeading) {
+        // The capsule's glass, with the cradle.
+        Color.clear
+          .frame(width: width, height: Metrics.bar)
+          .barGlass(in: shape, tint: nil)
+          .position(x: width / 2, y: Metrics.rise + Metrics.bar / 2)
+
+        // The lens and the button in one container, so their glass melts together when the lens
+        // passes under the cradle.
+        GlassGroup(spacing: Metrics.melt) {
+          ZStack(alignment: .topLeading) {
+            lensView(lens)
+            calendarButton
+              .position(x: width / 2, y: Metrics.fab / 2)
+          }
+          .frame(width: width, height: geometry.size.height, alignment: .topLeading)
+        }
+
+        tabs(width: width, slot: slot)
+          .position(x: width / 2, y: Metrics.rise + Metrics.bar / 2)
       }
-      .frame(width: width, height: geometry.size.height, alignment: .top)
+      .frame(width: width, height: geometry.size.height, alignment: .topLeading)
     }
   }
 
-  // MARK: The capsule
+  // MARK: The lens
 
-  private func bar(width: CGFloat) -> some View {
-    // Each tab has the capsule's end up to the cradle, less a little air.
-    let slot = max(width / 2 - shape.reach - 2 * Metrics.lensInset, 44)
-    let rest: [Side: CGFloat] = [.left: Metrics.lensInset, .right: width - Metrics.lensInset - slot]
-    let selectedSide = Side(rawValue: props.selected)
-    let lensX: CGFloat
+  private var selectedSide: Side? { Side(rawValue: props.selected) }
+
+  private func lensView(_ lens: LensGeometry) -> some View {
+    let center: CGFloat
     if let dragX {
-      lensX = min(max(dragX - slot / 2, rest[.left] ?? 0), rest[.right] ?? 0)
+      center = min(max(dragX, lens.restLeft), lens.restRight)
     } else {
-      lensX = rest[selectedSide ?? .left] ?? 0
+      center = selectedSide == .right ? lens.restRight : lens.restLeft
     }
-    let lensShown = dragX != nil || selectedSide != nil
+    let lifted = dragX != nil
+    return Color.clear
+      .barGlass(in: Capsule(), tint: Color.primary.opacity(lifted ? 0.06 : 0.1))
+      .scaleEffect(lifted ? 1.06 : 1)
+      .modifier(LensPlacement(center: center, geometry: lens, top: Metrics.rise))
+      .opacity(lifted || selectedSide != nil ? 1 : 0)
+      .animation(
+        lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .spring(response: 0.5, dampingFraction: 0.72),
+        value: center)
+      .animation(.spring(response: 0.3, dampingFraction: 0.7), value: lifted)
+      .allowsHitTesting(false)
+  }
 
-    return ZStack(alignment: .leading) {
-      Capsule()
-        .fill(Color.primary.opacity(0.1))
-        .frame(width: slot, height: Metrics.bar - 2 * Metrics.lensInset)
-        .scaleEffect(dragX == nil ? 1 : 1.06)
-        .offset(x: lensX)
-        .opacity(lensShown ? 1 : 0)
-        .animation(
-          dragX == nil ? .spring(response: 0.38, dampingFraction: 0.78) : .interactiveSpring(response: 0.18, dampingFraction: 0.9),
-          value: lensX)
-        .animation(.spring(response: 0.3, dampingFraction: 0.8), value: lensShown)
-      HStack(spacing: 0) {
-        tab(.left).frame(width: slot)
-        Spacer(minLength: 0)
-        tab(.right).frame(width: slot)
-      }
-      .padding(.horizontal, Metrics.lensInset)
+  // MARK: The tabs
+
+  private func tabs(width: CGFloat, slot: CGFloat) -> some View {
+    HStack(spacing: 0) {
+      tab(.left).frame(width: slot)
+      Spacer(minLength: 0)
+      tab(.right).frame(width: slot)
     }
+    .padding(.horizontal, Metrics.lensInset)
     .frame(width: width, height: Metrics.bar)
-    // The lens slides from one tab to the other under the cradle.
-    .clipShape(shape)
     .contentShape(shape)
-    .barGlass(in: shape, tint: nil)
     .simultaneousGesture(
       DragGesture(minimumDistance: 6)
         .onChanged { value in
@@ -185,7 +255,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
           hovered = nil
           // A short slide is a tap, which the tab's button already reports.
           if moved {
-            select(side.rawValue)
+            select(side)
           }
         }
     )
@@ -195,9 +265,10 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     let label = side == .left ? props.leftLabel : props.rightLabel
     let icon = side == .left ? props.leftIcon : props.rightIcon
     let selectedIcon = (side == .left ? props.leftSelectedIcon : props.rightSelectedIcon) ?? icon
-    let on = props.selected == side.rawValue
+    // The tab under a sliding finger lights up before the finger lifts.
+    let on = (hovered ?? selectedSide) == side
     return Button {
-      select(side.rawValue)
+      select(side)
     } label: {
       VStack(spacing: 2) {
         Image(systemName: on ? selectedIcon : icon)
@@ -208,54 +279,64 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
           .lineLimit(1)
       }
       .foregroundStyle(on ? props.accent : Color.primary)
+      .animation(.easeOut(duration: 0.15), value: on)
       .frame(maxWidth: .infinity, maxHeight: .infinity)
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
     .accessibilityLabel(label)
-    .accessibilityAddTraits(on ? [.isSelected, .isButton] : .isButton)
+    .accessibilityAddTraits(selectedSide == side ? [.isSelected, .isButton] : .isButton)
   }
 
   // MARK: The calendar's button
 
+  /// Drawn only: React Native lays a transparent button over it, which the calendar zooms out of.
   private var calendarButton: some View {
-    Button {
-      select("calendar")
-    } label: {
-      VStack(spacing: 0) {
-        Text(props.weekday)
-          .font(.system(size: 10, weight: .bold))
-          .kerning(0.8)
-          .opacity(0.9)
-        Text(props.day)
-          .font(.system(size: 24, weight: .bold))
-          .monospacedDigit()
-      }
-      .foregroundStyle(Color.white)
-      .frame(width: Metrics.fab, height: Metrics.fab)
-      .contentShape(Circle())
+    VStack(spacing: 0) {
+      Text(props.weekday)
+        .font(.system(size: 10, weight: .bold))
+        .kerning(0.8)
+        .foregroundStyle(props.accent)
+      Text(props.day)
+        .font(.system(size: 24, weight: .semibold))
+        .monospacedDigit()
+        .foregroundStyle(Color.primary)
     }
-    .buttonStyle(.plain)
-    .barGlass(in: Circle(), tint: props.accent)
-    .overlay {
-      // The calendar on screen: a thin white ring inside its circle.
-      if props.selected == "calendar" {
-        Circle()
-          .inset(by: 4)
-          .stroke(Color.white.opacity(0.6), lineWidth: 2)
-          .allowsHitTesting(false)
-      }
-    }
-    .accessibilityLabel("Calendario")
+    .frame(width: Metrics.fab, height: Metrics.fab)
+    .barGlass(in: Circle(), tint: nil)
+    .scaleEffect(props.calendarPressed ? 0.9 : 1)
+    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: props.calendarPressed)
+    .allowsHitTesting(false)
+    .accessibilityHidden(true)
   }
 
-  private func select(_ tab: String) {
-    props.onSelect(["tab": tab])
+  private func select(_ side: Side) {
+    props.onSelect(["tab": side.rawValue])
+  }
+}
+
+/// A `GlassEffectContainer` where the system has Liquid Glass; the content as it is otherwise.
+struct GlassGroup<Content: View>: View {
+  var spacing: CGFloat
+  @ViewBuilder var content: () -> Content
+
+  var body: some View {
+    #if compiler(>=6.2)
+    if #available(iOS 26.0, *) {
+      GlassEffectContainer(spacing: spacing) {
+        content()
+      }
+    } else {
+      content()
+    }
+    #else
+    content()
+    #endif
   }
 }
 
 extension View {
-  /// Liquid Glass in a shape, reacting to touches; a material where the system has no glass.
+  /// Liquid Glass in a shape; a material where the system has no glass.
   @ViewBuilder
   fileprivate func barGlass<S: Shape>(in shape: S, tint: Color?) -> some View {
     #if compiler(>=6.2)
@@ -272,7 +353,7 @@ extension View {
   @ViewBuilder
   fileprivate func solidBackground<S: Shape>(in shape: S, tint: Color?) -> some View {
     if let tint {
-      self.background(tint, in: shape)
+      self.background(.ultraThinMaterial, in: shape).background(tint, in: shape)
     } else {
       self.background(.ultraThinMaterial, in: shape)
     }
@@ -282,7 +363,6 @@ extension View {
 #if compiler(>=6.2)
 @available(iOS 26.0, *)
 private func barGlassStyle(_ tint: Color?) -> Glass {
-  let glass = tint.map { Glass.regular.tint($0) } ?? Glass.regular
-  return glass.interactive()
+  tint.map { Glass.regular.tint($0) } ?? Glass.regular
 }
 #endif

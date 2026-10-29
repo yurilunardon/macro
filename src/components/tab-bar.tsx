@@ -1,7 +1,8 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { Link } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import type { SFSymbol } from 'expo-symbols';
-import { createContext, use, useEffect, useRef, type ReactNode } from 'react';
+import { createContext, use, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
@@ -14,7 +15,7 @@ import { weekdayShort } from '@/lib/calendar';
 import { weekdayOf } from '@/lib/dates';
 import { haptics } from '@/services/haptics';
 
-import { NOTCHED_TAB_BAR_HEIGHT, NotchedTabBarView } from '../../modules/notched-tab-bar';
+import { NOTCHED_TAB_BAR_BUTTON, NOTCHED_TAB_BAR_HEIGHT, NotchedTabBarView } from '../../modules/notched-tab-bar';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
@@ -25,7 +26,7 @@ const glass = isLiquidGlassAvailable();
 const BAR = 62;
 const BAR_WIDTH = 300;
 /** The calendar's button, floating over the middle of the capsule with its centre near the top edge. */
-const FAB = 60;
+const FAB = NOTCHED_TAB_BAR_BUTTON;
 const HEIGHT = NOTCHED_TAB_BAR_HEIGHT;
 /** The lens under the tab on screen, a little inside the capsule. */
 const LENS_INSET = 4;
@@ -77,10 +78,9 @@ type Tab = { label: string; icon: SFSymbol; selectedIcon?: SFSymbol };
 type TabBarProps = BottomTabBarProps & {
   screen: number;
   safeBottom: number;
-  /** The tabs at the two ends of the capsule and the calendar's route, by name. */
+  /** The tabs at the two ends of the capsule, by route name. */
   left: string;
   right: string;
-  calendar: string;
   tabs: Record<string, Tab>;
   /** Shown in a capsule of its own above, as the mini player in Music. */
   accessory?: ReactNode;
@@ -88,18 +88,17 @@ type TabBarProps = BottomTabBarProps & {
 
 /**
  * A floating action button over a tab bar, in Liquid Glass. The capsule holds the two tabs and
- * runs on under the calendar's green circle, which floats on its own in a cradle cut into the
+ * runs on under the calendar's round button, which floats on its own in a cradle cut into the
  * middle of the capsule. Holding and sliding along the capsule moves its lens from one tab to
- * the other, under the circle, and picks the tab on release; the circle only opens the calendar
- * when tapped.
+ * the other, under the button, and picks the tab on release; the button only opens the
+ * calendar, which grows out of it and shrinks back into it.
  */
-export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left, right, calendar, tabs, accessory }: TabBarProps) {
+export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left, right, tabs, accessory }: TabBarProps) {
   const theme = useTheme();
   const width = Math.min(screen - 2 * Spacing.xl, BAR_WIDTH);
 
   const focusedName = state.routes[state.index]?.name;
-  const focused: Side | 'calendar' | null =
-    focusedName === left ? 'left' : focusedName === right ? 'right' : focusedName === calendar ? 'calendar' : null;
+  const focused: Side | null = focusedName === left ? 'left' : focusedName === right ? 'right' : null;
 
   const press = (name: string) => {
     const route = state.routes.find((r) => r.name === name);
@@ -111,7 +110,7 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
     haptics.selection();
     navigateToTab(route.key);
   };
-  const bar: BarProps = { width, focused, tabs, left, right, calendar, press };
+  const bar: BarProps = { width, focused, tabs, left, right, press };
 
   return (
     <View pointerEvents="box-none" style={[styles.root, { bottom: barBottom(safeBottom) }]}>
@@ -133,62 +132,92 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
 
 type BarProps = {
   width: number;
-  focused: Side | 'calendar' | null;
+  focused: Side | null;
   tabs: Record<string, Tab>;
   left: string;
   right: string;
-  calendar: string;
   press: (name: string) => void;
 };
 
+/** The calendar's button: the calendar opens out of it with the system's zoom (iOS 18+). */
+function CalendarLink({ onPressIn, onPressOut, children }: { onPressIn?: () => void; onPressOut?: () => void; children?: ReactNode }) {
+  return (
+    <Link href="/calendar" asChild>
+      <Link.Trigger withAppleZoom>
+        <Pressable
+          onPressIn={() => {
+            haptics.light();
+            onPressIn?.();
+          }}
+          onPressOut={onPressOut}
+          accessibilityRole="button"
+          accessibilityLabel="Calendario"
+          accessibilityHint="Apre il calendario"
+          // A Link.Trigger's child takes one plain style: the web passes it on as is.
+          style={styles.fabTouch}>
+          {children}
+        </Pressable>
+      </Link.Trigger>
+    </Link>
+  );
+}
+
 /**
  * Drawn in SwiftUI (modules/notched-tab-bar), the only way to give Liquid Glass the cradle's
- * shape and have it react to touches as iOS's own bars do.
+ * shape. The calendar's button is drawn there too, under a transparent React Native one that
+ * the calendar zooms out of.
  */
-function SwiftUIBar({ width, focused, tabs, left, right, calendar, press }: BarProps) {
+function SwiftUIBar({ width, focused, tabs, left, right, press }: BarProps) {
   const theme = useTheme();
   const today = useToday();
   const last = useRef({ tab: '', at: 0 });
+  const [pressed, setPressed] = useState(false);
   if (!NotchedTabBarView) return null;
   const leftTab = tabs[left];
   const rightTab = tabs[right];
   return (
-    <NotchedTabBarView
-      accessibilityRole="tablist"
-      style={{ width, height: HEIGHT }}
-      leftLabel={leftTab?.label ?? ''}
-      leftIcon={leftTab?.icon ?? 'circle'}
-      leftSelectedIcon={leftTab?.selectedIcon}
-      rightLabel={rightTab?.label ?? ''}
-      rightIcon={rightTab?.icon ?? 'circle'}
-      rightSelectedIcon={rightTab?.selectedIcon}
-      selected={focused ?? 'none'}
-      weekday={weekdayShort(weekdayOf(today)).toUpperCase()}
-      day={String(Number(today.slice(8)))}
-      accent={theme.accent}
-      onSelect={({ nativeEvent: { tab } }) => {
-        // A tap that is also a short slide can report the same pick twice.
-        const now = Date.now();
-        if (last.current.tab === tab && now - last.current.at < 400) return;
-        last.current = { tab, at: now };
-        press(tab === 'left' ? left : tab === 'right' ? right : calendar);
-      }}
-    />
+    <View style={{ width, height: HEIGHT }}>
+      <NotchedTabBarView
+        accessibilityRole="tablist"
+        style={StyleSheet.absoluteFill}
+        leftLabel={leftTab?.label ?? ''}
+        leftIcon={leftTab?.icon ?? 'circle'}
+        leftSelectedIcon={leftTab?.selectedIcon}
+        rightLabel={rightTab?.label ?? ''}
+        rightIcon={rightTab?.icon ?? 'circle'}
+        rightSelectedIcon={rightTab?.selectedIcon}
+        selected={focused ?? 'none'}
+        weekday={weekdayShort(weekdayOf(today)).toUpperCase()}
+        day={String(Number(today.slice(8)))}
+        accent={theme.accent}
+        calendarPressed={pressed}
+        onSelect={({ nativeEvent: { tab } }) => {
+          // A tap that is also a short slide can report the same pick twice.
+          const now = Date.now();
+          if (last.current.tab === tab && now - last.current.at < 400) return;
+          last.current = { tab, at: now };
+          press(tab === 'left' ? left : right);
+        }}
+      />
+      <View style={[styles.fabSlot, { left: (width - FAB) / 2 }]}>
+        <CalendarLink onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} />
+      </View>
+    </View>
   );
 }
 
 /** The same bar in React Native, where the native one is missing (the web): without the cradle. */
-function ReactBar({ width, focused, tabs, left, right, calendar, press }: BarProps) {
+function ReactBar({ width, focused, tabs, left, right, press }: BarProps) {
   const theme = useTheme();
   const scheme = useColorScheme();
   const slot = slotWidth(width);
   const rest: Record<Side, number> = { left: restOf('left', width), right: restOf('right', width) };
 
-  // The lens rests under the tab on screen and is hidden while the calendar is.
+  // The lens rests under the tab on screen.
   const lensX = useSharedValue(rest[focused === 'right' ? 'right' : 'left']);
   const lensShown = useSharedValue(focused === 'left' || focused === 'right' ? 1 : 0);
   const lifted = useSharedValue(0);
-  const settle = (side: Side | 'calendar' | null) => {
+  const settle = (side: Side | null) => {
     if (side === 'left' || side === 'right') lensX.set(withSpring(restOf(side, width), LENS_SPRING));
     lensShown.set(withSpring(side === 'left' || side === 'right' ? 1 : 0, LENS_SPRING));
   };
@@ -280,15 +309,9 @@ function ReactBar({ width, focused, tabs, left, right, calendar, press }: BarPro
   );
 
   const fab = (
-    <Pressable
-      onPress={() => press(calendar)}
-      accessibilityRole="tab"
-      accessibilityState={{ selected: focused === 'calendar' }}
-      accessibilityLabel="Calendario"
-      style={styles.fill}>
-      {focused === 'calendar' ? <View style={styles.ring} /> : null}
-      <CalendarDate color={glass ? '#FFFFFF' : theme.onAccent} />
-    </Pressable>
+    <CalendarLink>
+      <CalendarDate weekdayColor={theme.accent} dayColor={theme.text} />
+    </CalendarLink>
   );
 
   return (
@@ -310,11 +333,11 @@ function ReactBar({ width, focused, tabs, left, right, calendar, press }: BarPro
       {/* On its own, not melted into the capsule: the calendar is a button, not a tab to slide to. */}
       <View style={[styles.fabSlot, { left: (width - FAB) / 2 }]}>
         {glass ? (
-          <GlassView style={styles.fab} glassEffectStyle="regular" tintColor={theme.accent} isInteractive>
+          <GlassView style={styles.fab} glassEffectStyle="regular" isInteractive>
             {fab}
           </GlassView>
         ) : (
-          <View style={[styles.fab, styles.fabShadow, { backgroundColor: theme.accent }]}>{fab}</View>
+          <View style={[styles.fab, styles.solid, { backgroundColor: theme.card, borderColor: theme.separator }]}>{fab}</View>
         )}
       </View>
     </View>
@@ -322,14 +345,14 @@ function ReactBar({ width, focused, tabs, left, right, calendar, press }: BarPro
 }
 
 /** Today's weekday and date, as on the Calendar app's icon. */
-function CalendarDate({ color }: { color: string }) {
+function CalendarDate({ weekdayColor, dayColor }: { weekdayColor: string; dayColor: string }) {
   const today = useToday();
   return (
     <>
-      <AppText weight="700" style={[styles.weekday, { color }]}>
+      <AppText weight="700" style={[styles.weekday, { color: weekdayColor }]}>
         {weekdayShort(weekdayOf(today)).toUpperCase()}
       </AppText>
-      <AppText weight="700" numeric style={[styles.date, { color }]}>
+      <AppText weight="600" numeric style={[styles.date, { color: dayColor }]}>
         {String(Number(today.slice(8)))}
       </AppText>
     </>
@@ -347,11 +370,8 @@ const styles = StyleSheet.create({
   label: { fontSize: 10, lineHeight: 12 },
   fabSlot: { position: 'absolute', top: 0, width: FAB, height: FAB },
   fab: { width: FAB, height: FAB, borderRadius: FAB / 2 },
-  fabShadow: { boxShadow: '0 6px 18px rgba(0, 0, 0, 0.22)' },
-  fill: { flex: 1, alignItems: 'center', justifyContent: 'center' },
-  // The calendar on screen: a thin white ring inside its circle.
-  ring: { ...StyleSheet.absoluteFill, margin: 4, borderRadius: FAB / 2, borderWidth: 2, borderColor: 'rgba(255,255,255,0.6)' },
-  weekday: { fontSize: 10, lineHeight: 12, letterSpacing: 0.8, opacity: 0.9 },
+  fabTouch: { width: FAB, height: FAB, borderRadius: FAB / 2, alignItems: 'center', justifyContent: 'center' },
+  weekday: { fontSize: 10, lineHeight: 12, letterSpacing: 0.8 },
   date: { fontSize: 24, lineHeight: 26 },
   accessorySlot: { marginBottom: Spacing.md },
   accessory: { height: ACCESSORY, borderRadius: ACCESSORY / 2, borderCurve: 'continuous', justifyContent: 'center' },

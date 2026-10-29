@@ -4,7 +4,10 @@ import { LARGE_TITLE, TAB_STACK_OPTIONS } from '@/constants/navigation';
 
 export const unstable_settings = { anchor: 'index' };
 
-/** The tab in the middle, where the app opens: the day, the week and everything planned. */
+/**
+ * Over everything, opened from the round button in the tab bar's cradle: it grows out of the
+ * button and shrinks back into it (see TabBar).
+ */
 export default function CalendarLayout() {
   return (
     <Stack screenOptions={TAB_STACK_OPTIONS}>
