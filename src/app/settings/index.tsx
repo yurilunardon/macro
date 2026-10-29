@@ -8,12 +8,11 @@ import { ActivityIndicator, Alert, Linking } from 'react-native';
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
-import { Segmented } from '@/components/segmented';
 import { toast } from '@/components/toast';
 import { pickBackup, restoreBackup, shareBackup } from '@/db/backup';
 import { exportBodyCsv, exportDiaryCsv } from '@/db/export';
 import { useLiveQuery } from '@/db/live';
-import { getSetting, setSetting } from '@/db/settings';
+import { getSetting } from '@/db/settings';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { BackupFormatError } from '@/lib/backup';
 import { formatExpiry } from '@/lib/provisioning';
@@ -36,15 +35,14 @@ export default function SettingsScreen() {
   const expiry = useAppExpiry();
 
   const { data } = useLiveQuery('settings', async (database) => {
-    const [lastBackupAt, tabBarStyle, counts] = await Promise.all([
+    const [lastBackupAt, counts] = await Promise.all([
       getSetting(database, 'lastBackupAt'),
-      getSetting(database, 'tabBarStyle'),
       database.getFirstAsync<{ entries: number; foods: number; recipes: number; meals: number }>(
         `SELECT (SELECT COUNT(*) FROM entries) AS entries, (SELECT COUNT(*) FROM foods) AS foods,
            (SELECT COUNT(*) FROM recipes) AS recipes, (SELECT COUNT(*) FROM saved_meals) AS meals`,
       ),
     ]);
-    return { lastBackupAt, tabBarStyle, counts };
+    return { lastBackupAt, counts };
   }, ['food', 'settings']);
 
   const status = backupStatus(data?.lastBackupAt ?? null);
@@ -115,18 +113,6 @@ export default function SettingsScreen() {
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi" onPress={() => router.back()} />
       </Stack.Toolbar>
-
-      <SectionTitle>Barra in basso</SectionTitle>
-      <Segmented
-        options={[
-          { key: 'capsule', label: 'Capsula' },
-          { key: 'circles', label: 'Tre cerchi' },
-          { key: 'fab', label: 'Separato' },
-        ]}
-        value={data?.tabBarStyle ?? 'capsule'}
-        onChange={(value) => void setSetting(db, 'tabBarStyle', value)}
-      />
-      <SectionFooter>Il calendario è sempre il cerchio verde con la data di oggi.</SectionFooter>
 
       <SectionTitle>Notifiche</SectionTitle>
       <ListGroup>
