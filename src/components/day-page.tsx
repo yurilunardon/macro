@@ -1,8 +1,8 @@
 import { Link, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { memo, useEffect, useRef } from 'react';
+import { memo, useEffect, useRef, useState } from 'react';
 import { Alert, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { Easing, FadeIn, LinearTransition } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { getDayPlan, getTrainingSettings, setDayType } from '@/db/days';
 import { copyEntry, copyMeal, deleteEntry, deleteMealEntries, getEntriesForDate, moveEntry, type Entry } from '@/db/entries';
@@ -32,6 +32,11 @@ import { toast } from './toast';
 const FADE_IN = FadeIn.duration(180);
 // A short eased resize, no spring: the meals below must not bounce up and down.
 const MEAL_LAYOUT = LinearTransition.duration(220).easing(Easing.out(Easing.cubic));
+const ENTRY_OUT = FadeOut.duration(160);
+
+/** Emptying the day takes its foods away one after the other, in about this long all together. */
+const CLEAR_MS = 900;
+const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** "120 g · Barilla", or for a quick entry just that it was typed by hand. */
 function entryDetail(entry: Entry): string | null {
@@ -50,6 +55,8 @@ type DayPageProps = {
   interactive: boolean;
   /** Called once the day's data is on screen. */
   onReady?: (date: DateKey) => void;
+  /** Scrolls the screen back up to the day's ring; resolved once there. */
+  scrollToTop?: () => Promise<void>;
 };
 
 /**
@@ -58,7 +65,7 @@ type DayPageProps = {
  * its name and calories as the header and the foods in a card under it. The macros of each food
  * are one tap away, on the food, instead of coloured numbers on every line.
  */
-export const DayPage = memo(function DayPage({ date, today, interactive, onReady }: DayPageProps) {
+export const DayPage = memo(function DayPage({ date, today, interactive, onReady, scrollToTop }: DayPageProps) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -92,7 +99,11 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
     if (loaded) readyRef.current?.(date);
   }, [loaded, date]);
 
-  const entries = (data?.entries ?? []).filter((e) => !hidden.has(`entry:${e.id}`));
+  // The foods already taken away while the day is being emptied: only from the day as it was read
+  // then, so once it is read again without them nothing is left to hide, or to flash back.
+  const [cleared, setCleared] = useState<{ from: typeof data; ids: ReadonlySet<number> } | null>(null);
+  const gone = cleared && cleared.from === data ? cleared.ids : null;
+  const entries = (data?.entries ?? []).filter((e) => !hidden.has(`entry:${e.id}`) && !gone?.has(e.id));
   const totals = sumNutrients(entries.map((e) => e.totals));
   const targets = data?.plan.targets;
   // From today things are copied to tomorrow (to plan ahead), from any other day to today.
@@ -148,7 +159,20 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
       message: `${countLabel(entries.length, 'alimento', 'alimenti')}, ${formatKcal(totals.kcal)} kcal.`,
       action: 'Svuota',
     });
-    if (ok) await Promise.all(MEALS.map((m) => deleteMealEntries(db, date, m.key)));
+    if (!ok) return;
+    // Up to the ring first, then the foods leave one by one from the top, as the ring empties.
+    await scrollToTop?.();
+    const order = MEALS.flatMap((m) => entries.filter((e) => e.meal === m.key));
+    const step = Math.min(Math.max(CLEAR_MS / order.length, 45), 110);
+    const ids = new Set<number>();
+    for (const entry of order) {
+      ids.add(entry.id);
+      setCleared({ from: data, ids: new Set(ids) });
+      haptics.selection();
+      await wait(step);
+    }
+    await Promise.all(MEALS.map((m) => deleteMealEntries(db, date, m.key)));
+    haptics.success();
   };
 
   const copyEntryTo = async (entry: Entry) => {
@@ -336,35 +360,38 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                   );
                   if (!interactive) return <View key={entry.id}>{row(false)}</View>;
                   return (
-                    <SwipeToDelete key={entry.id} onDelete={() => removeEntry(entry)}>
-                      <Link href={`/entry/${entry.id}`} asChild>
-                        <Link.Trigger>
-                          <Pressable
-                            accessibilityRole="button"
-                            accessibilityHint="Tocca per modificare, tieni premuto per altre azioni, scorri a sinistra per eliminare">
-                            {({ pressed }) => row(pressed)}
-                          </Pressable>
-                        </Link.Trigger>
-                        <Link.Menu>
-                          <Link.MenuAction icon="pencil" onPress={() => router.push(`/entry/${entry.id}`)}>
-                            {entry.quick ? 'Modifica' : 'Modifica quantità'}
-                          </Link.MenuAction>
-                          <Link.Menu title="Sposta in" icon="arrow.up.arrow.down">
-                            {MEALS.filter((m) => m.key !== entry.meal).map((m) => (
-                              <Link.MenuAction key={m.key} icon={m.symbol} onPress={() => void moveEntryTo(entry, m.key)}>
-                                {m.label}
-                              </Link.MenuAction>
-                            ))}
+                    // It fades as it leaves and the rows under it close the gap.
+                    <Animated.View key={entry.id} exiting={ENTRY_OUT} layout={MEAL_LAYOUT}>
+                      <SwipeToDelete onDelete={() => removeEntry(entry)}>
+                        <Link href={`/entry/${entry.id}`} asChild>
+                          <Link.Trigger>
+                            <Pressable
+                              accessibilityRole="button"
+                              accessibilityHint="Tocca per modificare, tieni premuto per altre azioni, scorri a sinistra per eliminare">
+                              {({ pressed }) => row(pressed)}
+                            </Pressable>
+                          </Link.Trigger>
+                          <Link.Menu>
+                            <Link.MenuAction icon="pencil" onPress={() => router.push(`/entry/${entry.id}`)}>
+                              {entry.quick ? 'Modifica' : 'Modifica quantità'}
+                            </Link.MenuAction>
+                            <Link.Menu title="Sposta in" icon="arrow.up.arrow.down">
+                              {MEALS.filter((m) => m.key !== entry.meal).map((m) => (
+                                <Link.MenuAction key={m.key} icon={m.symbol} onPress={() => void moveEntryTo(entry, m.key)}>
+                                  {m.label}
+                                </Link.MenuAction>
+                              ))}
+                            </Link.Menu>
+                            <Link.MenuAction icon="doc.on.doc" onPress={() => void copyEntryTo(entry)}>
+                              {`Copia in ${copyTarget.label}`}
+                            </Link.MenuAction>
+                            <Link.MenuAction icon="trash" destructive onPress={() => removeEntry(entry)}>
+                              Elimina
+                            </Link.MenuAction>
                           </Link.Menu>
-                          <Link.MenuAction icon="doc.on.doc" onPress={() => void copyEntryTo(entry)}>
-                            {`Copia in ${copyTarget.label}`}
-                          </Link.MenuAction>
-                          <Link.MenuAction icon="trash" destructive onPress={() => removeEntry(entry)}>
-                            Elimina
-                          </Link.MenuAction>
-                        </Link.Menu>
-                      </Link>
-                    </SwipeToDelete>
+                        </Link>
+                      </SwipeToDelete>
+                    </Animated.View>
                   );
                 })}
                 {/* The sheet to add grows out of this row and shrinks back into it. */}

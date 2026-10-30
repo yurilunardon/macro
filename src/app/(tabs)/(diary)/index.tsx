@@ -12,6 +12,8 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
+import Animated, { scrollTo, useAnimatedRef, useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
+import { scheduleOnUI } from 'react-native-worklets';
 
 import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
@@ -163,6 +165,27 @@ export default function NutritionScreen() {
   });
   const [pageReady] = useState(() => (day: DateKey) => onReadyRef.current(day));
 
+  // Back to the top of the page, where the day's ring is, e.g. to watch it empty. The top is the
+  // first offset iOS reports, with the large title open: it sets it itself, under the bar.
+  const scroller = useAnimatedRef<Animated.ScrollView>();
+  const offset = useSharedValue(0);
+  const top = useSharedValue<number | null>(null);
+  const onPageScroll = useAnimatedScrollHandler((event) => {
+    if (top.get() === null) top.set(event.contentOffset.y);
+    offset.set(event.contentOffset.y);
+  });
+  const [scrollToTop] = useState(() => (): Promise<void> => {
+    const to = top.get() ?? 0;
+    const far = offset.get() - to;
+    if (far < 8) return Promise.resolve();
+    scheduleOnUI(() => {
+      'worklet';
+      scrollTo(scroller, 0, to, true);
+    });
+    // Resolved once the scroll has about come to rest.
+    return new Promise((resolve) => setTimeout(resolve, Math.min(300 + far / 4, 650)));
+  });
+
   // At midnight, or back after days away, today moves on: follow it if it was on screen.
   useEffect(() => {
     if (selected !== null || dayAtShown.current === today || moving.current) return;
@@ -189,6 +212,8 @@ export default function NutritionScreen() {
     shown.current = index;
     dayAtShown.current = days[index];
     pick(days[index]);
+    // A click for each day the finger brings in, as for a day tapped above.
+    haptics.selection();
     // While moving it only grows, so the page leaving is never cut; it fits the new day once still.
     const h = heights.current.get(days[index]);
     if (h !== undefined) setHeight((current) => Math.max(current ?? 0, h));
@@ -210,13 +235,13 @@ export default function NutritionScreen() {
   const renderDay = ({ item }: ListRenderItemInfo<DateKey>) => (
     <View style={[styles.page, { width }]}>
       <View onLayout={(event) => onPageLayout(item, event.nativeEvent.layout.height)}>
-        <DayPage date={item} today={today} interactive={item === interactiveDay} onReady={pageReady} />
+        <DayPage date={item} today={today} interactive={item === interactiveDay} onReady={pageReady} scrollToTop={scrollToTop} />
       </View>
     </View>
   );
 
   return (
-    <ScreenScroll>
+    <ScreenScroll animatedRef={scroller} onScroll={onPageScroll}>
       {/* As in Calendar: always in the bar, dimmed while today is on screen. */}
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button disabled={date === today} accessibilityLabel="Torna a oggi" onPress={() => goTo(today)}>

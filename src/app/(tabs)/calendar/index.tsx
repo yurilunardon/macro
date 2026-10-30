@@ -27,7 +27,7 @@ import { startAndOpenWorkout } from '@/services/start-workout';
 const DAY_IN = FadeIn.duration(180);
 
 /**
- * The calendar, opened from the round button between the tabs: one day at a time, with its
+ * The calendar, the tab behind the round button between the other two: one day at a time, with its
  * activities and a checklist of what to take and do, moment by moment, ticked as it is done.
  */
 export default function CalendarScreen() {
@@ -111,7 +111,10 @@ export default function CalendarScreen() {
   return (
     <ScreenScroll>
       <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi il calendario" onPress={() => router.back()} />
+        {/* As in Calendar and in Alimentazione: always in the bar, dimmed while today is on screen. */}
+        <Stack.Toolbar.Button disabled={date === today} accessibilityLabel="Torna a oggi" onPress={() => select(today)}>
+          Oggi
+        </Stack.Toolbar.Button>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button accessibilityLabel="Il piano" onPress={() => router.push('/calendar/plan')}>

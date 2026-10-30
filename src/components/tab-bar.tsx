@@ -1,5 +1,4 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Link } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
 import type { SFSymbol } from 'expo-symbols';
 import { createContext, use, useEffect, useRef, useState, type ReactNode } from 'react';
@@ -37,6 +36,8 @@ const ACCESSORY = 56;
 const ACCESSORY_WIDTH = 330;
 
 type Side = 'left' | 'right';
+/** What is on screen: one of the two tabs, or the calendar behind the round button. */
+type Focus = Side | 'center';
 
 /** Each tab has the capsule's end up to the circle, less a little air. */
 function slotWidth(width: number): number {
@@ -78,27 +79,27 @@ type Tab = { label: string; icon: SFSymbol; selectedIcon?: SFSymbol };
 type TabBarProps = BottomTabBarProps & {
   screen: number;
   safeBottom: number;
-  /** The tabs at the two ends of the capsule, by route name. */
+  /** The tabs at the two ends of the capsule, and the one behind the round button, by route name. */
   left: string;
   right: string;
+  center: string;
   tabs: Record<string, Tab>;
   /** Shown in a capsule of its own above, as the mini player in Music. */
   accessory?: ReactNode;
 };
 
 /**
- * A floating action button over a tab bar, in Liquid Glass. The capsule holds the two tabs and
- * runs on under the calendar's round button, which floats on its own in a cradle cut into the
- * middle of the capsule. Holding and sliding along the capsule moves its lens from one tab to
- * the other, under the button, and picks the tab on release; the button only opens the
- * calendar, which grows out of it and shrinks back into it.
+ * A tab bar in Liquid Glass with a round button floating over its middle. The capsule holds two
+ * tabs and runs on under the button, which sits on its own in a cradle cut into the capsule and
+ * is the third tab, the calendar's. Holding and sliding along the capsule moves its lens from one
+ * tab to the other, under the button, and picks the tab on release.
  */
-export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left, right, tabs, accessory }: TabBarProps) {
+export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left, right, center, tabs, accessory }: TabBarProps) {
   const theme = useTheme();
   const width = Math.min(screen - 2 * Spacing.xl, BAR_WIDTH);
 
   const focusedName = state.routes[state.index]?.name;
-  const focused: Side | null = focusedName === left ? 'left' : focusedName === right ? 'right' : null;
+  const focused: Focus | null = focusedName === left ? 'left' : focusedName === right ? 'right' : focusedName === center ? 'center' : null;
 
   const press = (name: string) => {
     const route = state.routes.find((r) => r.name === name);
@@ -110,7 +111,7 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
     haptics.selection();
     navigateToTab(route.key);
   };
-  const bar: BarProps = { width, focused, tabs, left, right, press };
+  const bar: BarProps = { width, focused, tabs, left, right, press, openCalendar: () => press(center) };
 
   return (
     <View pointerEvents="box-none" style={[styles.root, { bottom: barBottom(safeBottom) }]}>
@@ -132,45 +133,48 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
 
 type BarProps = {
   width: number;
-  focused: Side | null;
+  focused: Focus | null;
   tabs: Record<string, Tab>;
   left: string;
   right: string;
   press: (name: string) => void;
+  openCalendar: () => void;
 };
 
-/**
- * The calendar's button: the calendar's sheet grows out of it with the system's zoom, and
- * shrinks back into it when dragged down.
- */
-function CalendarLink({ onPressIn, onPressOut, children }: { onPressIn?: () => void; onPressOut?: () => void; children?: ReactNode }) {
+/** The calendar's button: a tab like the other two, round and on its own. */
+function CalendarButton({
+  selected,
+  onPress,
+  onPressIn,
+  onPressOut,
+  children,
+}: {
+  selected: boolean;
+  onPress: () => void;
+  onPressIn?: () => void;
+  onPressOut?: () => void;
+  children?: ReactNode;
+}) {
   return (
-    <Link href="/calendar" asChild>
-      <Link.Trigger withAppleZoom>
-        <Pressable
-          onPressIn={() => {
-            haptics.light();
-            onPressIn?.();
-          }}
-          onPressOut={onPressOut}
-          accessibilityRole="button"
-          accessibilityLabel="Calendario"
-          accessibilityHint="Apre il calendario"
-          // A Link.Trigger's child takes one plain style: the web passes it on as is.
-          style={styles.fabTouch}>
-          {children}
-        </Pressable>
-      </Link.Trigger>
-    </Link>
+    <Pressable
+      onPress={onPress}
+      onPressIn={onPressIn}
+      onPressOut={onPressOut}
+      accessibilityRole="tab"
+      accessibilityState={{ selected }}
+      accessibilityLabel="Calendario"
+      style={styles.fabTouch}>
+      {children}
+    </Pressable>
   );
 }
 
 /**
  * Drawn in SwiftUI (modules/notched-tab-bar), the only way to give Liquid Glass the cradle's
  * shape. The calendar's button is drawn there too, under a transparent React Native one that
- * the calendar zooms out of.
+ * takes its touches.
  */
-function SwiftUIBar({ width, focused, tabs, left, right, press }: BarProps) {
+function SwiftUIBar({ width, focused, tabs, left, right, press, openCalendar }: BarProps) {
   const theme = useTheme();
   const today = useToday();
   const last = useRef({ tab: '', at: 0 });
@@ -203,14 +207,19 @@ function SwiftUIBar({ width, focused, tabs, left, right, press }: BarProps) {
         }}
       />
       <View style={[styles.fabSlot, { left: (width - FAB) / 2 }]}>
-        <CalendarLink onPressIn={() => setPressed(true)} onPressOut={() => setPressed(false)} />
+        <CalendarButton
+          selected={focused === 'center'}
+          onPress={openCalendar}
+          onPressIn={() => setPressed(true)}
+          onPressOut={() => setPressed(false)}
+        />
       </View>
     </View>
   );
 }
 
 /** The same bar in React Native, where the native one is missing (the web): without the cradle. */
-function ReactBar({ width, focused, tabs, left, right, press }: BarProps) {
+function ReactBar({ width, focused, tabs, left, right, press, openCalendar }: BarProps) {
   const theme = useTheme();
   const scheme = useColorScheme();
   const slot = slotWidth(width);
@@ -220,7 +229,7 @@ function ReactBar({ width, focused, tabs, left, right, press }: BarProps) {
   const lensX = useSharedValue(rest[focused === 'right' ? 'right' : 'left']);
   const lensShown = useSharedValue(focused === 'left' || focused === 'right' ? 1 : 0);
   const lifted = useSharedValue(0);
-  const settle = (side: Side | null) => {
+  const settle = (side: Focus | null) => {
     if (side === 'left' || side === 'right') lensX.set(withSpring(restOf(side, width), LENS_SPRING));
     lensShown.set(withSpring(side === 'left' || side === 'right' ? 1 : 0, LENS_SPRING));
   };
@@ -311,10 +320,11 @@ function ReactBar({ width, focused, tabs, left, right, press }: BarProps) {
     </>
   );
 
+  const calendarOn = focused === 'center';
   const fab = (
-    <CalendarLink>
-      <CalendarDate weekdayColor={theme.accent} dayColor={theme.text} />
-    </CalendarLink>
+    <CalendarButton selected={calendarOn} onPress={openCalendar}>
+      <CalendarDate weekdayColor={calendarOn ? theme.onAccent : theme.accent} dayColor={calendarOn ? theme.onAccent : theme.text} />
+    </CalendarButton>
   );
 
   return (
@@ -333,14 +343,16 @@ function ReactBar({ width, focused, tabs, left, right, press }: BarProps) {
         </View>
       </GestureDetector>
 
-      {/* On its own, not melted into the capsule: the calendar is a button, not a tab to slide to. */}
+      {/* On its own, not melted into the capsule: the calendar is a tab to tap, not to slide to. */}
       <View style={[styles.fabSlot, { left: (width - FAB) / 2 }]}>
         {glass ? (
-          <GlassView style={styles.fab} glassEffectStyle="regular" isInteractive>
+          <GlassView style={styles.fab} glassEffectStyle="regular" tintColor={calendarOn ? theme.accent : undefined} isInteractive>
             {fab}
           </GlassView>
         ) : (
-          <View style={[styles.fab, styles.solid, { backgroundColor: theme.card, borderColor: theme.separator }]}>{fab}</View>
+          <View style={[styles.fab, styles.solid, { backgroundColor: calendarOn ? theme.accent : theme.card, borderColor: theme.separator }]}>
+            {fab}
+          </View>
         )}
       </View>
     </View>

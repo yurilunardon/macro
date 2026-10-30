@@ -4,10 +4,7 @@ import { TAB_STACK_OPTIONS } from '@/constants/navigation';
 
 export const unstable_settings = { anchor: 'index' };
 
-/**
- * A sheet over the tabs, opened from the round button in the tab bar's cradle: it grows out of
- * the button and shrinks back into it, also when dragged down (see TabBar).
- */
+/** The tab behind the round button in the tab bar's cradle (see TabBar). */
 export default function CalendarLayout() {
   return (
     <Stack screenOptions={TAB_STACK_OPTIONS}>

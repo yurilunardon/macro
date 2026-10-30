@@ -31,6 +31,9 @@ export const LARGE_TITLE: NativeStackNavigationOptions = { headerLargeTitleEnabl
 const SEARCH = { placeholder: 'Cerca: panca, squat, curl…', hideWhenScrolling: false };
 export const EXERCISE_SEARCH = {
   ...SEARCH,
+  // Under the title, not at the foot of the screen where iOS 26 puts it: there the app's own tab
+  // bar would cover it.
+  placement: 'stacked',
   onChangeText: exerciseSearch.onChangeText,
 } satisfies NativeStackNavigationOptions['headerSearchBarOptions'];
 export const PICKER_SEARCH = {

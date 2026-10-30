@@ -11,8 +11,8 @@ export type NotchedTabBarProps = ViewProps & {
   rightLabel: string;
   rightIcon: string;
   rightSelectedIcon?: string;
-  /** The tab on screen; "none" for none. */
-  selected: NotchedTabBarTab | 'none';
+  /** The tab on screen: "center" is the calendar's button; "none" for none. */
+  selected: NotchedTabBarTab | 'center' | 'none';
   /** Today on the calendar's button. */
   weekday: string;
   day: string;

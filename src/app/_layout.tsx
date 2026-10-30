@@ -75,7 +75,6 @@ export default function RootLayout() {
               <Stack.Screen name="activity-type" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Tipo di attività' }} />
               <Stack.Screen name="supplement" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Integratore' }} />
               <Stack.Screen name="settings" options={{ presentation: 'modal', headerShown: false }} />
-              <Stack.Screen name="calendar" options={{ presentation: 'modal', headerShown: false }} />
               <Stack.Screen
                 name="exercise-new"
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.75, 1], sheetGrabberVisible: true, headerShown: false }}
