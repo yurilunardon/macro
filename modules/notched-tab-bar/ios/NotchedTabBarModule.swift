@@ -117,7 +117,7 @@ struct NotchedCapsule: Shape {
 /// The lens: a capsule as tall as the inside of the bar, with the cradle (grown by the same
 /// inset, and a little air) cut out of it. It fills all the room there is, so the part passing
 /// under the button flattens into the channel there while the rest stays full height, like
-/// liquid poured through. Near the middle a neck rises out of it into the button.
+/// liquid poured through. As it comes round the cradle a neck reaches out of it into the button.
 struct LensShape: Shape {
   var center: CGFloat
   var slot: CGFloat
@@ -134,60 +134,55 @@ struct LensShape: Shape {
     let capsule = CGPath(
       roundedRect: lens, cornerWidth: room.height / 2, cornerHeight: room.height / 2, transform: nil)
     let body = capsule.intersection(Self.inside.path(in: room).cgPath)
-    guard let neck = neck(in: rect) else { return Path(body) }
+    guard let neck = neck(in: rect, room: room) else { return Path(body) }
     return Path(body.union(neck))
   }
 
-  /// A drop drawn up out of the channel towards the button as the lens nears the middle, thin at
-  /// the waist like liquid pulled between two drops, until it runs into the button.
-  private func neck(in rect: CGRect) -> CGPath? {
-    let middle = rect.midX
-    let near = 1 - min(abs(center - middle) / (slot * 0.5), 1)
+  /// A neck of glass drawn out of the lens towards the button, from the part of the lens nearest
+  /// to it: from the side as the lens comes round the cradle's shoulder, from below once it is
+  /// under it. Thin at the waist like liquid pulled between two drops, it reaches out as the
+  /// lens nears and runs into the button.
+  private func neck(in rect: CGRect, room: CGRect) -> CGPath? {
+    let button = CGPoint(x: rect.midX, y: rect.minY + Metrics.fabSink)
+    let cut = Metrics.cradleRadius + Metrics.lensInset + Metrics.cradleGap
+    // The point of the lens's spine, between the centres of its round ends, nearest the button.
+    let end = room.height / 2
+    let spine = CGPoint(x: min(max(button.x, center - slot / 2 + end), center + slot / 2 - end), y: room.midY)
+    let dx = spine.x - button.x
+    let dy = spine.y - button.y
+    let distance = (dx * dx + dy * dy).squareRoot() - end
+    // Nothing until the lens's edge comes round the shoulder; whole a little further in.
+    let near = min(max((40 - distance) / 16, 0), 1)
     let pull = near * near * (3 - 2 * near)
     guard pull > 0.01 else { return nil }
-    let channelTop = rect.minY + Metrics.fabSink + Metrics.cradleRadius + Metrics.lensInset + Metrics.cradleGap
-    let buttonBottom = rect.minY + Metrics.fabSink + Metrics.fab / 2
-    let bottom = channelTop + 4
-    let top = bottom - pull * (bottom - (buttonBottom - 5))
-    let base = middle + (center - middle) * 0.5
-    let baseHalf = 8 + 8 * pull
-    let topHalf = 4 + 8 * pull
-    let waist = 2 + 6 * pull
-    let midY = (bottom + top) / 2
-    let midX = (base + middle) / 2
+
+    let angle = atan2(dy, dx)
+    let along = CGPoint(x: cos(angle), y: sin(angle))
+    func point(_ radius: CGFloat, _ offset: CGFloat) -> CGPoint {
+      CGPoint(x: button.x + along.x * radius - along.y * offset, y: button.y + along.y * radius + along.x * offset)
+    }
+    // From inside the lens to inside the button, reached once the pull is a little past half.
+    let base = max(distance, cut) + 6
+    let tip = base - (base - (Metrics.fab / 2 - 6)) * min(pull * 1.6, 1)
+    let baseHalf = 9 + 13 * pull
+    let tipHalf = 5 + 10 * pull
+    let waist = 0.55 * min(baseHalf, tipHalf)
+    let middle = (base + tip) / 2
 
     let path = CGMutablePath()
-    path.move(to: CGPoint(x: base - baseHalf, y: bottom))
-    path.addQuadCurve(to: CGPoint(x: middle - topHalf, y: top), control: CGPoint(x: midX - waist, y: midY))
-    path.addQuadCurve(to: CGPoint(x: middle + topHalf, y: top), control: CGPoint(x: middle, y: top - topHalf))
-    path.addQuadCurve(to: CGPoint(x: base + baseHalf, y: bottom), control: CGPoint(x: midX + waist, y: midY))
+    path.move(to: point(base, -baseHalf))
+    path.addQuadCurve(to: point(tip, -tipHalf), control: point(middle, -waist))
+    path.addQuadCurve(to: point(tip, tipHalf), control: point(tip - tipHalf, 0))
+    path.addQuadCurve(to: point(base, baseHalf), control: point(middle, waist))
     path.closeSubpath()
-    return path
+    // Nothing of it below the lens.
+    let above = CGRect(x: rect.minX, y: rect.minY - Metrics.fab, width: rect.width, height: room.maxY - rect.minY + Metrics.fab)
+    return path.intersection(CGPath(rect: above, transform: nil))
   }
 }
 
-/// Where the lens rests under a tab, a drop of glass that stays there as the lens leaves,
-/// stretching after it and shrinking away, and swells to meet it as it arrives.
-struct RestDrop: Shape {
-  var rest: CGFloat
-  var center: CGFloat
-  var slot: CGFloat
-
-  func path(in rect: CGRect) -> Path {
-    let size = 1 - min(abs(center - rest) / (slot * 0.9), 1)
-    guard size > 0.02 else { return Path() }
-    let room = rect.insetBy(dx: Metrics.lensInset, dy: Metrics.lensInset)
-    let width = slot * size
-    let height = room.height * (0.4 + 0.6 * size)
-    return Path(
-      roundedRect: CGRect(x: rest - width / 2, y: room.midY - height / 2, width: width, height: height),
-      cornerRadius: min(width, height) / 2)
-  }
-}
-
-/// The lens, the drops under the tabs and the calendar's button, drawn frame by frame as the lens
-/// moves, so it flows through the channel while it springs from one tab to the other, not only
-/// under a finger.
+/// The lens and the calendar's button, drawn frame by frame as the lens moves, so it flows
+/// through the channel while it springs from one tab to the other, not only under a finger.
 struct LensLayer<CalendarButton: View>: View, Animatable {
   var center: CGFloat
   var width: CGFloat
@@ -203,15 +198,10 @@ struct LensLayer<CalendarButton: View>: View, Animatable {
   }
 
   var body: some View {
-    let rest = Metrics.lensInset + slot / 2
-    return GlassGroup(spacing: Metrics.melt) {
+    GlassGroup(spacing: Metrics.melt) {
       ZStack(alignment: .topLeading) {
-        Group {
-          glass(RestDrop(rest: rest, center: center, slot: slot))
-          glass(RestDrop(rest: width - rest, center: center, slot: slot))
-          glass(LensShape(center: center, slot: slot))
-        }
-        .opacity(shown ? 1 : 0)
+        glass(LensShape(center: center, slot: slot))
+          .opacity(shown ? 1 : 0)
         button
           .position(x: width / 2, y: Metrics.fab / 2)
       }
