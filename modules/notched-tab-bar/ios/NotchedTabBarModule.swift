@@ -145,9 +145,12 @@ struct LensShape: Shape {
   private func neck(in rect: CGRect, room: CGRect) -> CGPath? {
     let button = CGPoint(x: rect.midX, y: rect.minY + Metrics.fabSink)
     let cut = Metrics.cradleRadius + Metrics.lensInset + Metrics.cradleGap
-    // The point of the lens's spine, between the centres of its round ends, nearest the button.
+    // Where on the lens's spine, between the centres of its round ends, the neck leaves from:
+    // the point nearest the button as the lens comes round the cradle, then one sliding at half
+    // the lens's pace, so the neck keeps swinging under the button instead of standing still.
     let end = room.height / 2
-    let spine = CGPoint(x: min(max(button.x, center - slot / 2 + end), center + slot / 2 - end), y: room.midY)
+    let follow = button.x + (center - button.x) / 2
+    let spine = CGPoint(x: min(max(follow, center - slot / 2 + end), center + slot / 2 - end), y: room.midY)
     let dx = spine.x - button.x
     let dy = spine.y - button.y
     let distance = (dx * dx + dy * dy).squareRoot() - end
@@ -162,9 +165,9 @@ struct LensShape: Shape {
       CGPoint(x: button.x + along.x * radius - along.y * offset, y: button.y + along.y * radius + along.x * offset)
     }
     // From inside the lens to inside the button, reached once the pull is a little past half.
-    let base = max(distance, cut) + 6
+    let base = max(distance, cut) + 9
     let tip = base - (base - (Metrics.fab / 2 - 6)) * min(pull * 1.6, 1)
-    let baseHalf = 9 + 13 * pull
+    let baseHalf = 8 + 10 * pull
     let tipHalf = 5 + 10 * pull
     let waist = 0.55 * min(baseHalf, tipHalf)
     let middle = (base + tip) / 2
