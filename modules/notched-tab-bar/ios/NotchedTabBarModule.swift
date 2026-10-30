@@ -225,6 +225,8 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
   /// Where a finger sliding along the capsule is, and the tab under it.
   @State private var dragX: CGFloat?
   @State private var hovered: Side?
+  /// With Reduce Motion on, the lens and the button move without springing past their place.
+  @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
   init(props: NotchedTabBarProps) {
     self.props = props
@@ -275,7 +277,9 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
       button: calendarButton
     )
     .animation(
-      lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .spring(response: 0.5, dampingFraction: 0.72),
+      reduceMotion
+        ? .easeOut(duration: 0.2)
+        : lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .spring(response: 0.5, dampingFraction: 0.78),
       value: center)
     .animation(.easeOut(duration: 0.2), value: lifted)
     .allowsHitTesting(false)
@@ -303,7 +307,9 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
           }
         }
         .onEnded { value in
-          let side: Side = value.location.x < width / 2 ? .left : .right
+          // Where the flick was heading, not where the finger let go: a quick throw towards a
+          // tab lands on it even if the finger lifted short of the middle.
+          let side: Side = value.predictedEndLocation.x < width / 2 ? .left : .right
           let moved = abs(value.translation.width) >= 12
           dragX = nil
           hovered = nil
@@ -359,7 +365,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     .frame(width: Metrics.fab, height: Metrics.fab)
     .barGlass(in: Circle(), tint: nil)
     .scaleEffect(props.calendarPressed ? 0.9 : 1)
-    .animation(.spring(response: 0.3, dampingFraction: 0.6), value: props.calendarPressed)
+    .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.6), value: props.calendarPressed)
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }

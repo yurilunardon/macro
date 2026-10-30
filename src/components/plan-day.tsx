@@ -1,5 +1,5 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, useColorScheme, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { Easing, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
@@ -38,8 +38,8 @@ export function PlanWeekStrip({
   week: readonly DateKey[];
   selected: DateKey;
   today: DateKey;
-  /** The colour of each day's main activity; none on a rest day. */
-  dots: ReadonlyMap<DateKey, string>;
+  /** Each day's main activity: its colour for the dot and its name for VoiceOver; none on a rest day. */
+  dots: ReadonlyMap<DateKey, { color: string; label: string }>;
   onSelect: (day: DateKey) => void;
   onChangeWeek: (direction: number) => void;
 }) {
@@ -90,9 +90,9 @@ export function PlanWeekStrip({
                 onPress={() => onSelect(day)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={`${formatLongDate(day)}${isToday ? ', oggi' : ''}`}
-                style={styles.dayCell}>
-                <AppText variant="caption" weight="600" tone={isToday ? 'accent' : 'textSecondary'}>
+                accessibilityLabel={[formatLongDate(day), isToday ? 'oggi' : null, dot?.label ?? 'riposo'].filter(Boolean).join(', ')}
+                style={({ pressed }) => [styles.dayCell, pressed && styles.pressed]}>
+                <AppText variant="caption" weight="600" tone={isToday ? 'accent' : 'textSecondary'} maxFontSizeMultiplier={1.3}>
                   {formatWeekdayInitial(day)}
                 </AppText>
                 <View
@@ -102,6 +102,8 @@ export function PlanWeekStrip({
                   ]}>
                   <AppText
                     numeric
+                    // The number lives in a fixed circle, as in Calendar: it grows only so far.
+                    maxFontSizeMultiplier={1.3}
                     style={[
                       styles.dayNumber,
                       { color: isSelected ? (isToday ? theme.onAccent : theme.background) : isToday ? theme.accent : theme.text },
@@ -109,7 +111,7 @@ export function PlanWeekStrip({
                     {String(Number(day.slice(8)))}
                   </AppText>
                 </View>
-                <View style={[styles.dot, { backgroundColor: dot ?? 'transparent' }]} />
+                <View style={[styles.dot, { backgroundColor: dot?.color ?? 'transparent' }]} />
               </Pressable>
             );
           })}
@@ -152,7 +154,7 @@ export function DayRing({ done, total, size = 56 }: { done: number; total: numbe
         />
       </Svg>
       <View style={styles.ringCenter} pointerEvents="none">
-        <AppText weight="700" numeric style={styles.ringText}>
+        <AppText weight="700" numeric maxFontSizeMultiplier={1.3} style={styles.ringText}>
           {`${done}/${total}`}
         </AppText>
       </View>
@@ -197,13 +199,16 @@ export function ActivityCard({
 }) {
   const theme = useTheme();
   const colors = useActivityColors();
+  const scheme = useColorScheme();
   const color = colors[type?.color ?? 'green'];
+  // On the light tint the bright hue is under 2:1; a deeper shade of it reads at 5:1 or more.
+  const ink = scheme === 'dark' ? color : shade(color, 0.55);
   const { kicker, line, done, skipped } = describeActivity(item, type, date, today);
   // Only the text opens it: the menu and "Inizia" beside it are buttons of their own.
   return (
     <View style={[styles.activity, { backgroundColor: tint(color, skipped ? 0.08 : 0.16) }]}>
       <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${name}, ${kicker}`} style={({ pressed }) => [styles.activityText, pressed && styles.pressed]}>
-        <AppText variant="footnote" weight="600" style={{ color: skipped ? theme.textSecondary : color }}>
+        <AppText variant="footnote" weight="600" style={{ color: skipped ? theme.textSecondary : ink }}>
           {kicker}
         </AppText>
         <AppText variant="title2" style={skipped ? { color: theme.textSecondary, textDecorationLine: 'line-through' } : undefined}>
@@ -215,9 +220,9 @@ export function ActivityCard({
           </AppText>
         ) : null}
       </Pressable>
-      {done ? <Icon name="checkmark.circle.fill" size={26} color={color} /> : null}
+      {done ? <Icon name="checkmark.circle.fill" size={26} color={ink} /> : null}
       {onStart && !done && !skipped ? (
-        <PressableScale onPress={onStart} accessibilityRole="button" accessibilityLabel={`Inizia ${name}`} style={[styles.start, { backgroundColor: color }]}>
+        <PressableScale onPress={onStart} accessibilityRole="button" accessibilityLabel={`Inizia ${name}`} style={[styles.start, { backgroundColor: theme.accent }]}>
           <AppText weight="600" style={{ color: theme.onAccent }}>
             Inizia
           </AppText>
@@ -226,6 +231,12 @@ export function ActivityCard({
       <MenuButton icon="ellipsis" accessibilityLabel={`Altro su ${name}`} groups={menu} />
     </View>
   );
+}
+
+/** The colour mixed with black: 0.55 takes the system hues from under 2:1 to over 5:1 on their light tint. */
+function shade(hex: string, amount: number): string {
+  const channel = (i: number) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - amount)).toString(16).padStart(2, '0');
+  return `#${channel(1)}${channel(3)}${channel(5)}`;
 }
 
 /** "#30D158" at 16% over the background. */
@@ -303,9 +314,9 @@ export function ChecklistSection({
               <Icon
                 name={entry.done ? 'checkmark.circle.fill' : 'circle'}
                 size={24}
-                color={entry.done ? theme.accent : missed ? theme.warning : theme.textTertiary}
+                color={entry.done ? theme.accent : missed ? theme.warning : theme.textSecondary}
               />
-              <AppText style={[styles.name, { color: entry.done ? theme.textSecondary : theme.text }]} numberOfLines={1}>
+              <AppText style={[styles.name, { color: entry.done ? theme.textSecondary : theme.text }]} numberOfLines={2}>
                 {name}
               </AppText>
               {amount ? (
@@ -349,6 +360,7 @@ const styles = StyleSheet.create({
   dayCircle: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
   dayNumber: { fontSize: 17, lineHeight: 22, fontWeight: '600', fontVariant: ['tabular-nums'] },
   dot: { width: 6, height: 6, borderRadius: 3 },
+  pressed: { opacity: 0.6 },
   ringCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   ringText: { fontSize: 15, lineHeight: 18 },
   activity: {
@@ -361,8 +373,7 @@ const styles = StyleSheet.create({
     marginBottom: Spacing.md,
   },
   activityText: { flex: 1, gap: 2 },
-  pressed: { opacity: 0.6 },
-  start: { height: 40, paddingHorizontal: Spacing.lg, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
+  start: { height: 44, paddingHorizontal: Spacing.lg, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
   section: { marginTop: Spacing.lg },
   sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: 2, marginBottom: Spacing.sm },
   group: { borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },

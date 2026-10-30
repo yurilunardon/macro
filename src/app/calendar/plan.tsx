@@ -114,7 +114,7 @@ export default function PlanScreen() {
       </ListGroup>
 
       <View style={styles.head}>
-        <AppText variant="title2">Altro</AppText>
+        <AppText variant="title2">Impostazioni</AppText>
       </View>
       <ListGroup>
         <Row title="Pesata" detail={weighInLabel} onPress={() => router.push('/calendar/weigh-in')} />

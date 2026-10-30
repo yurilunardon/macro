@@ -50,15 +50,31 @@ export default function CalendarScreen() {
     setPicked(day === today ? null : day);
   };
 
-  // The colour of each day's main activity, under it in the week.
-  const dots = new Map<DateKey, string>();
+  // Each day's main activity under it in the week: its colour, and its name for VoiceOver.
+  const dots = new Map<DateKey, { color: string; label: string }>();
   for (const day of plan.week) {
     const first = (plan.agenda.get(day) ?? []).find((i) => i.kind === 'workout' || i.status !== 'skipped');
     if (!first) continue;
     const typeId = first.kind === 'workout' ? gymTypeId : first.occurrence.typeId;
     const type = typeId === null ? undefined : plan.types.get(typeId);
-    dots.set(day, colors[type?.color ?? 'green']);
+    dots.set(day, { color: colors[type?.color ?? 'green'], label: activityName(first, plan.types, gymTypeId, dayNames) });
   }
+
+  // A tick shows at once, before the database has it: what the tap set, as long as the stored
+  // state is still the one it was tapped from.
+  const [ticks, setTicks] = useState<{ date: DateKey; byKey: Map<string, { done: boolean; from: boolean; at: string }> }>({
+    date,
+    byKey: new Map(),
+  });
+  const shown = (entry: DayEntry): DayEntry => {
+    const tick = ticks.date === date ? ticks.byKey.get(entry.key) : undefined;
+    if (!tick || tick.from !== entry.done || entry.kind !== 'supplement') return entry;
+    return { ...entry, done: tick.done, takenAt: tick.done ? tick.at : null };
+  };
+  const sections = plan.sections.map((section) => ({ ...section, entries: section.entries.map(shown) }));
+  let ticked = 0;
+  sections.forEach((section, i) => section.entries.forEach((e, j) => (ticked += Number(e.done) - Number(plan.sections[i].entries[j].done))));
+  const progress = { done: plan.progress.done + ticked, total: plan.progress.total };
 
   const main = plan.items.find((i) => i.kind === 'workout' || i.status !== 'skipped');
   const subtitle = [formatDaySubtitle(date, today), main ? activityName(main, plan.types, gymTypeId, dayNames) : 'Riposo'].join(' · ');
@@ -76,8 +92,14 @@ export default function CalendarScreen() {
       logWeight(db, date, entry.kg !== null ? { kg: entry.kg } : null, today);
       return;
     }
-    haptics.selection();
-    void setDoseTaken(db, entry.supplement.id, date, entry.index, !entry.done);
+    const done = !entry.done;
+    const byKey = new Map(ticks.date === date ? ticks.byKey : []);
+    byKey.set(entry.key, { done, from: plan.sections.flatMap((s) => s.entries).find((e) => e.key === entry.key)?.done ?? entry.done, at: new Date().toISOString() });
+    setTicks({ date, byKey });
+    // The last thing of the day gets the success tap; every other tick the light one.
+    if (done && progress.done + 1 === progress.total) haptics.success();
+    else haptics.selection();
+    void setDoseTaken(db, entry.supplement.id, date, entry.index, done);
   };
   const open = (entry: DayEntry) => {
     if (entry.kind === 'weighIn') router.push('/calendar/weight');
@@ -123,7 +145,7 @@ export default function CalendarScreen() {
             {subtitle}
           </AppText>
         </View>
-        {plan.progress.total > 0 ? <DayRing done={plan.progress.done} total={plan.progress.total} /> : null}
+        {progress.total > 0 ? <DayRing done={progress.done} total={progress.total} /> : null}
       </View>
 
       <PlanWeekStrip
@@ -168,7 +190,7 @@ export default function CalendarScreen() {
           );
         })}
 
-        {plan.sections.map((section) => (
+        {sections.map((section) => (
           <ChecklistSection
             key={section.moment.id}
             section={section}
