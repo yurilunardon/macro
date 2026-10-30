@@ -14,7 +14,13 @@ import { weekdayShort } from '@/lib/calendar';
 import { weekdayOf } from '@/lib/dates';
 import { haptics } from '@/services/haptics';
 
-import { NOTCHED_TAB_BAR_BUTTON, NOTCHED_TAB_BAR_HEIGHT, NotchedTabBarView } from '../../modules/notched-tab-bar';
+import {
+  NOTCHED_ACCESSORY_OVERLAP,
+  NOTCHED_TAB_BAR_BUTTON,
+  NOTCHED_TAB_BAR_HEIGHT,
+  NotchedAccessoryView,
+  NotchedTabBarView,
+} from '../../modules/notched-tab-bar';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
@@ -34,6 +40,14 @@ const FOLLOW_SPRING = { duration: 160, dampingRatio: 1 };
 /** The workout in progress, in a capsule of its own above. */
 const ACCESSORY = 56;
 const ACCESSORY_WIDTH = 330;
+/**
+ * Where the native code draws it, the capsule comes down round the top of the calendar's button,
+ * with the bar's cradle cut into its bottom edge: taller, and its row only in the part above the
+ * cradle, which reaches this far up into it.
+ */
+const HUG = NotchedAccessoryView !== null;
+const HUG_HEIGHT = 64;
+const HUG_CRADLE = NOTCHED_TAB_BAR_BUTTON / 2 + 6 - (NOTCHED_TAB_BAR_BUTTON / 2 - NOTCHED_ACCESSORY_OVERLAP);
 
 type Side = 'left' | 'right';
 /** What is on screen: one of the two tabs, or the calendar behind the round button. */
@@ -59,7 +73,8 @@ function barBottom(safeBottom: number): number {
  * scroll views inside the tabs add it at the bottom so their end can scroll out from under it.
  */
 export function tabBarInset(safeBottom: number, accessory: boolean): number {
-  const top = barBottom(safeBottom) + HEIGHT + Spacing.sm + (accessory ? ACCESSORY + Spacing.md : 0);
+  const above = HUG ? HUG_HEIGHT - NOTCHED_ACCESSORY_OVERLAP : ACCESSORY + Spacing.md;
+  const top = barBottom(safeBottom) + HEIGHT + Spacing.sm + (accessory ? above : 0);
   return Platform.OS === 'web' ? top : top - safeBottom;
 }
 
@@ -115,7 +130,13 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
 
   return (
     <View pointerEvents="box-none" style={[styles.root, { bottom: barBottom(safeBottom) }]}>
-      {accessory ? (
+      {accessory && NotchedAccessoryView ? (
+        // Under the bar, which is drawn after it: the button sits in its cradle.
+        <View style={[styles.hugSlot, { width: Math.min(screen - 2 * Spacing.xl, ACCESSORY_WIDTH) }]}>
+          <NotchedAccessoryView pointerEvents="none" style={StyleSheet.absoluteFill} />
+          <View style={styles.hugRow}>{accessory}</View>
+        </View>
+      ) : accessory ? (
         <View style={[styles.accessorySlot, { width: Math.min(screen - 2 * Spacing.xl, ACCESSORY_WIDTH) }]}>
           {glass ? (
             <GlassView style={styles.accessory} glassEffectStyle="regular" isInteractive>
@@ -389,5 +410,7 @@ const styles = StyleSheet.create({
   weekday: { fontSize: 10, lineHeight: 12, letterSpacing: 0.8 },
   date: { fontSize: 24, lineHeight: 26 },
   accessorySlot: { marginBottom: Spacing.md },
+  hugSlot: { height: HUG_HEIGHT, marginBottom: -NOTCHED_ACCESSORY_OVERLAP },
+  hugRow: { height: HUG_HEIGHT - HUG_CRADLE, justifyContent: 'center' },
   accessory: { height: ACCESSORY, borderRadius: ACCESSORY / 2, borderCurve: 'continuous', justifyContent: 'center' },
 });

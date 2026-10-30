@@ -8,7 +8,11 @@ public class NotchedTabBarModule: Module {
   public func definition() -> ModuleDefinition {
     Name("NotchedTabBar")
 
+    /// Lets the JavaScript side tell this build, which has the workout's capsule, from older ones.
+    Constant("hasAccessory") { true }
+
     View(NotchedTabBarView.self)
+    View(NotchedAccessoryView.self)
   }
 }
 
@@ -19,7 +23,7 @@ public final class NotchedTabBarProps: ExpoSwiftUI.ViewProps {
   @Field var rightLabel: String = ""
   @Field var rightIcon: String = "circle"
   @Field var rightSelectedIcon: String?
-  /// The tab on screen: "left", "right", or anything else for none.
+  /// The tab on screen: "left", "right", "center" for the calendar's button, or anything else for none.
   @Field var selected: String = "left"
   /// Today on the calendar's button, as on the Calendar app's icon.
   @Field var weekday: String = ""
@@ -53,6 +57,8 @@ private enum Metrics {
   /// How far the button rises above the capsule: the view is `rise + bar` tall.
   static var rise: CGFloat { fab / 2 - fabSink }
   static var cradleRadius: CGFloat { fab / 2 + cradleMargin }
+  /// How far the workout's capsule above comes down over the button's top.
+  static let accessoryOverlap: CGFloat = 14
 }
 
 private enum Side: String {
@@ -267,6 +273,9 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     let center: CGFloat
     if let dragX {
       center = min(max(dragX, restLeft), restRight)
+    } else if props.selected == "center" {
+      // Into the button as it fades, since that is where the tab on screen now is.
+      center = width / 2
     } else {
       center = selectedSide == .right ? restRight : restLeft
     }
@@ -350,20 +359,23 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
 
   // MARK: The calendar's button
 
-  /// Drawn only: React Native lays a transparent button over it, which the calendar grows out of.
+  /// Drawn only: React Native lays a transparent button over it, which takes its touches. Filled
+  /// with the accent while the calendar's tab is on screen.
   private var calendarButton: some View {
-    VStack(spacing: 0) {
+    let on = props.selected == "center"
+    return VStack(spacing: 0) {
       Text(props.weekday)
         .font(.system(size: 10, weight: .bold))
         .kerning(0.8)
-        .foregroundStyle(props.accent)
+        .foregroundStyle(on ? Color.white : props.accent)
       Text(props.day)
         .font(.system(size: 24, weight: .semibold))
         .monospacedDigit()
-        .foregroundStyle(Color.primary)
+        .foregroundStyle(on ? Color.white : Color.primary)
     }
+    .animation(.easeOut(duration: 0.2), value: on)
     .frame(width: Metrics.fab, height: Metrics.fab)
-    .barGlass(in: Circle(), tint: nil)
+    .barGlass(in: Circle(), tint: on ? props.accent : nil)
     .scaleEffect(props.calendarPressed ? 0.9 : 1)
     .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.6), value: props.calendarPressed)
     .allowsHitTesting(false)
@@ -372,6 +384,37 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
 
   private func select(_ side: Side) {
     props.onSelect(["tab": side.rawValue])
+  }
+}
+
+// MARK: The workout's capsule
+
+public final class NotchedAccessoryProps: ExpoSwiftUI.ViewProps {}
+
+/// The glass of the workout in progress, above the bar: a capsule with the same cradle as the
+/// bar's, cut into its bottom edge, so the calendar's button sits between the two. Drawn only:
+/// React Native lays the workout's row over it and takes the touches.
+struct NotchedAccessoryView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
+  @ObservedObject var props: NotchedAccessoryProps
+
+  init(props: NotchedAccessoryProps) {
+    self.props = props
+  }
+
+  /// The bar's shape turned upside down: the button's centre is below the bottom edge, by half
+  /// the button less the overlap.
+  private let shape = NotchedCapsule(
+    sink: Metrics.accessoryOverlap - Metrics.fab / 2,
+    radius: Metrics.cradleRadius,
+    shoulder: Metrics.shoulder
+  ).rotation(.degrees(180))
+
+  var body: some View {
+    Color.clear
+      .frame(maxWidth: .infinity, maxHeight: .infinity)
+      .barGlass(in: shape, tint: nil)
+      .allowsHitTesting(false)
+      .accessibilityHidden(true)
   }
 }
 
