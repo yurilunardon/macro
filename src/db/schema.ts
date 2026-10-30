@@ -326,6 +326,14 @@ export const MIGRATIONS: readonly Migration[] = [
   );
   CREATE INDEX supplement_purchases_supplement ON supplement_purchases (supplement_id, date);
   `,
+  // 10: the day's plan. Supplements are taken at a moment of the day (or a time), and say what a
+  // dose holds and how to take it; a weigh-in keeps the time it was logged.
+  `
+  ALTER TABLE supplements ADD COLUMN moment TEXT;
+  ALTER TABLE supplements ADD COLUMN contents TEXT;
+  ALTER TABLE supplements ADD COLUMN note TEXT;
+  ALTER TABLE weights ADD COLUMN logged_at TEXT;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

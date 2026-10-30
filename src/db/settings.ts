@@ -1,6 +1,8 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { DEFAULT_TARGETS, type Profile, type Targets } from '@/lib/goals';
+import type { DateKey } from '@/lib/dates';
+import type { Moment, WeighInPlan } from '@/lib/plan';
 import type { ReminderSettings } from '@/lib/reminders';
 
 import { notifyChange } from './live';
@@ -33,6 +35,14 @@ type SettingsMap = {
   calendarView: 'week' | 'month';
   /** Meals folded in the diary. */
   collapsedMeals: ('breakfast' | 'lunch' | 'dinner' | 'snack')[];
+  /** The moments of the day, when changed from the usual ones. */
+  moments: Moment[];
+  /** When to weigh in, when changed from every morning. */
+  weighInPlan: WeighInPlan;
+  /** Which version of the starting plan was put in the calendar. */
+  planSeeded: number;
+  /** The day the calendar asks to look the plan over again. */
+  planReviewOn: DateKey;
 };
 
 export type SettingKey = keyof SettingsMap;

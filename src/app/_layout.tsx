@@ -1,5 +1,5 @@
 import { DarkTheme, DefaultTheme, Stack, ThemeProvider } from 'expo-router';
-import { SQLiteProvider } from 'expo-sqlite';
+import { SQLiteProvider, type SQLiteDatabase } from 'expo-sqlite';
 import { Suspense } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
@@ -8,13 +8,21 @@ import { NotificationSync } from '@/components/notification-sync';
 import { ToastHost } from '@/components/toast';
 import { UpdateCheck } from '@/components/update-check';
 import { PICKER_SEARCH, TAB_STACK_OPTIONS } from '@/constants/navigation';
+import { seedStartingPlan } from '@/db/plan';
 import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
+import { todayKey } from '@/lib/dates';
 
 export { ErrorBoundary } from 'expo-router';
 
 export const unstable_settings = { anchor: '(tabs)' };
+
+/** Brings the database up to date, then puts the agreed plan in the calendar the first time. */
+async function openDatabase(db: SQLiteDatabase): Promise<void> {
+  await migrateDatabase(db);
+  await seedStartingPlan(db, todayKey());
+}
 
 function Loading() {
   const theme = useTheme();
@@ -38,7 +46,7 @@ export default function RootLayout() {
     <GestureHandlerRootView style={styles.root}>
       <ThemeProvider value={navigationTheme}>
         <Suspense fallback={<Loading />}>
-          <SQLiteProvider databaseName={DATABASE_NAME} onInit={migrateDatabase} useSuspense>
+          <SQLiteProvider databaseName={DATABASE_NAME} onInit={openDatabase} useSuspense>
             <Stack screenOptions={{ headerBackButtonDisplayMode: 'minimal' }}>
               <Stack.Screen name="(tabs)" options={{ headerShown: false }} />
               <Stack.Screen name="add" options={{ presentation: 'modal', headerShown: false }} />

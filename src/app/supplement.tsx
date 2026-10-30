@@ -1,7 +1,7 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -16,6 +16,7 @@ import { toast } from '@/components/toast';
 import { WeekdayPicker } from '@/components/weekday-picker';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
+import { getMoments } from '@/db/plan';
 import {
   addPurchase,
   addSupplement,
@@ -93,7 +94,11 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
   const [times, setTimes] = useState(supplement?.timesPerDay ?? 1);
   const [schedule, setSchedule] = useState<SupplementSchedule>(supplement?.schedule ?? 'daily');
   const [weekdays, setWeekdays] = useState<number[]>(supplement?.weekdays ?? []);
+  const [moment, setMoment] = useState<string | null>(supplement ? supplement.moment : 'morning');
   const [reminder, setReminder] = useState<string | null>(supplement?.reminder ?? null);
+  const [contents, setContents] = useState(supplement?.contents ?? '');
+  const [note, setNote] = useState(supplement?.note ?? '');
+  const { data: moments } = useLiveQuery('moments', getMoments, ['settings']);
   const [packageAmount, setPackageAmount] = useState(numberToInput(supplement?.packageAmount ?? null, 2));
   // Prices keep their cents: 24,90, not 24,9.
   const [packagePrice, setPackagePrice] = useState(
@@ -140,7 +145,11 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
       timesPerDay: times,
       schedule,
       weekdays: schedule === 'weekdays' ? weekdays : [],
-      reminder: schedule === 'asNeeded' ? null : reminder,
+      // A moment, or a time of its own: never both.
+      moment: schedule === 'asNeeded' ? null : moment,
+      reminder: schedule === 'asNeeded' || moment !== null ? null : (reminder ?? '08:00'),
+      contents,
+      note,
       packageAmount: amountValue,
       packagePrice: priceValue,
     };
@@ -233,12 +242,12 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
       <SectionTitle>Quando</SectionTitle>
       <ListGroup>
         <Row
-          title="Si prende"
+          title="Ogni quanto"
           chevron={false}
           detail={
             <MenuButton
               icon="calendar"
-              accessibilityLabel="Quando si prende"
+              accessibilityLabel="Ogni quanto si prende"
               groups={[
                 {
                   actions: SCHEDULES.map((s) => ({
@@ -260,20 +269,53 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
         {schedule === 'weekdays' ? <WeekdayPicker value={weekdays} onChange={setWeekdays} /> : null}
         {schedule !== 'asNeeded' ? (
           <Row
-            title="Promemoria"
+            title="Momento"
             chevron={false}
             detail={
-              <View style={styles.detail}>
-                {reminder !== null ? (
-                  <TimePicker {...parseTimeKey(reminder)} accessibilityLabel="Ora del promemoria" onChange={(t) => setReminder(timeKey(t.hour, t.minute))} />
-                ) : null}
-                <Switch
-                  value={reminder !== null}
-                  onValueChange={(on) => setReminder(on ? '08:00' : null)}
-                  trackColor={{ true: theme.accent }}
-                  accessibilityLabel="Promemoria"
-                />
-              </View>
+              <MenuButton
+                icon="clock"
+                accessibilityLabel="Momento della giornata"
+                groups={[
+                  {
+                    actions: (moments ?? []).map((m) => ({
+                      label: m.name,
+                      checked: m.id === moment,
+                      onPress: () => setMoment(m.id),
+                    })),
+                  },
+                  {
+                    actions: [
+                      {
+                        label: 'Un orario preciso',
+                        checked: moment === null,
+                        onPress: () => {
+                          setMoment(null);
+                          setReminder((r) => r ?? '08:00');
+                        },
+                      },
+                    ],
+                  },
+                ]}>
+                <View style={styles.pick}>
+                  <AppText tone="accent" numberOfLines={1}>
+                    {moment === null ? 'Un orario preciso' : ((moments ?? []).find((m) => m.id === moment)?.name ?? 'Mattina')}
+                  </AppText>
+                  <Icon name="chevron.up.chevron.down" size={12} tone="accent" />
+                </View>
+              </MenuButton>
+            }
+          />
+        ) : null}
+        {schedule !== 'asNeeded' && moment === null ? (
+          <Row
+            title="Ora"
+            chevron={false}
+            detail={
+              <TimePicker
+                {...parseTimeKey(reminder ?? '08:00')}
+                accessibilityLabel="Ora in cui si prende"
+                onChange={(t) => setReminder(timeKey(t.hour, t.minute))}
+              />
             }
           />
         ) : null}
@@ -281,12 +323,18 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
       <SectionFooter>
         {schedule === 'active'
           ? 'Nei giorni con un allenamento o un’attività in calendario.'
-          : schedule === 'asNeeded'
-            ? 'Non è mai dovuto: lo spunti quando lo prendi.'
-            : reminder !== null
-              ? 'Il promemoria arriva solo se non l’hai già spuntato.'
-              : 'Lo trovi da spuntare nel calendario.'}
+          : schedule === 'alternate'
+            ? 'Un giorno sì e uno no, a partire da quando l’hai aggiunto.'
+            : schedule === 'asNeeded'
+              ? 'Non è mai dovuto: lo spunti quando lo prendi.'
+              : 'Lo trovi da spuntare nel calendario, nel suo momento della giornata.'}
       </SectionFooter>
+
+      <SectionTitle>Come prenderlo</SectionTitle>
+      <ListGroup>
+        <FieldRow label="Contiene" value={contents} onChangeText={setContents} placeholder="Es. 100 µg D3" autoCapitalize="none" />
+        <FieldRow label="Nota" value={note} onChangeText={setNote} placeholder="Es. con un pasto" autoCapitalize="sentences" />
+      </ListGroup>
 
       <SectionTitle>Confezione</SectionTitle>
       <ListGroup>
@@ -385,7 +433,6 @@ const styles = StyleSheet.create({
   row: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 52, paddingLeft: Spacing.lg, paddingRight: Spacing.lg },
   inline: { minWidth: 64, fontSize: 17, textAlign: 'right', paddingVertical: Spacing.md, fontVariant: ['tabular-nums'] },
   count: { minWidth: 32, textAlign: 'center' },
-  detail: { flexDirection: 'row', alignItems: 'center', gap: 10 },
   pick: { flexDirection: 'row', alignItems: 'center', gap: 6, minHeight: 36, maxWidth: 220 },
   actions: { paddingTop: Spacing.xl },
 });

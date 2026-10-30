@@ -19,7 +19,7 @@ export function logWeight(db: SQLiteDatabase, date: DateKey, current: { kg: numb
     min: 20,
     max: 400,
     onSubmit: (kg) => {
-      void setWeight(db, date, kg);
+      void setWeight(db, date, kg, date === today ? new Date().toISOString() : null);
       haptics.success();
     },
   });

@@ -27,14 +27,16 @@ export function isDoseUnit(value: unknown): value is DoseUnit {
 
 /**
  * - daily: every day
+ * - alternate: every other day, counting from the day it was added
  * - weekdays: on some days of the week
  * - active: on the days with an activity or a workout
  * - asNeeded: never due, ticked when taken
  */
-export type SupplementSchedule = 'daily' | 'weekdays' | 'active' | 'asNeeded';
+export type SupplementSchedule = 'daily' | 'alternate' | 'weekdays' | 'active' | 'asNeeded';
 
 export const SCHEDULES: readonly { key: SupplementSchedule; label: string }[] = [
   { key: 'daily', label: 'Ogni giorno' },
+  { key: 'alternate', label: 'A giorni alterni' },
   { key: 'weekdays', label: 'Alcuni giorni' },
   { key: 'active', label: 'Nei giorni di attività' },
   { key: 'asNeeded', label: 'Al bisogno' },
@@ -54,8 +56,14 @@ export type Supplement = {
   schedule: SupplementSchedule;
   /** For `weekdays`, as Date.getDay(): 0 is Sunday. */
   weekdays: number[];
-  /** "08:00": a reminder at that time on the days it is due. */
+  /** The moment of the day it is taken at (see lib/plan), e.g. "lunch". */
+  moment: string | null;
+  /** "08:00": taken at that time instead of a moment, with a reminder. */
   reminder: string | null;
+  /** What a dose holds, e.g. "100 µg D3 · 100 µg K2". */
+  contents: string | null;
+  /** How to take it, e.g. "Con un pasto che contiene grassi". */
+  note: string | null;
   /** A usual package: how much it holds, in `unit`, and its price in euro. */
   packageAmount: number | null;
   packagePrice: number | null;
@@ -74,6 +82,8 @@ export function dosesDue(s: Pick<Supplement, 'schedule' | 'weekdays' | 'timesPer
   switch (s.schedule) {
     case 'daily':
       return s.timesPerDay;
+    case 'alternate':
+      return daysBetween(s.startedOn, date) % 2 === 0 ? s.timesPerDay : 0;
     case 'weekdays':
       return s.weekdays.includes(weekdayOf(date)) ? s.timesPerDay : 0;
     case 'active':
@@ -95,6 +105,8 @@ export function formatSchedule(s: Pick<Supplement, 'schedule' | 'weekdays' | 'ti
   switch (s.schedule) {
     case 'daily':
       return times ? `${times} al giorno` : 'Ogni giorno';
+    case 'alternate':
+      return times ? `A giorni alterni, ${times}` : 'A giorni alterni';
     case 'weekdays': {
       const days = s.weekdays.length > 0 ? formatWeekdays(s.weekdays) : 'Nessun giorno';
       return times ? `${days}, ${times}` : days;
@@ -135,6 +147,8 @@ export function dosesPerDay(s: Pick<Supplement, 'schedule' | 'weekdays' | 'times
   switch (s.schedule) {
     case 'daily':
       return s.timesPerDay;
+    case 'alternate':
+      return s.timesPerDay / 2;
     case 'weekdays':
       return (s.timesPerDay * s.weekdays.length) / 7;
     default:

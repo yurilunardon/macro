@@ -97,8 +97,8 @@ const ACTIVITY_COLUMNS = [
   'id', 'type_id', 'plan_id', 'date', 'time', 'minutes', 'day_id', 'note', 'status', 'created_at',
 ] as const satisfies readonly (keyof ActivityRow)[];
 const SUPPLEMENT_COLUMNS = [
-  'id', 'name', 'dose', 'unit', 'times_per_day', 'schedule', 'weekdays', 'reminder', 'package_amount', 'package_price',
-  'position', 'archived', 'started_on', 'created_at',
+  'id', 'name', 'dose', 'unit', 'times_per_day', 'schedule', 'weekdays', 'moment', 'reminder', 'contents', 'note',
+  'package_amount', 'package_price', 'position', 'archived', 'started_on', 'created_at',
 ] as const satisfies readonly (keyof SupplementRow)[];
 const SUPPLEMENT_DOSE_COLUMNS = ['supplement_id', 'date', 'dose_index', 'taken_at'] as const satisfies readonly (keyof SupplementDoseRow)[];
 const SUPPLEMENT_PURCHASE_COLUMNS = [
@@ -116,7 +116,7 @@ export async function readBackup(db: SQLiteDatabase): Promise<BackupData> {
     exportedAt: new Date().toISOString(),
     foods: await db.getAllAsync<FoodRow>(select(FOOD_COLUMNS, 'foods', 'id')),
     entries: await db.getAllAsync<EntryRow>(select(ENTRY_COLUMNS, 'entries', 'id')),
-    weights: await db.getAllAsync<WeightRow>('SELECT date, kg FROM weights ORDER BY date'),
+    weights: await db.getAllAsync<WeightRow>('SELECT date, kg, logged_at FROM weights ORDER BY date'),
     // These describe this phone, not the data.
     settings: await db.getAllAsync<SettingRow>(
       `SELECT key, value FROM settings WHERE key NOT IN ('lastBackupAt', 'genericFoodsVersion', 'exercisesVersion')`,
@@ -204,7 +204,7 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
     await insertRows<EntryRow>(tx, 'entries', ENTRY_COLUMNS, backup.entries);
     await insertRows<SavedMealRow>(tx, 'saved_meals', SAVED_MEAL_COLUMNS, backup.saved_meals);
     await insertRows<SavedMealItemRow>(tx, 'saved_meal_items', SAVED_MEAL_ITEM_COLUMNS, backup.saved_meal_items);
-    await insertRows<WeightRow>(tx, 'weights', ['date', 'kg'], backup.weights);
+    await insertRows<WeightRow>(tx, 'weights', ['date', 'kg', 'logged_at'], backup.weights);
     await insertRows<DayTypeRow>(tx, 'day_types', ['date', 'type'], backup.day_types);
     await insertRows<MeasurementRow>(tx, 'measurements', ['date', 'kind', 'value'], backup.measurements);
     await insertRows<ExerciseRow>(tx, 'exercises', EXERCISE_COLUMNS, backup.exercises);

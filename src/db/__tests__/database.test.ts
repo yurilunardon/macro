@@ -168,7 +168,7 @@ describe('migrations', () => {
     expect(tables.map((t) => t.name)).not.toContain('water');
     expect(await old.getFirstAsync(`SELECT * FROM settings WHERE key = 'waterGoalMl'`)).toBeNull();
     expect((await getTargets(old)).targets.kcal).toBe(2500);
-    expect(await getLatestWeight(old)).toEqual({ date: '2026-10-24', kg: 80 });
+    expect(await getLatestWeight(old)).toEqual({ date: '2026-10-24', kg: 80, logged_at: null });
   });
 
   it('upgrades a version 4 diary, dropping the fasting timer', async () => {
@@ -363,10 +363,10 @@ describe('body and settings', () => {
     await setWeight(db, '2026-10-25', 79.8);
     await setWeight(db, '2026-10-25', 79.6);
     expect(await getWeightsSince(db, '2026-10-01')).toEqual([
-      { date: '2026-10-20', kg: 80.4 },
-      { date: '2026-10-25', kg: 79.6 },
+      { date: '2026-10-20', kg: 80.4, logged_at: null },
+      { date: '2026-10-25', kg: 79.6, logged_at: null },
     ]);
-    expect(await getLatestWeight(db)).toEqual({ date: '2026-10-25', kg: 79.6 });
+    expect(await getLatestWeight(db)).toEqual({ date: '2026-10-25', kg: 79.6, logged_at: null });
   });
 
   it('stores settings as JSON and falls back to default targets', async () => {

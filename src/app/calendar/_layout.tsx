@@ -1,6 +1,6 @@
 import { Stack } from 'expo-router';
 
-import { LARGE_TITLE, TAB_STACK_OPTIONS } from '@/constants/navigation';
+import { TAB_STACK_OPTIONS } from '@/constants/navigation';
 
 export const unstable_settings = { anchor: 'index' };
 
@@ -11,7 +11,12 @@ export const unstable_settings = { anchor: 'index' };
 export default function CalendarLayout() {
   return (
     <Stack screenOptions={TAB_STACK_OPTIONS}>
-      <Stack.Screen name="index" options={{ ...LARGE_TITLE, title: 'Calendario' }} />
+      {/* The day draws its own title, with how much of it is done beside it. */}
+      <Stack.Screen name="index" options={{ title: '' }} />
+      <Stack.Screen name="plan" options={{ title: 'Il piano' }} />
+      <Stack.Screen name="plan-day" options={{ title: '' }} />
+      <Stack.Screen name="moments" options={{ title: 'Orari della giornata' }} />
+      <Stack.Screen name="weigh-in" options={{ title: 'Pesata' }} />
       <Stack.Screen name="supplements" options={{ title: 'Integratori' }} />
       <Stack.Screen name="activity-types" options={{ title: 'Tipi di attività' }} />
       <Stack.Screen name="report" options={{ title: 'Report' }} />

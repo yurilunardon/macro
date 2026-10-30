@@ -8,9 +8,10 @@ export const BACKUP_APP = 'macro';
 /**
  * 2 added `ref` and `category` to foods. 3 added recipes, saved meals and day types, and
  * dropped water. 4 added measurements and fasts, 5 dropped fasts, 6 added training, 7 the
- * calendar and supplements. Older files are still accepted.
+ * calendar and supplements, 8 the moments of the supplements and the time of a weigh-in. Older
+ * files are still accepted.
  */
-export const BACKUP_VERSION = 7;
+export const BACKUP_VERSION = 8;
 
 export type FoodRow = {
   id: number;
@@ -57,7 +58,8 @@ export type EntryRow = {
   created_at: string;
 };
 
-export type WeightRow = { date: string; kg: number };
+/** `logged_at`: when it was logged, for a weigh-in of the day itself (version 8). */
+export type WeightRow = { date: string; kg: number; logged_at?: string | null };
 export type SettingRow = { key: string; value: string };
 
 /** A recipe is a food (source "recipe") plus how its weight is spread. */
@@ -208,7 +210,10 @@ export type SupplementRow = {
   times_per_day: number;
   schedule: string;
   weekdays: string;
+  moment?: string | null;
   reminder: string | null;
+  contents?: string | null;
+  note?: string | null;
   package_amount: number | null;
   package_price: number | null;
   position: number;
@@ -297,7 +302,7 @@ const ENTRY_COLUMNS: Record<keyof EntryRow, Check> = {
   created_at: 'string',
 };
 
-const WEIGHT_COLUMNS: Record<keyof WeightRow, Check> = { date: 'string', kg: 'number' };
+const WEIGHT_COLUMNS: Record<keyof WeightRow, Check> = { date: 'string', kg: 'number', logged_at: 'string?' };
 const SETTING_COLUMNS: Record<keyof SettingRow, Check> = { key: 'string', value: 'string' };
 
 const NUTRIENT_COLUMNS: Record<keyof NutrientColumns, Check> = {
@@ -461,7 +466,10 @@ const SUPPLEMENT_COLUMNS: Record<keyof SupplementRow, Check> = {
   times_per_day: 'number',
   schedule: 'string',
   weekdays: 'string',
+  moment: 'string?',
   reminder: 'string?',
+  contents: 'string?',
+  note: 'string?',
   package_amount: 'number?',
   package_price: 'number?',
   position: 'number',

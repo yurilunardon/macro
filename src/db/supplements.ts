@@ -24,7 +24,10 @@ type SupplementRow = {
   times_per_day: number;
   schedule: string;
   weekdays: string;
+  moment: string | null;
   reminder: string | null;
+  contents: string | null;
+  note: string | null;
   package_amount: number | null;
   package_price: number | null;
   position: number;
@@ -47,7 +50,10 @@ function supplementFromRow(row: SupplementRow): Supplement {
       .filter((d) => d !== '')
       .map(Number)
       .filter((d) => Number.isInteger(d) && d >= 0 && d <= 6),
+    moment: row.moment,
     reminder: row.reminder,
+    contents: row.contents,
+    note: row.note,
     packageAmount: row.package_amount,
     packagePrice: row.package_price,
     position: row.position,
@@ -76,7 +82,14 @@ export async function getSupplement(db: SQLiteDatabase, id: number): Promise<Sup
 export type SupplementInput = Pick<
   Supplement,
   'name' | 'dose' | 'unit' | 'timesPerDay' | 'schedule' | 'weekdays' | 'reminder' | 'packageAmount' | 'packagePrice'
->;
+> &
+  Partial<Pick<Supplement, 'moment' | 'contents' | 'note'>>;
+
+/** Empty text is stored as null. */
+function text(value: string | null | undefined): string | null {
+  const trimmed = value?.trim() ?? '';
+  return trimmed === '' ? null : trimmed;
+}
 
 function weekdaysText(weekdays: readonly number[]): string {
   return [...new Set(weekdays)].sort((a, b) => a - b).join(',');
@@ -86,16 +99,19 @@ function weekdaysText(weekdays: readonly number[]): string {
 export async function addSupplement(db: SQLiteDatabase, input: SupplementInput, today: DateKey): Promise<number> {
   const last = await db.getFirstAsync<{ p: number | null }>('SELECT MAX(position) AS p FROM supplements');
   const result = await db.runAsync(
-    `INSERT INTO supplements (name, dose, unit, times_per_day, schedule, weekdays, reminder, package_amount, package_price,
-       position, archived, started_on, created_at)
-     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
+    `INSERT INTO supplements (name, dose, unit, times_per_day, schedule, weekdays, moment, reminder, contents, note,
+       package_amount, package_price, position, archived, started_on, created_at)
+     VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, ?, ?)`,
     input.name.trim(),
     input.dose,
     input.unit,
     input.timesPerDay,
     input.schedule,
     weekdaysText(input.weekdays),
+    input.moment ?? null,
     input.reminder,
+    text(input.contents),
+    text(input.note),
     input.packageAmount,
     input.packagePrice,
     (last?.p ?? -1) + 1,
@@ -108,15 +124,18 @@ export async function addSupplement(db: SQLiteDatabase, input: SupplementInput, 
 
 export async function updateSupplement(db: SQLiteDatabase, id: number, input: SupplementInput): Promise<void> {
   await db.runAsync(
-    `UPDATE supplements SET name = ?, dose = ?, unit = ?, times_per_day = ?, schedule = ?, weekdays = ?, reminder = ?,
-       package_amount = ?, package_price = ? WHERE id = ?`,
+    `UPDATE supplements SET name = ?, dose = ?, unit = ?, times_per_day = ?, schedule = ?, weekdays = ?, moment = ?,
+       reminder = ?, contents = ?, note = ?, package_amount = ?, package_price = ? WHERE id = ?`,
     input.name.trim(),
     input.dose,
     input.unit,
     input.timesPerDay,
     input.schedule,
     weekdaysText(input.weekdays),
+    input.moment ?? null,
     input.reminder,
+    text(input.contents),
+    text(input.note),
     input.packageAmount,
     input.packagePrice,
     id,
@@ -145,6 +164,15 @@ export async function getDosesTaken(db: SQLiteDatabase, from: DateKey, to: DateK
     to,
   );
   return new Map(rows.map((r) => [`${r.supplement_id}:${r.date}`, r.n]));
+}
+
+/** When each dose of a day was ticked, as "id:index" → ISO date and time. */
+export async function getDoseTimes(db: SQLiteDatabase, date: DateKey): Promise<Map<string, string>> {
+  const rows = await db.getAllAsync<{ supplement_id: number; dose_index: number; taken_at: string }>(
+    'SELECT supplement_id, dose_index, taken_at FROM supplement_doses WHERE date = ?',
+    date,
+  );
+  return new Map(rows.map((r) => [`${r.supplement_id}:${r.dose_index}`, r.taken_at]));
 }
 
 /** Ticks or unticks the `index`-th dose of a day. */

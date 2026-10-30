@@ -145,7 +145,7 @@ export async function getActiveWorkout(
  */
 export async function startWorkout(
   db: SQLiteDatabase,
-  { dayId = null, now = new Date() }: { dayId?: number | null; now?: Date } = {},
+  { dayId = null, name = null, now = new Date() }: { dayId?: number | null; name?: string | null; now?: Date } = {},
 ): Promise<number> {
   const active = await getActiveWorkout(db);
   if (active) return active.id;
@@ -154,7 +154,7 @@ export async function startWorkout(
   const workout = await db.runAsync(
     'INSERT INTO workouts (day_id, name, date, started_at) VALUES (?, ?, ?, ?)',
     day?.id ?? null,
-    day?.name ?? 'Allenamento libero',
+    day?.name ?? name ?? 'Allenamento libero',
     todayKey(now),
     startedAt,
   );
