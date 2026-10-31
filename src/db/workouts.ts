@@ -4,10 +4,12 @@ import { todayKey, type DateKey } from '@/lib/dates';
 import { loadIncrement, type Muscle } from '@/lib/exercises';
 import {
   bestOneRepMax,
+  dayIcon,
   isSetType,
   isWorkSet,
   suggestNext,
   tonnage,
+  type DayIcon,
   type LoggedSet,
   type SetType,
   type Suggestion,
@@ -132,11 +134,12 @@ async function insertSets(
 /** The workout in progress, if any: there is only ever one. */
 export async function getActiveWorkout(
   db: SQLiteDatabase,
-): Promise<{ id: number; name: string; startedAt: string } | null> {
-  const row = await db.getFirstAsync<{ id: number; name: string; started_at: string }>(
-    'SELECT id, name, started_at FROM workouts WHERE ended_at IS NULL ORDER BY started_at DESC LIMIT 1',
+): Promise<{ id: number; name: string; icon: DayIcon; startedAt: string } | null> {
+  const row = await db.getFirstAsync<{ id: number; name: string; icon: string | null; started_at: string }>(
+    `SELECT w.id, w.name, d.icon, w.started_at FROM workouts w LEFT JOIN program_days d ON d.id = w.day_id
+     WHERE w.ended_at IS NULL ORDER BY w.started_at DESC LIMIT 1`,
   );
-  return row ? { id: row.id, name: row.name, startedAt: row.started_at } : null;
+  return row ? { id: row.id, name: row.name, icon: dayIcon(row.name, row.icon), startedAt: row.started_at } : null;
 }
 
 /**
@@ -375,6 +378,7 @@ export async function deleteWorkout(db: SQLiteDatabase, id: number): Promise<voi
 export type WorkoutSummary = {
   id: number;
   name: string;
+  icon: DayIcon;
   date: DateKey;
   startedAt: string;
   endedAt: string;
@@ -385,8 +389,9 @@ export type WorkoutSummary = {
 
 /** Finished workouts, newest first. */
 export async function getWorkoutHistory(db: SQLiteDatabase, limit = 500): Promise<WorkoutSummary[]> {
-  const workouts = await db.getAllAsync<{ id: number; name: string; date: string; started_at: string; ended_at: string }>(
-    'SELECT id, name, date, started_at, ended_at FROM workouts WHERE ended_at IS NOT NULL ORDER BY started_at DESC LIMIT ?',
+  const workouts = await db.getAllAsync<{ id: number; name: string; icon: string | null; date: string; started_at: string; ended_at: string }>(
+    `SELECT w.id, w.name, d.icon, w.date, w.started_at, w.ended_at FROM workouts w LEFT JOIN program_days d ON d.id = w.day_id
+     WHERE w.ended_at IS NOT NULL ORDER BY w.started_at DESC LIMIT ?`,
     limit,
   );
   if (workouts.length === 0) return [];
@@ -403,6 +408,7 @@ export async function getWorkoutHistory(db: SQLiteDatabase, limit = 500): Promis
     return {
       id: w.id,
       name: w.name,
+      icon: dayIcon(w.name, w.icon),
       date: w.date,
       startedAt: w.started_at,
       endedAt: w.ended_at,

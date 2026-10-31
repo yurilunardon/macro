@@ -37,7 +37,6 @@ import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { formatMinutes, formatWeekdays, GYM_REF, parseTimeKey, timeKey, type ActivityType, type StoredStatus } from '@/lib/calendar';
 import { formatLongDate, isDateKey, weekdayOf, type DateKey } from '@/lib/dates';
-import { dayIcon } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 import { deleteWithUndo } from '@/services/undo';
 
@@ -395,7 +394,7 @@ function ActivityForm({ draft, types, today, weekly }: { draft: Draft; types: Ac
                     },
                     ...(active ? [active] : []).map((p) => ({
                       title: p.name,
-                      actions: p.days.map((d) => ({ label: d.name, icon: dayIcon(d.name), checked: d.id === dayId, onPress: () => setDayId(d.id) })),
+                      actions: p.days.map((d) => ({ label: d.name, icon: d.icon, checked: d.id === dayId, onPress: () => setDayId(d.id) })),
                     })),
                   ]}>
                   <View style={styles.pick}>

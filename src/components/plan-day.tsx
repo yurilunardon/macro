@@ -1,5 +1,5 @@
-import { useEffect } from 'react';
-import { Pressable, StyleSheet, useColorScheme, View } from 'react-native';
+import { useEffect, useRef, type ReactNode } from 'react';
+import { Pressable, StyleSheet, useColorScheme, View, type StyleProp, type ViewStyle } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { Easing, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
@@ -18,7 +18,7 @@ import { AppText } from './app-text';
 import { Icon } from './icon';
 import { MenuButton } from './menu-button';
 import type { MenuGroup } from './menu-button.types';
-import { EASE_OUT, project } from './motion';
+import { beat, EASE_OUT, project } from './motion';
 import { PressableScale } from './pressable-scale';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
@@ -34,6 +34,7 @@ export function PlanWeekStrip({
   dots,
   onSelect,
   onChangeWeek,
+  pulse = 0,
 }: {
   week: readonly DateKey[];
   selected: DateKey;
@@ -42,6 +43,8 @@ export function PlanWeekStrip({
   dots: ReadonlyMap<DateKey, { color: string; label: string }>;
   onSelect: (day: DateKey) => void;
   onChangeWeek: (direction: number) => void;
+  /** Each new value makes the selected day's circle beat once, to show where it is. */
+  pulse?: number;
 }) {
   const theme = useTheme();
   const stripX = useSharedValue(0);
@@ -95,7 +98,9 @@ export function PlanWeekStrip({
                 <AppText variant="caption" weight="600" tone={isToday ? 'accent' : 'textSecondary'} maxFontSizeMultiplier={1.3}>
                   {formatWeekdayInitial(day)}
                 </AppText>
-                <View
+                <BeatingCircle
+                  pulse={pulse}
+                  selected={isSelected}
                   style={[
                     styles.dayCircle,
                     isSelected && { backgroundColor: isToday ? theme.accent : theme.text },
@@ -110,7 +115,7 @@ export function PlanWeekStrip({
                     ]}>
                     {String(Number(day.slice(8)))}
                   </AppText>
-                </View>
+                </BeatingCircle>
                 <View style={[styles.dot, { backgroundColor: dot?.color ?? 'transparent' }]} />
               </Pressable>
             );
@@ -119,6 +124,29 @@ export function PlanWeekStrip({
       </View>
     </GestureDetector>
   );
+}
+
+/** A circle that beats once each time `pulse` changes while it is the selected one. */
+function BeatingCircle({
+  pulse,
+  selected,
+  style,
+  children,
+}: {
+  pulse: number;
+  selected: boolean;
+  style: StyleProp<ViewStyle>;
+  children: ReactNode;
+}) {
+  const scale = useSharedValue(1);
+  const last = useRef(pulse);
+  useEffect(() => {
+    if (pulse === last.current) return;
+    last.current = pulse;
+    if (selected) beat(scale);
+  }, [pulse, selected, scale]);
+  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
+  return <Animated.View style={[style, animated]}>{children}</Animated.View>;
 }
 
 /** How much of the day is done, as a small ring with "3/7" in it. */

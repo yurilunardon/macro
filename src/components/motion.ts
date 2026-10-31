@@ -1,4 +1,4 @@
-import { Easing } from 'react-native-reanimated';
+import { Easing, type SharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 
 /** Strong ease-out for things entering, leaving or settling. */
 export const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
@@ -17,4 +17,9 @@ export function rubberband(overshoot: number, dimension: number): number {
   'worklet';
   const constant = 0.55;
   return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot));
+}
+
+/** Swells a little and settles back, once: the "here it is" of Calendar's Today. */
+export function beat(scale: SharedValue<number>): void {
+  scale.set(withSequence(withTiming(1.22, { duration: 160, easing: EASE_OUT }), withSpring(1, { duration: 420, dampingRatio: 0.5 })));
 }

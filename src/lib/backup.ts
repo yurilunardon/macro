@@ -8,10 +8,10 @@ export const BACKUP_APP = 'macro';
 /**
  * 2 added `ref` and `category` to foods. 3 added recipes, saved meals and day types, and
  * dropped water. 4 added measurements and fasts, 5 dropped fasts, 6 added training, 7 the
- * calendar and supplements, 8 the moments of the supplements and the time of a weigh-in. Older
- * files are still accepted.
+ * calendar and supplements, 8 the moments of the supplements and the time of a weigh-in, 9 the
+ * symbol of a program day. Older files are still accepted.
  */
-export const BACKUP_VERSION = 8;
+export const BACKUP_VERSION = 9;
 
 export type FoodRow = {
   id: number;
@@ -121,7 +121,8 @@ export type ExerciseRow = {
   created_at: string;
 };
 export type ProgramRow = { id: number; name: string; notes: string | null; active: number; created_at: string };
-export type ProgramDayRow = { id: number; program_id: number; name: string; position: number };
+/** `icon`: the symbol picked by hand (version 9). */
+export type ProgramDayRow = { id: number; program_id: number; name: string; position: number; icon?: string | null };
 export type DayExerciseRow = {
   id: number;
   day_id: number;
@@ -377,6 +378,7 @@ const PROGRAM_DAY_COLUMNS: Record<keyof ProgramDayRow, Check> = {
   program_id: 'number',
   name: 'string',
   position: 'number',
+  icon: 'string?',
 };
 const DAY_EXERCISE_COLUMNS: Record<keyof DayExerciseRow, Check> = {
   id: 'number',

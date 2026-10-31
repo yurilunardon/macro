@@ -10,8 +10,9 @@ export default function TrainingLayout() {
       <Stack.Screen name="index" options={{ ...LARGE_TITLE, title: 'Allenamento' }} />
       <Stack.Screen name="new" options={{ title: 'Nuova scheda' }} />
       <Stack.Screen name="programs" options={{ title: 'Schede' }} />
-      <Stack.Screen name="program" options={{ title: 'Scheda' }} />
-      <Stack.Screen name="day" options={{ title: 'Giorno' }} />
+      {/* No title in the bar: the page has its own, in large type, to rename it. */}
+      <Stack.Screen name="program" options={{ title: '' }} />
+      <Stack.Screen name="day" options={{ title: '' }} />
       <Stack.Screen name="exercises" options={{ title: 'Esercizi', headerSearchBarOptions: EXERCISE_SEARCH }} />
       <Stack.Screen name="exercise" options={{ title: 'Esercizio' }} />
       <Stack.Screen name="history" options={{ title: 'Storico' }} />

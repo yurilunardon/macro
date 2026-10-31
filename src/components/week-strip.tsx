@@ -14,7 +14,7 @@ import { formatLongDate, formatWeekdayInitial, weekOf, type DateKey } from '@/li
 import { formatKcal } from '@/lib/format';
 
 import { AppText } from './app-text';
-import { EASE_OUT, project } from './motion';
+import { beat, EASE_OUT, project } from './motion';
 
 const CIRCLE = 36;
 // Grows from about half its size with a small overshoot, so the new day is plain to see.
@@ -28,6 +28,8 @@ type WeekStripProps = {
   onSelect: (day: DateKey) => void;
   /** Swiping the strip moves a week back (-1) or forward (1). */
   onChangeWeek: (direction: number) => void;
+  /** Each new value makes the selected day's circle beat once, to show where it is. */
+  pulse?: number;
 };
 
 /**
@@ -35,7 +37,7 @@ type WeekStripProps = {
  * circle (green when it is today), and under each day with food a dot in the colour of its
  * calorie ring.
  */
-export function WeekStrip({ selected, today, onSelect, onChangeWeek }: WeekStripProps) {
+export function WeekStrip({ selected, today, onSelect, onChangeWeek, pulse = 0 }: WeekStripProps) {
   const theme = useTheme();
   const days = weekOf(selected);
   const { data } = useLiveQuery(`week:${days[0]}`, async (database) => {
@@ -98,7 +100,7 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek }: WeekStrip
                   {formatWeekdayInitial(day)}
                 </AppText>
                 <View style={styles.slot}>
-                  <DayCircle selected={isSelected} color={isToday ? theme.accent : theme.text} />
+                  <DayCircle selected={isSelected} color={isToday ? theme.accent : theme.text} pulse={pulse} />
                   <AppText
                     numeric
                     style={[
@@ -122,10 +124,16 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek }: WeekStrip
  * The circle behind the selected day, as in Calendar: it does not travel from the old day, it
  * just appears on the new one, growing a touch into place.
  */
-function DayCircle({ selected, color }: { selected: boolean; color: string }) {
+function DayCircle({ selected, color, pulse }: { selected: boolean; color: string; pulse: number }) {
   const visible = useSharedValue(selected ? 1 : 0);
   const scale = useSharedValue(1);
   const first = useRef(true);
+  const lastPulse = useRef(pulse);
+  useEffect(() => {
+    if (pulse === lastPulse.current) return;
+    lastPulse.current = pulse;
+    if (selected) beat(scale);
+  }, [pulse, selected, scale]);
   useEffect(() => {
     if (first.current) {
       first.current = false;

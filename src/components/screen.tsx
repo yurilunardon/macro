@@ -1,8 +1,9 @@
 import type { ReactNode } from 'react';
 import { Platform, StyleSheet, type ScrollViewProps } from 'react-native';
-import Animated, { type AnimatedRef } from 'react-native-reanimated';
+import Animated from 'react-native-reanimated';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
+import { useScrollTop, useScrollTopOnTabPress, type ScrollTop } from '@/hooks/use-scroll-top';
 import { useTheme } from '@/hooks/use-theme';
 
 import { closeOpenSwipeRow } from './swipe-to-delete';
@@ -11,18 +12,27 @@ import { useTabBarInset } from './tab-bar';
 /**
  * Scrollable screen body. It must be the first child of the screen so iOS can collapse the
  * large title and inset the content under the header; in a tab, the end of the page also
- * clears the tab bar floating over it.
+ * clears the tab bar floating over it, and a tap on the tab takes the first page back to its top.
  */
 export function ScreenScroll({
   children,
-  animatedRef,
+  scroll,
   ...props
-}: { children: ReactNode; animatedRef?: AnimatedRef<Animated.ScrollView> } & ScrollViewProps) {
+}: {
+  children: ReactNode;
+  /** The screen's own `useScrollTop`, when it also scrolls the page itself. */
+  scroll?: ScrollTop;
+} & ScrollViewProps) {
   const theme = useTheme();
   const tabBar = useTabBarInset();
+  const own = useScrollTop();
+  const { ref, onScroll, scrollToTop } = scroll ?? own;
+  useScrollTopOnTabPress(scrollToTop);
   return (
     <Animated.ScrollView
-      ref={animatedRef}
+      ref={ref}
+      onScroll={onScroll}
+      scrollEventThrottle={16}
       contentInsetAdjustmentBehavior="automatic"
       {...bottomInset(tabBar)}
       automaticallyAdjustKeyboardInsets

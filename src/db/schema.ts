@@ -334,6 +334,8 @@ export const MIGRATIONS: readonly Migration[] = [
   ALTER TABLE supplements ADD COLUMN note TEXT;
   ALTER TABLE weights ADD COLUMN logged_at TEXT;
   `,
+  // 11: a program day's symbol, picked by hand; none means the one its name suggests.
+  `ALTER TABLE program_days ADD COLUMN icon TEXT;`,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

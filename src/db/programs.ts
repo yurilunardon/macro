@@ -2,7 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import type { Muscle } from '@/lib/exercises';
 import type { ProgramTemplate } from '@/lib/templates';
-import { nextInRotation } from '@/lib/training';
+import { dayIcon, nextInRotation, type DayIcon } from '@/lib/training';
 
 import { exerciseFromRow, type Exercise, type ExerciseRow } from './exercises';
 import { notifyChange } from './live';
@@ -22,9 +22,9 @@ export type PlannedExercise = {
   note: string | null;
 };
 
-export type ProgramDay = { id: number; programId: number; name: string; exercises: PlannedExercise[] };
+export type ProgramDay = { id: number; programId: number; name: string; icon: DayIcon; exercises: PlannedExercise[] };
 
-export type DaySummary = { id: number; name: string; exerciseCount: number; muscles: Muscle[] };
+export type DaySummary = { id: number; name: string; icon: DayIcon; exerciseCount: number; muscles: Muscle[] };
 
 /** A draft is a template being looked at: it is not listed until added to the user's programs. */
 export type Program = { id: number; name: string; active: boolean; draft: boolean; days: DaySummary[] };
@@ -42,8 +42,8 @@ export async function getPrograms(db: SQLiteDatabase, { drafts = false }: { draf
     `SELECT id, name, active, draft FROM programs ${drafts ? '' : 'WHERE draft = 0'}
      ORDER BY active DESC, created_at DESC, id DESC`,
   );
-  const days = await db.getAllAsync<{ id: number; program_id: number; name: string; muscles: string | null; n: number }>(
-    `SELECT d.id, d.program_id, d.name, COUNT(x.id) AS n,
+  const days = await db.getAllAsync<{ id: number; program_id: number; name: string; icon: string | null; muscles: string | null; n: number }>(
+    `SELECT d.id, d.program_id, d.name, d.icon, COUNT(x.id) AS n,
        (SELECT GROUP_CONCAT(muscle) FROM (
           SELECT e.muscle AS muscle FROM day_exercises x2 JOIN exercises e ON e.id = x2.exercise_id
           WHERE x2.day_id = d.id GROUP BY e.muscle ORDER BY SUM(x2.sets) DESC, MIN(x2.position) LIMIT 3)) AS muscles
@@ -60,6 +60,7 @@ export async function getPrograms(db: SQLiteDatabase, { drafts = false }: { draf
       .map((d) => ({
         id: d.id,
         name: d.name,
+        icon: dayIcon(d.name, d.icon),
         exerciseCount: d.n,
         muscles: (d.muscles ?? '').split(',').filter(Boolean) as Muscle[],
       })),
@@ -160,7 +161,7 @@ export async function discardDraft(db: SQLiteDatabase, id: number): Promise<void
 /** Everything that can be changed in a program, as text: two equal ones mean nothing changed. */
 export async function programSnapshot(db: SQLiteDatabase, id: number): Promise<string> {
   const rows = await db.getAllAsync<Record<string, unknown>>(
-    `SELECT p.name AS program, d.id AS day, d.name, d.position AS dp, x.exercise_id, x.position AS xp,
+    `SELECT p.name AS program, d.id AS day, d.name, d.icon, d.position AS dp, x.exercise_id, x.position AS xp,
        x.sets, x.rep_min, x.rep_max, x.rest_seconds, x.note
      FROM programs p LEFT JOIN program_days d ON d.program_id = p.id LEFT JOIN day_exercises x ON x.day_id = d.id
      WHERE p.id = ? ORDER BY d.position, d.id, x.position, x.id`,
@@ -202,6 +203,12 @@ export async function addDay(db: SQLiteDatabase, programId: number, name: string
 
 export async function renameDay(db: SQLiteDatabase, dayId: number, name: string): Promise<void> {
   await db.runAsync('UPDATE program_days SET name = ? WHERE id = ?', name.trim(), dayId);
+  notifyChange('training');
+}
+
+/** The symbol of a day, picked by hand. */
+export async function setDayIcon(db: SQLiteDatabase, dayId: number, icon: DayIcon): Promise<void> {
+  await db.runAsync('UPDATE program_days SET icon = ? WHERE id = ?', icon, dayId);
   notifyChange('training');
 }
 
@@ -249,8 +256,8 @@ function plannedFromRow(row: PlannedRow): PlannedExercise {
 }
 
 export async function getDay(db: SQLiteDatabase, dayId: number): Promise<ProgramDay | null> {
-  const day = await db.getFirstAsync<{ id: number; program_id: number; name: string }>(
-    'SELECT id, program_id, name FROM program_days WHERE id = ?',
+  const day = await db.getFirstAsync<{ id: number; program_id: number; name: string; icon: string | null }>(
+    'SELECT id, program_id, name, icon FROM program_days WHERE id = ?',
     dayId,
   );
   if (!day) return null;
@@ -261,7 +268,7 @@ export async function getDay(db: SQLiteDatabase, dayId: number): Promise<Program
      WHERE x.day_id = ? ORDER BY x.position, x.id`,
     dayId,
   );
-  return { id: day.id, programId: day.program_id, name: day.name, exercises: rows.map(plannedFromRow) };
+  return { id: day.id, programId: day.program_id, name: day.name, icon: dayIcon(day.name, day.icon), exercises: rows.map(plannedFromRow) };
 }
 
 export async function getPlannedExercise(db: SQLiteDatabase, id: number): Promise<PlannedExercise | null> {

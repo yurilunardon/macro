@@ -6,7 +6,6 @@ import type { Program } from '@/db/programs';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
 import { countLabel } from '@/lib/format';
-import { dayIcon } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 
 import { AppText } from './app-text';
@@ -72,7 +71,7 @@ export function DayDeck({ program, dayId, onPick, onStart, onChangeProgram, when
                 title: `Giorni di ${program.name}`,
                 actions: program.days.map((d) => ({
                   label: d.name,
-                  icon: dayIcon(d.name),
+                  icon: d.icon,
                   checked: d.id === day.id,
                   onPress: () => {
                     if (d.id === day.id) return;
@@ -91,7 +90,7 @@ export function DayDeck({ program, dayId, onPick, onStart, onChangeProgram, when
         {/* A day picked comes in with a short fade, nothing more. */}
         <Animated.View key={day.id} entering={DAY_IN} style={styles.words}>
           <View style={styles.name}>
-            <DayBadge name={day.name} size={40} />
+            <DayBadge icon={day.icon} size={40} />
             <AppText variant="title" numberOfLines={1} style={styles.shrink}>
               {day.name}
             </AppText>

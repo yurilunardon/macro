@@ -13,7 +13,6 @@ import Animated, {
   Keyframe,
   LayoutAnimationConfig,
   LinearTransition,
-  useAnimatedRef,
   useAnimatedStyle,
   useSharedValue,
   withSequence,
@@ -75,6 +74,7 @@ import {
 } from '@/db/workouts';
 import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
+import { useScrollTop } from '@/hooks/use-scroll-top';
 import { useTheme } from '@/hooks/use-theme';
 import { loadIncrement, muscleLabel } from '@/lib/exercises';
 import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
@@ -126,7 +126,7 @@ export default function WorkoutScreen() {
   // "Modifica", as apps on the Home Screen: the exercises fold to their names, wobble, and can be
   // dragged or removed. Only the exercises change; sets are deleted with a swipe at any time.
   const [editing, setEditing] = useState(false);
-  const scrollRef = useAnimatedRef<Animated.ScrollView>();
+  const scroll = useScrollTop();
   // The order just dragged into, shown until the saved order comes back from the database.
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
   const [foldedIds, setFoldedIds] = useState<ReadonlySet<number>>(() => new Set(folded));
@@ -260,7 +260,7 @@ export default function WorkoutScreen() {
   // The scroll view is the first view of the screen, as iOS expects for the bar above it.
   return (
     <>
-      <ScreenScroll animatedRef={scrollRef}>
+      <ScreenScroll scroll={scroll}>
         {/* While editing, a tap anywhere outside the exercises ends it, as on the Home Screen. */}
         <View onStartShouldSetResponder={() => editing} onResponderRelease={() => setEditing(false)}>
         {/* The time, big in the bar at the top, with the name of the workout above it. */}
@@ -325,7 +325,7 @@ export default function WorkoutScreen() {
             keyExtractor={(ex) => String(ex.id)}
             columns={1}
             rowGap={Spacing.lg}
-            scrollableRef={scrollRef}
+            scrollableRef={scroll.ref}
             autoScrollActivationOffset={100}
             dragActivationDelay={300}
             activeItemScale={1.03}

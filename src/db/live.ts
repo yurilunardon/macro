@@ -42,10 +42,14 @@ function versionOf(topics: readonly Topic[]): number {
 }
 
 /**
- * The last result of each query. A screen opened again with nothing written since shows it at
- * once instead of a spinner; `prefetchLiveQuery` fills it just before a screen opens.
+ * The last result of each query. A screen opened again shows it at once instead of a spinner,
+ * and reads again if something was written since; `prefetchLiveQuery` fills it just before a
+ * screen opens.
  */
 const cache = new Map<string, Result<unknown>>();
+
+/** A screen's query, named once so the tap that opens the screen can run it ahead. */
+export type LiveQuery<T> = { key: string; query: (db: SQLiteDatabase) => Promise<T>; topics: readonly Topic[] };
 
 /** Runs a screen's query ahead, e.g. on the tap that opens it, so it appears with its data. */
 export async function prefetchLiveQuery<T>(
@@ -63,6 +67,11 @@ export async function prefetchLiveQuery<T>(
   }
 }
 
+/** `prefetchLiveQuery` for a named query. */
+export function prefetch<T>(db: SQLiteDatabase, { key, query, topics }: LiveQuery<T>): Promise<void> {
+  return prefetchLiveQuery(db, key, query, topics);
+}
+
 /**
  * Runs `query` and re-runs it whenever `key` changes or one of `topics` is written to.
  * `key` must capture every input of `query` (for example the selected date).
@@ -77,10 +86,10 @@ export function useLiveQuery<T>(
   // Versions only grow, so their sum changes exactly when one of the topics does.
   const dataVersion = useSyncExternalStore(subscribe, () => versionOf(topics));
   const token = `${key}#${dataVersion}`;
-  const [result, setResult] = useState<Result<T> | null>(() => {
-    const cached = cache.get(key);
-    return cached?.token === token ? (cached as Result<T>) : null;
-  });
+  // What it showed last time, even if something was written since: a screen opened again draws
+  // whole from its first frame and changes only where the new read differs, instead of a
+  // spinner that flashes into the page.
+  const [result, setResult] = useState<Result<T> | null>(() => (cache.get(key) as Result<T> | undefined) ?? null);
 
   useEffect(() => {
     let cancelled = false;

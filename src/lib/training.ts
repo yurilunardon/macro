@@ -226,17 +226,28 @@ export function bestOneRepMax(sets: readonly LoggedSet[]): number | null {
   return best;
 }
 
-/** SF Symbol for a training day, from the words in its name. */
-export type DayIcon =
-  | 'figure.strengthtraining.traditional'
-  | 'figure.rower'
-  | 'figure.step.training'
-  | 'figure.arms.open'
-  | 'figure.stairs'
-  | 'figure.cross.training'
-  | 'dumbbell.fill'
-  | 'figure.core.training'
-  | 'figure.strengthtraining.functional';
+/** The symbols a training day can have, with what each says, in the order they are offered. */
+export const DAY_ICON_CHOICES = [
+  { icon: 'figure.strengthtraining.traditional', label: 'Spinta' },
+  { icon: 'figure.rower', label: 'Tirata' },
+  { icon: 'figure.step.training', label: 'Gambe' },
+  { icon: 'figure.arms.open', label: 'Parte alta' },
+  { icon: 'figure.stairs', label: 'Parte bassa' },
+  { icon: 'figure.cross.training', label: 'Total body' },
+  { icon: 'dumbbell.fill', label: 'Braccia' },
+  { icon: 'figure.core.training', label: 'Core' },
+  { icon: 'figure.strengthtraining.functional', label: 'Funzionale' },
+  { icon: 'figure.highintensity.intervaltraining', label: 'HIIT' },
+  { icon: 'figure.run', label: 'Corsa' },
+  { icon: 'figure.flexibility', label: 'Mobilità' },
+] as const;
+
+/** SF Symbol for a training day. */
+export type DayIcon = (typeof DAY_ICON_CHOICES)[number]['icon'];
+
+function isDayIcon(value: string): value is DayIcon {
+  return DAY_ICON_CHOICES.some((c) => c.icon === value);
+}
 
 const DAY_ICONS: readonly { words: readonly string[]; icon: DayIcon }[] = [
   // Pressing: chest, shoulders, triceps.
@@ -251,7 +262,9 @@ const DAY_ICONS: readonly { words: readonly string[]; icon: DayIcon }[] = [
   { words: ['core', 'addom', 'abs'], icon: 'figure.core.training' },
 ];
 
-export function dayIcon(name: string): DayIcon {
+/** The symbol picked for a day, or else the one its name suggests. */
+export function dayIcon(name: string, picked?: string | null): DayIcon {
+  if (picked && isDayIcon(picked)) return picked;
   const lower = name.toLowerCase();
   return DAY_ICONS.find((d) => d.words.some((w) => lower.includes(w)))?.icon ?? 'figure.strengthtraining.functional';
 }

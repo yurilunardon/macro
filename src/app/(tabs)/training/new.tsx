@@ -5,7 +5,9 @@ import { Alert } from 'react-native';
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
+import { prefetch } from '@/db/live';
 import { createProgram, createProgramFromTemplate } from '@/db/programs';
+import { programScreen } from '@/db/screens';
 import { countLabel } from '@/lib/format';
 import { PROGRAM_TEMPLATES, type ProgramTemplate } from '@/lib/templates';
 import { haptics } from '@/services/haptics';
@@ -18,6 +20,8 @@ export default function NewProgramScreen() {
   // A template opens as a preview: it becomes one of the user's programs only when added.
   const fromTemplate = async (template: ProgramTemplate) => {
     const id = await createProgramFromTemplate(db, template, { draft: true });
+    // The preview slides in whole, not as a spinner that turns into the page.
+    await prefetch(db, programScreen(id));
     router.push({ pathname: '/training/program', params: { id } });
   };
 
@@ -33,6 +37,7 @@ export default function NewProgramScreen() {
             const trimmed = (name ?? '').trim();
             if (trimmed === '') return;
             const id = await createProgram(db, trimmed);
+            await prefetch(db, programScreen(id));
             haptics.success();
             router.replace({ pathname: '/training/program', params: { id } });
           },

@@ -34,13 +34,15 @@ type MacroBarsProps = {
   targets: Targets;
   /** Opens the foods behind one nutrient. */
   onPress?: (key: BreakdownKey) => void;
+  /** Bars that empty or fill slowly over this long, with the calorie ring. */
+  slowMs?: number;
 };
 
 /**
  * Protein, carbs, fat and fibre stacked beside the calorie ring, as the metrics beside the rings
  * in Fitness: name in its colour, eaten / goal, and a bar. Each opens the foods it came from.
  */
-export function MacroBars({ totals, targets, onPress }: MacroBarsProps) {
+export function MacroBars({ totals, targets, onPress, slowMs }: MacroBarsProps) {
   const theme = useTheme();
   return (
     <View style={styles.list}>
@@ -74,7 +76,7 @@ export function MacroBars({ totals, targets, onPress }: MacroBarsProps) {
                 </AppText>
               </AppText>
             </View>
-            <ProgressBar value={value} target={target} color={theme[key]} height={4} />
+            <ProgressBar value={value} target={target} color={theme[key]} height={4} slowMs={slowMs} />
           </Pressable>
         );
       })}

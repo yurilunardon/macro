@@ -72,7 +72,7 @@ const EXERCISE_COLUMNS = [
   'created_at',
 ] as const satisfies readonly (keyof ExerciseRow)[];
 const PROGRAM_COLUMNS = ['id', 'name', 'notes', 'active', 'created_at'] as const satisfies readonly (keyof ProgramRow)[];
-const PROGRAM_DAY_COLUMNS = ['id', 'program_id', 'name', 'position'] as const satisfies readonly (keyof ProgramDayRow)[];
+const PROGRAM_DAY_COLUMNS = ['id', 'program_id', 'name', 'position', 'icon'] as const satisfies readonly (keyof ProgramDayRow)[];
 const DAY_EXERCISE_COLUMNS = [
   'id', 'day_id', 'exercise_id', 'position', 'sets', 'rep_min', 'rep_max', 'rest_seconds', 'note',
 ] as const satisfies readonly (keyof DayExerciseRow)[];

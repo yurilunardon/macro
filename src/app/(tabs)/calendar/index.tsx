@@ -2,10 +2,13 @@ import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
+import Animated, { FadeIn, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
+import { EASE_OUT, project } from '@/components/motion';
 import { ActivityCard, activityName, ChecklistSection, DayRing, PlanWeekStrip } from '@/components/plan-day';
 import { ScreenScroll } from '@/components/screen';
 import { Radius, Spacing } from '@/constants/theme';
@@ -14,6 +17,7 @@ import { setDoseTaken } from '@/db/supplements';
 import { useActivityColors } from '@/hooks/use-activity-colors';
 import { useClock } from '@/hooks/use-clock';
 import { useDayPlan } from '@/hooks/use-day-plan';
+import { useScrollTop } from '@/hooks/use-scroll-top';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import type { AgendaItem, StoredStatus } from '@/lib/calendar';
@@ -49,6 +53,55 @@ export default function CalendarScreen() {
     haptics.selection();
     setPicked(day === today ? null : day);
   };
+
+  // "Oggi" with today already on screen, as in Calendar: back up to it, and its circle beats once.
+  const scroll = useScrollTop();
+  const [pulse, setPulse] = useState(0);
+  const showToday = () => {
+    if (date !== today) {
+      select(today);
+      return;
+    }
+    haptics.selection();
+    void scroll.scrollToTop().then(() => setPulse((n) => n + 1));
+  };
+
+  // Swiping the day sideways goes to the one before or after, as the diary's pages: the day
+  // follows the finger, slides out, and the next one comes in from the side it was pulled from.
+  const dayX = useSharedValue(0);
+  const pageWidth = useSharedValue(0);
+  const step = (direction: number) => {
+    select(addDays(date, direction));
+    dayX.set(direction * pageWidth.get() * 0.35);
+    dayX.set(withSpring(0, { duration: 420, dampingRatio: 1 }));
+  };
+  const swipe = usePanGesture({
+    activeOffsetX: [-14, 14],
+    failOffsetY: [-12, 12],
+    onUpdate: (event) => {
+      'worklet';
+      dayX.set(event.translationX);
+    },
+    onDeactivate: (event) => {
+      'worklet';
+      const projected = event.translationX + project(event.velocityX, 0.99);
+      if (!event.canceled && Math.abs(projected) > pageWidth.get() * 0.3) {
+        const direction = projected < 0 ? 1 : -1;
+        dayX.set(
+          withTiming(-direction * pageWidth.get(), { duration: 160, easing: EASE_OUT }, (finished) => {
+            'worklet';
+            if (finished) scheduleOnRN(step, direction);
+          }),
+        );
+        return;
+      }
+      dayX.set(withSpring(0, { duration: 380, dampingRatio: 0.9, velocity: event.velocityX }));
+    },
+  });
+  const dayStyle = useAnimatedStyle(() => {
+    const w = pageWidth.get();
+    return { transform: [{ translateX: dayX.get() }], opacity: w > 0 ? 1 - Math.min(1, Math.abs(dayX.get()) / w) * 0.6 : 1 };
+  });
 
   // Each day's main activity under it in the week: its colour, and its name for VoiceOver.
   const dots = new Map<DateKey, { color: string; label: string }>();
@@ -109,10 +162,10 @@ export default function CalendarScreen() {
   const empty = plan.ready && plan.items.length === 0 && plan.sections.length === 0;
 
   return (
-    <ScreenScroll>
+    <ScreenScroll scroll={scroll}>
       <Stack.Toolbar placement="left">
-        {/* As in Calendar and in Alimentazione: always in the bar, dimmed while today is on screen. */}
-        <Stack.Toolbar.Button disabled={date === today} accessibilityLabel="Torna a oggi" onPress={() => select(today)}>
+        {/* As in Calendar and in Alimentazione: always in the bar. */}
+        <Stack.Toolbar.Button accessibilityLabel="Torna a oggi" onPress={showToday}>
           Oggi
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
@@ -156,11 +209,14 @@ export default function CalendarScreen() {
         selected={date}
         today={today}
         dots={dots}
+        pulse={pulse}
         onSelect={select}
         onChangeWeek={(direction) => select(addDays(date, direction * 7))}
       />
 
-      <Animated.View key={date} entering={DAY_IN}>
+      <GestureDetector gesture={swipe} touchAction="pan-y">
+        <Animated.View style={dayStyle} onLayout={(event) => pageWidth.set(event.nativeEvent.layout.width)}>
+          <Animated.View key={date} entering={DAY_IN}>
         {plan.items.map((item) => {
           const name = activityName(item, plan.types, gymTypeId, dayNames);
           const type = item.kind === 'workout' ? (gymTypeId === null ? undefined : plan.types.get(gymTypeId)) : plan.types.get(item.occurrence.typeId);
@@ -214,7 +270,9 @@ export default function CalendarScreen() {
             <Button title="Apri il piano" onPress={() => router.push('/calendar/plan')} />
           </View>
         ) : null}
-      </Animated.View>
+          </Animated.View>
+        </Animated.View>
+      </GestureDetector>
     </ScreenScroll>
   );
 }

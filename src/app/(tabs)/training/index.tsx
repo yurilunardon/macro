@@ -147,7 +147,7 @@ export default function TrainingScreen() {
                 <Icon name="chevron.right" size={14} tone="accent" weight="semibold" />
               </View>
               <View style={styles.heroName}>
-                <DayBadge name={data.active?.name ?? ''} size={40} />
+                <DayBadge icon={data.active.icon} size={40} />
                 <View style={styles.flex}>
                   <AppText variant="title" numberOfLines={1}>
                     {data.active?.name}
@@ -217,7 +217,7 @@ export default function TrainingScreen() {
             {(data?.history ?? []).slice(0, 3).map((w) => (
               <SwipeToDelete key={w.id} confirm={confirmWorkout} onDelete={() => void deleteWorkout(db, w.id)}>
                 <Row
-                  icon={<DayBadge name={w.name} />}
+                  icon={<DayBadge icon={w.icon} />}
                   title={w.name}
                   subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
                     (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,

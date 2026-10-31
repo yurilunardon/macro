@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { StyleSheet, TextInput } from 'react-native';
+import { StyleSheet, TextInput, type StyleProp, type TextStyle } from 'react-native';
 
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -9,13 +9,14 @@ type EditableTitleProps = {
   /** Called with the new name, trimmed and not empty, when editing ends. */
   onChange: (name: string) => void;
   accessibilityLabel: string;
+  style?: StyleProp<TextStyle>;
 };
 
 /**
  * The name of a list as the big title at the top of the page, renamed by tapping it, as in
  * Reminders: no menu or dialog in between.
  */
-export function EditableTitle({ value, onChange, accessibilityLabel }: EditableTitleProps) {
+export function EditableTitle({ value, onChange, accessibilityLabel, style }: EditableTitleProps) {
   const theme = useTheme();
   const [text, setText] = useState(value);
   const [editing, setEditing] = useState(false);
@@ -46,7 +47,7 @@ export function EditableTitle({ value, onChange, accessibilityLabel }: EditableT
       maxLength={60}
       accessibilityLabel={accessibilityLabel}
       accessibilityHint="Tocca per rinominare"
-      style={[styles.title, { color: theme.text }]}
+      style={[styles.title, { color: theme.text }, style]}
     />
   );
 }

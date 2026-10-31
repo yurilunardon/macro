@@ -32,10 +32,16 @@ import { toast } from './toast';
 const FADE_IN = FadeIn.duration(180);
 // A short eased resize, no spring: the meals below must not bounce up and down.
 const MEAL_LAYOUT = LinearTransition.duration(220).easing(Easing.out(Easing.cubic));
-const ENTRY_OUT = FadeOut.duration(160);
+const ENTRY_OUT = FadeOut.duration(150);
+// While the day is emptied, the rows below wait for the one leaving to be gone before moving up:
+// together they would slide over it as it fades.
+const DRAIN_LAYOUT = LinearTransition.duration(240).delay(120).easing(Easing.inOut(Easing.cubic));
 
-/** Emptying the day takes its foods away one after the other, in about this long all together. */
-const CLEAR_MS = 900;
+/**
+ * Emptying the day: the ring drains in one slow, even movement over this long, while the foods
+ * leave one after the other in the same time.
+ */
+const CLEAR_MS = 1600;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** "120 g · Barilla", or for a quick entry just that it was typed by hand. */
@@ -105,6 +111,9 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
   const gone = cleared && cleared.from === data ? cleared.ids : null;
   const entries = (data?.entries ?? []).filter((e) => !hidden.has(`entry:${e.id}`) && !gone?.has(e.id));
   const totals = sumNutrients(entries.map((e) => e.totals));
+  // From the first food taken away the ring and bars head for empty all at once, slowly.
+  const draining = gone !== null;
+  const shownTotals = draining ? sumNutrients([]) : totals;
   const targets = data?.plan.targets;
   // From today things are copied to tomorrow (to plan ahead), from any other day to today.
   const copyTarget = date === today ? { date: addDays(today, 1), label: 'domani' } : { date: today, label: 'oggi' };
@@ -163,12 +172,13 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
     // Up to the ring first, then the foods leave one by one from the top, as the ring empties.
     await scrollToTop?.();
     const order = MEALS.flatMap((m) => entries.filter((e) => e.meal === m.key));
-    const step = Math.min(Math.max(CLEAR_MS / order.length, 45), 110);
+    const step = CLEAR_MS / order.length;
     const ids = new Set<number>();
-    for (const entry of order) {
+    for (const [index, entry] of order.entries()) {
       ids.add(entry.id);
       setCleared({ from: data, ids: new Set(ids) });
-      haptics.selection();
+      // A soft tick now and then, not a buzz: one every few foods on a full day.
+      if (index % Math.ceil(order.length / 6) === 0) haptics.selection();
       await wait(step);
     }
     await Promise.all(MEALS.map((m) => deleteMealEntries(db, date, m.key)));
@@ -267,9 +277,14 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
 
         {/* Straight on the page, as the rings in Fitness: what is left of the day comes first. */}
         <View style={styles.summary}>
-          <CalorieRing eaten={totals.kcal} target={targets?.kcal ?? 0} />
+          <CalorieRing eaten={shownTotals.kcal} target={targets?.kcal ?? 0} slowMs={draining ? CLEAR_MS : undefined} />
           {targets ? (
-            <MacroBars totals={totals} targets={targets} onPress={(key) => router.push({ pathname: '/nutrients', params: { date, key } })} />
+            <MacroBars
+              totals={shownTotals}
+              targets={targets}
+              slowMs={draining ? CLEAR_MS : undefined}
+              onPress={(key) => router.push({ pathname: '/nutrients', params: { date, key } })}
+            />
           ) : null}
         </View>
 
@@ -286,18 +301,19 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
           const addRow = (pressed: boolean) => (
             <View style={[styles.addRow, pressed && { backgroundColor: theme.cardPressed }]}>
               <Icon name="plus.circle.fill" size={20} tone="accent" />
-              <AppText weight="600" tone="accent">
+              <AppText tone="accent">
                 Aggiungi alimento
               </AppText>
             </View>
           );
           return (
             // The block follows its content's size smoothly, and the ones below follow it.
-            <Animated.View key={meal.key} layout={MEAL_LAYOUT} style={styles.meal}>
+            <Animated.View key={meal.key} layout={draining ? DRAIN_LAYOUT : MEAL_LAYOUT} style={styles.meal}>
               <ListGroup>
                 <View style={[styles.mealHeader, count > 0 && styles.mealHeaderWithMenu]}>
-                  <Icon name={meal.symbol} size={16} tone="textSecondary" />
-                  <AppText variant="headline" style={styles.flex} numberOfLines={1}>
+                  <Icon name={meal.symbol} size={18} tone="textSecondary" />
+                  {/* The meal is the section's title: a size above the rows, so it reads first. */}
+                  <AppText variant="title3" style={styles.flex} numberOfLines={1}>
                     {meal.label}
                   </AppText>
                   {count > 0 ? (
@@ -361,7 +377,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                   if (!interactive) return <View key={entry.id}>{row(false)}</View>;
                   return (
                     // It fades as it leaves and the rows under it close the gap.
-                    <Animated.View key={entry.id} exiting={ENTRY_OUT} layout={MEAL_LAYOUT}>
+                    <Animated.View key={entry.id} exiting={ENTRY_OUT} layout={draining ? DRAIN_LAYOUT : MEAL_LAYOUT}>
                       <SwipeToDelete onDelete={() => removeEntry(entry)}>
                         <Link href={`/entry/${entry.id}`} asChild>
                           <Link.Trigger>
@@ -396,14 +412,16 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                 })}
                 {/* The sheet to add grows out of this row and shrinks back into it. */}
                 {interactive ? (
-                  <Link key="add" href={{ pathname: '/add', params: { meal: meal.key, date } }} asChild>
-                    <Link.Trigger withAppleZoom>
-                      {/* A plain style: Link's Slot drops a style given as a function. */}
-                      <Pressable accessibilityRole="button" accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}>
-                        {({ pressed }) => addRow(pressed)}
-                      </Pressable>
-                    </Link.Trigger>
-                  </Link>
+                  <Animated.View key="add" layout={draining ? DRAIN_LAYOUT : MEAL_LAYOUT}>
+                    <Link href={{ pathname: '/add', params: { meal: meal.key, date } }} asChild>
+                      <Link.Trigger withAppleZoom>
+                        {/* A plain style: Link's Slot drops a style given as a function. */}
+                        <Pressable accessibilityRole="button" accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}>
+                          {({ pressed }) => addRow(pressed)}
+                        </Pressable>
+                      </Link.Trigger>
+                    </Link>
+                  </Animated.View>
                 ) : (
                   <View key="add">{addRow(false)}</View>
                 )}

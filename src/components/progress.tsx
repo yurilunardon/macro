@@ -1,4 +1,4 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   css,
@@ -6,9 +6,11 @@ import Animated, {
   Easing,
   interpolateColor,
   useAnimatedProps,
+  useAnimatedReaction,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
 import Svg, { Circle } from 'react-native-svg';
 
 import { Radius } from '@/constants/theme';
@@ -26,10 +28,17 @@ export function ratio(value: number, target: number): number {
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 const FILL_EASING = cubicBezier(0.23, 1, 0.32, 1);
 
-type ProgressBarProps = { value: number; target: number; color: string; height?: number };
+type ProgressBarProps = {
+  value: number;
+  target: number;
+  color: string;
+  height?: number;
+  /** A slow, even change instead of the quick one, e.g. while the day is emptied. */
+  slowMs?: number;
+};
 
 /** Fills up to the target and stays full past it, in its own colour: being over is said beside it. */
-export function ProgressBar({ value, target, color, height = 6 }: ProgressBarProps) {
+export function ProgressBar({ value, target, color, height = 6, slowMs }: ProgressBarProps) {
   const theme = useTheme();
   const r = ratio(value, target);
   return (
@@ -38,6 +47,7 @@ export function ProgressBar({ value, target, color, height = 6 }: ProgressBarPro
         style={[
           styles.fill,
           transitions.fill,
+          slowMs ? { transitionDuration: slowMs, transitionTimingFunction: 'ease-in-out' } : null,
           { width: `${Math.min(1, r) * 100}%`, backgroundColor: color },
         ]}
       />
@@ -45,27 +55,48 @@ export function ProgressBar({ value, target, color, height = 6 }: ProgressBarPro
   );
 }
 
-type CalorieRingProps = { eaten: number; target: number; size?: number };
+type CalorieRingProps = {
+  eaten: number;
+  target: number;
+  size?: number;
+  /**
+   * Empties or fills slowly and evenly over this long, the number in the middle counting along,
+   * e.g. while the day's foods are taken away.
+   */
+  slowMs?: number;
+};
 
 /**
  * Ring filled by eaten / target, with the calories left in the middle. Its colour says how
  * close the day is to the goal; it fills and changes colour smoothly when food is added or the
  * day changes.
  */
-export function CalorieRing({ eaten, target, size = 176 }: CalorieRingProps) {
+export function CalorieRing({ eaten, target, size = 176, slowMs }: CalorieRingProps) {
   const theme = useTheme();
   // The day's main number: a big ring, with a stroke that grows with it.
   const stroke = Math.round(size * 0.09);
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const r = ratio(eaten, target);
-  const { kcal: left, over } = remainingKcal(eaten, target);
   const tones = RING_TONES.map((tone) => theme[tone]);
 
   const progress = useSharedValue(0);
   useEffect(() => {
-    progress.set(withTiming(r, { duration: 700, easing: Easing.bezier(0.23, 1, 0.32, 1) }));
-  }, [progress, r]);
+    progress.set(
+      withTiming(r, slowMs ? { duration: slowMs, easing: Easing.inOut(Easing.cubic) } : { duration: 700, easing: Easing.bezier(0.23, 1, 0.32, 1) }),
+    );
+  }, [progress, r, slowMs]);
+
+  // While it changes slowly the number follows the ring, instead of jumping to the end at once.
+  const [counted, setCounted] = useState<number | null>(null);
+  useAnimatedReaction(
+    () => (slowMs ? Math.round(progress.get() * target) : null),
+    (now, before) => {
+      if (now !== before) scheduleOnRN(setCounted, now);
+    },
+    [slowMs, target],
+  );
+  const { kcal: left, over } = remainingKcal(counted ?? eaten, target);
 
   const ringProps = useAnimatedProps(() => {
     const p = progress.get();

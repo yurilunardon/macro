@@ -150,7 +150,8 @@ export function ActionRow({
       accessibilityRole="button"
       style={({ pressed }) => [styles.row, pressed && { backgroundColor: theme.cardPressed }]}>
       <Icon name={symbol} size={20} tone="accent" />
-      <AppText tone="accent" weight="600" style={styles.rowText}>
+      {/* Regular weight, as Apple's "add" rows: the tint says it is a button, the titles stay above it. */}
+      <AppText tone="accent" style={styles.rowText}>
         {label}
       </AppText>
     </Pressable>

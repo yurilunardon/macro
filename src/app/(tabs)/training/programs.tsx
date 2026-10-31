@@ -6,8 +6,9 @@ import { Icon } from '@/components/icon';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
-import { useLiveQuery } from '@/db/live';
+import { prefetch, useLiveQuery } from '@/db/live';
 import { deleteProgram, getPrograms, type Program } from '@/db/programs';
+import { programScreen } from '@/db/screens';
 import { countLabel } from '@/lib/format';
 
 /** Every program, the one in use first. Building one takes time, so deleting it asks first. */
@@ -39,7 +40,10 @@ export default function ProgramsScreen() {
                   tone={p.active ? 'accent' : 'textSecondary'}
                 />
               }
-              onPress={() => router.push({ pathname: '/training/program', params: { id: p.id } })}
+              onPress={async () => {
+                await prefetch(db, programScreen(p.id));
+                router.push({ pathname: '/training/program', params: { id: p.id } });
+              }}
             />
           </SwipeToDelete>
         ))}

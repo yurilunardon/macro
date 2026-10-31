@@ -3,7 +3,7 @@ import { StyleSheet, Text, type TextProps } from 'react-native';
 import type { ColorName } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 
-type Variant = 'display' | 'title' | 'title2' | 'headline' | 'body' | 'callout' | 'subhead' | 'footnote' | 'caption';
+type Variant = 'display' | 'title' | 'title2' | 'title3' | 'headline' | 'body' | 'callout' | 'subhead' | 'footnote' | 'caption';
 
 export type AppTextProps = TextProps & {
   variant?: Variant;
@@ -43,6 +43,7 @@ const styles = StyleSheet.create({
   display: { fontSize: 40, lineHeight: 44, fontWeight: '700', letterSpacing: -0.5 },
   title: { fontSize: 28, lineHeight: 34, fontWeight: '700' },
   title2: { fontSize: 22, lineHeight: 28, fontWeight: '700' },
+  title3: { fontSize: 20, lineHeight: 25, fontWeight: '600' },
   headline: { fontSize: 17, lineHeight: 22, fontWeight: '600' },
   body: { fontSize: 17, lineHeight: 22 },
   callout: { fontSize: 16, lineHeight: 21 },

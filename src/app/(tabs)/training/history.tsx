@@ -53,7 +53,7 @@ export default function HistoryScreen() {
             {month.items.map((w) => (
               <SwipeToDelete key={w.id} confirm={confirm} onDelete={() => void deleteWorkout(db, w.id)}>
               <Row
-                icon={<DayBadge name={w.name} />}
+                icon={<DayBadge icon={w.icon} />}
                 title={w.name}
                 subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
                   (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,

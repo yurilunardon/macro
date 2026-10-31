@@ -2,6 +2,7 @@ import { Link, Stack, useLocalSearchParams, usePreventRemove, useRouter } from '
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
 import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -16,28 +17,33 @@ import { SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { toast } from '@/components/toast';
 import { Spacing } from '@/constants/theme';
-import { useLiveQuery } from '@/db/live';
+import { prefetch, useLiveQuery } from '@/db/live';
 import {
   addDay,
   addDraft,
   deleteDay,
   deleteProgram,
   discardDraft,
-  getProgram,
   programSnapshot,
   renameDay,
   renameProgram,
   reorderDays,
+  setDayIcon,
   setActiveProgram,
   type DaySummary,
 } from '@/db/programs';
+import { dayScreen, programScreen } from '@/db/screens';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
+import { DAY_ICON_CHOICES } from '@/lib/training';
 import { countLabel } from '@/lib/format';
 import { haptics } from '@/services/haptics';
 import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 const ROW_HEIGHT = 60;
+const ROW_IN = FadeIn.duration(220);
+const ROW_OUT = FadeOut.duration(180);
+const ROW_LAYOUT = LinearTransition.duration(240).easing(Easing.out(Easing.cubic));
 
 function daySummary(day: DaySummary): string {
   return [countLabel(day.exerciseCount, 'esercizio', 'esercizi'), day.muscles.map(muscleLabel).join(', ')].filter(Boolean).join(' · ');
@@ -50,7 +56,8 @@ export default function ProgramScreen() {
   const theme = useTheme();
   const params = useLocalSearchParams<{ id?: string }>();
   const id = Number(params.id);
-  const { data: program } = useLiveQuery(`program:${id}`, (database) => getProgram(database, id), ['training']);
+  const screen = programScreen(id);
+  const { data: program } = useLiveQuery(screen.key, screen.query, screen.topics);
   const hidden = usePendingDeletes();
   // "Modifica", as in the workout and in Clock: rows get a red ⊖ and a ≡ handle to drag.
   const [editing, setEditing] = useState(false);
@@ -130,6 +137,8 @@ export default function ProgramScreen() {
   const newDay = () =>
     prompt('Nuovo giorno', '', async (name) => {
       const dayId = await addDay(db, program.id, name);
+      // The day's page slides in with its name already in it.
+      await prefetch(db, dayScreen(dayId));
       haptics.success();
       router.push({ pathname: '/training/day', params: { id: dayId } });
     });
@@ -150,7 +159,6 @@ export default function ProgramScreen() {
 
   return (
     <ScreenScroll>
-      <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button {...editButton({ editing, disabled: days.length === 0, onChange: setEditing })} />
         <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sulla scheda" hidden={program.draft}>
@@ -215,13 +223,15 @@ export default function ProgramScreen() {
       ) : (
         <ListGroup>
           {days.map((day) => (
-            <SwipeToDelete key={day.id} onDelete={() => removeDay(day)}>
+            // A new day fades in and one deleted fades out, the rows around moving smoothly.
+            <Animated.View key={day.id} entering={ROW_IN} exiting={ROW_OUT} layout={ROW_LAYOUT}>
+            <SwipeToDelete onDelete={() => removeDay(day)}>
               <Link href={{ pathname: '/training/day', params: { id: day.id } }} asChild>
                 <Link.Trigger>
-                  <Pressable accessibilityRole="button">
+                  <Pressable accessibilityRole="button" onPressIn={() => void prefetch(db, dayScreen(day.id))}>
                     {({ pressed }) => (
                       <View style={[styles.day, pressed && { backgroundColor: theme.cardPressed }]}>
-                        <DayBadge name={day.name} />
+                        <DayBadge icon={day.icon} />
                         <View style={styles.flex}>
                           <AppText numberOfLines={1}>{day.name}</AppText>
                           <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
@@ -239,12 +249,27 @@ export default function ProgramScreen() {
                     onPress={() => prompt('Rinomina giorno', day.name, (name) => void renameDay(db, day.id, name))}>
                     Rinomina
                   </Link.MenuAction>
+                  <Link.Menu title="Icona" icon={day.icon}>
+                    {DAY_ICON_CHOICES.map((c) => (
+                      <Link.MenuAction
+                        key={c.icon}
+                        icon={c.icon}
+                        isOn={c.icon === day.icon}
+                        onPress={() => {
+                          haptics.selection();
+                          void setDayIcon(db, day.id, c.icon);
+                        }}>
+                        {c.label}
+                      </Link.MenuAction>
+                    ))}
+                  </Link.Menu>
                   <Link.MenuAction icon="trash" destructive onPress={() => removeDay(day)}>
                     Elimina
                   </Link.MenuAction>
                 </Link.Menu>
               </Link>
             </SwipeToDelete>
+            </Animated.View>
           ))}
           <ActionRow label="Aggiungi giorno" onPress={newDay} />
         </ListGroup>

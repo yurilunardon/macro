@@ -6,6 +6,7 @@ import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { ActionRow, ListGroup, SectionFooter } from '@/components/card';
+import { DayIconButton } from '@/components/day-badge';
 import { editButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
@@ -15,8 +16,9 @@ import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { restFor } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
-import { deleteDay, getDay, removeDayExercise, renameDay, reorderDayExercises, type PlannedExercise } from '@/db/programs';
-import { getActiveWorkout, startWorkout } from '@/db/workouts';
+import { dayScreen } from '@/db/screens';
+import { deleteDay, removeDayExercise, setDayIcon, renameDay, reorderDayExercises, type PlannedExercise } from '@/db/programs';
+import { startWorkout } from '@/db/workouts';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
@@ -41,14 +43,8 @@ export default function DayScreen() {
   const { names } = useExerciseNames();
   const params = useLocalSearchParams<{ id?: string }>();
   const id = Number(params.id);
-  const { data } = useLiveQuery(
-    `day:${id}`,
-    async (database) => {
-      const [day, active] = await Promise.all([getDay(database, id), getActiveWorkout(database)]);
-      return { day, active };
-    },
-    ['training'],
-  );
+  const screen = dayScreen(id);
+  const { data } = useLiveQuery(screen.key, screen.query, screen.topics);
   const hidden = usePendingDeletes();
   // "Modifica", as in the workout and in Clock: rows get a red ⊖ and a ≡ handle to drag.
   const [editing, setEditing] = useState(false);
@@ -90,7 +86,6 @@ export default function DayScreen() {
 
   return (
     <ScreenScroll>
-      <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button {...editButton({ editing, disabled: exercises.length === 0, onChange: setEditing })} />
         <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sul giorno">
@@ -100,7 +95,21 @@ export default function DayScreen() {
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
 
-      <EditableTitle value={day.name} accessibilityLabel="Nome del giorno" onChange={(name) => void renameDay(db, day.id, name)} />
+      <View style={styles.title}>
+        <DayIconButton
+          icon={day.icon}
+          onPick={(icon) => {
+            haptics.selection();
+            void setDayIcon(db, day.id, icon);
+          }}
+        />
+        <EditableTitle
+          value={day.name}
+          accessibilityLabel="Nome del giorno"
+          onChange={(name) => void renameDay(db, day.id, name)}
+          style={styles.titleText}
+        />
+      </View>
 
       {!active && exercises.length > 0 && !editing ? (
         <View style={styles.start}>
@@ -170,6 +179,8 @@ export default function DayScreen() {
 
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
+  title: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
+  titleText: { flex: 1, marginBottom: 0 },
   flex: { flex: 1, gap: 2 },
   row: {
     flexDirection: 'row',

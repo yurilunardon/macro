@@ -12,8 +12,6 @@ import {
   type NativeScrollEvent,
   type NativeSyntheticEvent,
 } from 'react-native';
-import Animated, { scrollTo, useAnimatedRef, useAnimatedScrollHandler, useSharedValue } from 'react-native-reanimated';
-import { scheduleOnUI } from 'react-native-worklets';
 
 import { AppText } from '@/components/app-text';
 import { Card } from '@/components/card';
@@ -23,6 +21,7 @@ import { ScreenScroll } from '@/components/screen';
 import { WeekStrip } from '@/components/week-strip';
 import { Spacing } from '@/constants/theme';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
+import { useScrollTop } from '@/hooks/use-scroll-top';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { addDays, daysBetween, isDateKey, type DateKey } from '@/lib/dates';
@@ -165,26 +164,20 @@ export default function NutritionScreen() {
   });
   const [pageReady] = useState(() => (day: DateKey) => onReadyRef.current(day));
 
-  // Back to the top of the page, where the day's ring is, e.g. to watch it empty. The top is the
-  // first offset iOS reports, with the large title open: it sets it itself, under the bar.
-  const scroller = useAnimatedRef<Animated.ScrollView>();
-  const offset = useSharedValue(0);
-  const top = useSharedValue<number | null>(null);
-  const onPageScroll = useAnimatedScrollHandler((event) => {
-    if (top.get() === null) top.set(event.contentOffset.y);
-    offset.set(event.contentOffset.y);
-  });
-  const [scrollToTop] = useState(() => (): Promise<void> => {
-    const to = top.get() ?? 0;
-    const far = offset.get() - to;
-    if (far < 8) return Promise.resolve();
-    scheduleOnUI(() => {
-      'worklet';
-      scrollTo(scroller, 0, to, true);
-    });
-    // Resolved once the scroll has about come to rest.
-    return new Promise((resolve) => setTimeout(resolve, Math.min(300 + far / 4, 650)));
-  });
+  // Back to the top of the page, where the day's ring is, e.g. to watch it empty.
+  const scroll = useScrollTop();
+  const { scrollToTop } = scroll;
+
+  // "Oggi" with today already on screen, as in Calendar: back up to it, and its circle beats once.
+  const [pulse, setPulse] = useState(0);
+  const showToday = () => {
+    if (date !== today) {
+      goTo(today);
+      return;
+    }
+    haptics.selection();
+    void scrollToTop().then(() => setPulse((n) => n + 1));
+  };
 
   // At midnight, or back after days away, today moves on: follow it if it was on screen.
   useEffect(() => {
@@ -241,10 +234,10 @@ export default function NutritionScreen() {
   );
 
   return (
-    <ScreenScroll animatedRef={scroller} onScroll={onPageScroll}>
-      {/* As in Calendar: always in the bar, dimmed while today is on screen. */}
+    <ScreenScroll scroll={scroll}>
+      {/* As in Calendar: always in the bar. */}
       <Stack.Toolbar placement="left">
-        <Stack.Toolbar.Button disabled={date === today} accessibilityLabel="Torna a oggi" onPress={() => goTo(today)}>
+        <Stack.Toolbar.Button accessibilityLabel="Torna a oggi" onPress={showToday}>
           Oggi
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
@@ -272,7 +265,13 @@ export default function NutritionScreen() {
 
       {expiry && expiry.level !== 'ok' ? <ExpiryBanner status={expiry} /> : null}
 
-      <WeekStrip selected={date} today={today} onSelect={goTo} onChangeWeek={(direction) => goTo(addDays(date, direction * 7))} />
+      <WeekStrip
+        selected={date}
+        today={today}
+        pulse={pulse}
+        onSelect={goTo}
+        onChangeWeek={(direction) => goTo(addDays(date, direction * 7))}
+      />
       <View style={[styles.rule, { backgroundColor: theme.separator }]} />
 
       <FlatList
