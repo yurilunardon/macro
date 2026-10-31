@@ -1,5 +1,6 @@
+import { useState } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, { FadeIn } from 'react-native-reanimated';
+import Animated, { withTiming, type EntryExitAnimationFunction } from 'react-native-reanimated';
 
 import { Radius, Spacing } from '@/constants/theme';
 import type { Program } from '@/db/programs';
@@ -13,12 +14,45 @@ import { Button } from './button';
 import { DayBadge } from './day-badge';
 import { Icon } from './icon';
 import { MenuButton } from './menu-button';
+import { EASE_OUT } from './motion';
 
 /** How far each sheet behind shows below the one in front of it. */
 const PEEK = 8;
 /** How much narrower each sheet behind is, on each side. */
 const INSET = 12;
-const DAY_IN = FadeIn.duration(200);
+/** How far the day's name travels as it rolls in or out. */
+const ROLL = 28;
+const ROLL_MS = 320;
+
+/**
+ * The day picked rolls in as on a picker wheel: from below when it comes later in the program,
+ * from above when earlier, while the one it replaces rolls out the other way. Never a blank card.
+ */
+function rollIn(direction: number): EntryExitAnimationFunction {
+  return () => {
+    'worklet';
+    return {
+      initialValues: { opacity: 0, transform: [{ translateY: direction * ROLL }] },
+      animations: {
+        opacity: withTiming(1, { duration: ROLL_MS * 0.7 }),
+        transform: [{ translateY: withTiming(0, { duration: ROLL_MS, easing: EASE_OUT }) }],
+      },
+    };
+  };
+}
+function rollOut(direction: number): EntryExitAnimationFunction {
+  return () => {
+    'worklet';
+    return {
+      initialValues: { opacity: 1, transform: [{ translateY: 0 }] },
+      animations: {
+        opacity: withTiming(0, { duration: ROLL_MS * 0.6 }),
+        transform: [{ translateY: withTiming(-direction * ROLL, { duration: ROLL_MS, easing: EASE_OUT }) }],
+      },
+    };
+  };
+}
+const ROLLS = { 1: { in: rollIn(1), out: rollOut(1) }, [-1]: { in: rollIn(-1), out: rollOut(-1) } } as const;
 
 type DayDeckProps = {
   program: Program;
@@ -40,6 +74,12 @@ type DayDeckProps = {
 export function DayDeck({ program, dayId, onPick, onStart, onChangeProgram, when }: DayDeckProps) {
   const theme = useTheme();
   const day = program.days.find((d) => d.id === dayId) ?? program.days[0];
+  // Which way to roll: the new day's place in the program against the one shown before.
+  const index = program.days.indexOf(day);
+  const [shown, setShown] = useState({ id: day.id, index, direction: 1 as 1 | -1 });
+  const direction = shown.id === day.id ? shown.direction : index < shown.index ? -1 : 1;
+  if (shown.id !== day.id) setShown({ id: day.id, index, direction });
+  const roll = ROLLS[direction];
   const behind = Math.min(program.days.length - 1, 2);
 
   return (
@@ -87,8 +127,8 @@ export function DayDeck({ program, dayId, onPick, onStart, onChangeProgram, when
             </View>
           </MenuButton>
         </View>
-        {/* A day picked comes in with a short fade, nothing more. */}
-        <Animated.View key={day.id} entering={DAY_IN} style={styles.words}>
+        <View style={styles.roll}>
+        <Animated.View key={day.id} entering={roll.in} exiting={roll.out} style={styles.words}>
           <View style={styles.name}>
             <DayBadge icon={day.icon} size={40} />
             <AppText variant="title" numberOfLines={1} style={styles.shrink}>
@@ -99,6 +139,7 @@ export function DayDeck({ program, dayId, onPick, onStart, onChangeProgram, when
             {[countLabel(day.exerciseCount, 'esercizio', 'esercizi'), day.muscles.map(muscleLabel).join(', ')].filter(Boolean).join(' · ')}
           </AppText>
         </Animated.View>
+        </View>
         <View style={styles.button}>
           <Button title="Inizia" onPress={() => onStart(day.id)} />
         </View>
@@ -116,6 +157,8 @@ const styles = StyleSheet.create({
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 32 },
   // Over the sheet's padding, so the circle sits in its corner without pushing the name down.
   switch: { width: 40, height: 40, borderRadius: 20, alignItems: 'center', justifyContent: 'center', marginVertical: -Spacing.xs },
+  // The rolling name stays inside its line: nothing slides over the header or the button.
+  roll: { overflow: 'hidden' },
   words: { gap: Spacing.xs },
   name: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xs },
   button: { marginTop: Spacing.md },

@@ -16,7 +16,7 @@ import { ScreenScroll } from '@/components/screen';
 import { SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { toast } from '@/components/toast';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { prefetch, useLiveQuery } from '@/db/live';
 import {
   addDay,
@@ -77,16 +77,16 @@ export default function ProgramScreen() {
       let keep = false;
       if (changed) {
         const choice = await choose({
-          title: 'Aggiungere la scheda alle tue?',
+          title: 'Salvare la scheda tra le tue?',
           message: 'L’hai modificata.',
-          actions: [{ label: 'Aggiungi alle mie schede' }, { label: 'Elimina modifiche', destructive: true }],
+          actions: [{ label: 'Salva tra le mie schede' }, { label: 'Elimina modifiche', destructive: true }],
         });
         if (choice === null) return;
         keep = choice === 0;
       }
       if (keep) {
         await addDraft(db, id);
-        toast.show('Aggiunta alle tue schede', 'checkmark.circle.fill');
+        toast.show('Salvata tra le tue schede', 'checkmark.circle.fill');
       }
       setLeave(() => () => {
         repeat();
@@ -171,20 +171,24 @@ export default function ProgramScreen() {
       <EditableTitle value={program.name} accessibilityLabel="Nome della scheda" onChange={(name) => void renameProgram(db, program.id, name)} />
 
       {program.draft ? (
-        <>
-          <Button
-            title="Aggiungi alle mie schede"
-            icon={<Icon name="plus" size={16} tone="onAccent" weight="semibold" />}
-            onPress={() => {
-              haptics.success();
-              void addDraft(db, program.id);
-              toast.show('Aggiunta alle tue schede', 'checkmark.circle.fill');
-            }}
-          />
-          <AppText variant="footnote" tone="textSecondary" style={styles.draftNote}>
-            Anteprima: se torni indietro non viene salvata.
+        // A box that says what the page is, with its button inside: apart from the list below,
+        // so saving the program is never mistaken for adding a day.
+        <Animated.View exiting={ROW_OUT} style={[styles.draft, { backgroundColor: theme.accentSoft }]}>
+          <AppText variant="headline">Questo è un modello</AppText>
+          <AppText variant="subhead" tone="textSecondary">
+            Cambialo come vuoi. Se torni indietro senza salvarlo, non resta.
           </AppText>
-        </>
+          <View style={styles.draftButton}>
+            <Button
+              title="Salva tra le mie schede"
+              onPress={() => {
+                haptics.success();
+                void addDraft(db, program.id);
+                toast.show('Salvata tra le tue schede', 'checkmark.circle.fill');
+              }}
+            />
+          </View>
+        </Animated.View>
       ) : program.active ? (
         <View style={styles.status}>
           <Icon name="checkmark.circle.fill" size={17} tone="accent" />
@@ -286,7 +290,8 @@ export default function ProgramScreen() {
 const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   flex: { flex: 1 },
-  draftNote: { paddingHorizontal: Spacing.xs },
+  draft: { gap: Spacing.xs, padding: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous' },
+  draftButton: { marginTop: Spacing.sm },
   status: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2, paddingHorizontal: Spacing.xs },
   day: {
     flexDirection: 'row',
