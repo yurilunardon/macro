@@ -2,7 +2,7 @@ import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import type { SFSymbol } from 'expo-symbols';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Pressable, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { ListGroup, SectionTitle } from '@/components/card';
@@ -10,6 +10,7 @@ import { FoodRow } from '@/components/food-row';
 import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
+import { SearchField } from '@/components/search-field';
 import { toast } from '@/components/toast';
 import { Radius, Spacing } from '@/constants/theme';
 import {
@@ -132,21 +133,13 @@ export default function AddScreen() {
         <Stack.Toolbar.Button icon="xmark" accessibilityLabel="Chiudi" onPress={close} />
       </Stack.Toolbar>
 
-      <View style={[styles.search, { backgroundColor: theme.track }]}>
-        <Icon name="magnifyingglass" size={17} tone="textSecondary" />
-        <TextInput
-          value={query}
-          onChangeText={setQuery}
-          placeholder="Cerca: mela, petto di pollo, una marca…"
-          placeholderTextColor={theme.textSecondary}
-          returnKeyType="search"
-          onSubmitEditing={() => void searchOnline()}
-          autoCorrect={false}
-          clearButtonMode="while-editing"
-          accessibilityLabel="Cerca un alimento"
-          style={[styles.searchInput, { color: theme.text }]}
-        />
-      </View>
+      <SearchField
+        value={query}
+        onChangeText={setQuery}
+        placeholder="Cerca: mela, petto di pollo, una marca…"
+        onSubmitEditing={() => void searchOnline()}
+        accessibilityLabel="Cerca un alimento"
+      />
 
       {trimmed === '' ? (
         <>
@@ -393,16 +386,6 @@ function ActionTile({ symbol, label, onPress }: { symbol: SFSymbol; label: strin
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  search: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.sm,
-    borderRadius: Radius.md,
-    borderCurve: 'continuous',
-    paddingHorizontal: Spacing.md,
-    marginBottom: Spacing.lg,
-  },
-  searchInput: { flex: 1, fontSize: 17, paddingVertical: Spacing.md - 2 },
   actions: { flexDirection: 'row', gap: Spacing.sm, marginBottom: Spacing.xl },
   tile: {
     flex: 1,
