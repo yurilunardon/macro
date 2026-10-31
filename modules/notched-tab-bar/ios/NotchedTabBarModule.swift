@@ -127,6 +127,9 @@ struct NotchedCapsule: Shape {
 struct LensShape: Shape {
   var center: CGFloat
   var slot: CGFloat
+  /// 0 for the lens under a tab; towards 1 it shrinks to a drop rising into the button, as the
+  /// calendar's tab is picked, and the button's glass takes it in.
+  var absorb: CGFloat = 0
 
   /// The bar's outline, the same inset in from every edge.
   private static let inside = NotchedCapsule(
@@ -136,6 +139,15 @@ struct LensShape: Shape {
 
   func path(in rect: CGRect) -> Path {
     let room = rect.insetBy(dx: Metrics.lensInset, dy: Metrics.lensInset)
+    if absorb > 0 {
+      // Free of the cradle, which would cut it off under the button: the drop goes into it.
+      let drop: CGFloat = 16
+      let width = slot + (drop - slot) * absorb
+      let height = room.height + (drop - room.height) * absorb
+      let y = room.midY + (rect.minY + Metrics.fabSink - room.midY) * absorb
+      let shape = CGRect(x: center - width / 2, y: y - height / 2, width: width, height: height)
+      return Path(roundedRect: shape, cornerRadius: min(width, height) / 2)
+    }
     let lens = CGRect(x: center - slot / 2, y: room.minY, width: slot, height: room.height)
     let capsule = CGPath(
       roundedRect: lens, cornerWidth: room.height / 2, cornerHeight: room.height / 2, transform: nil)
@@ -194,6 +206,7 @@ struct LensShape: Shape {
 /// through the channel while it springs from one tab to the other, not only under a finger.
 struct LensLayer<CalendarButton: View>: View, Animatable {
   var center: CGFloat
+  var absorb: CGFloat
   var width: CGFloat
   var height: CGFloat
   var slot: CGFloat
@@ -201,16 +214,20 @@ struct LensLayer<CalendarButton: View>: View, Animatable {
   var shown: Bool
   var button: CalendarButton
 
-  var animatableData: CGFloat {
-    get { center }
-    set { center = newValue }
+  var animatableData: AnimatablePair<CGFloat, CGFloat> {
+    get { AnimatablePair(center, absorb) }
+    set {
+      center = newValue.first
+      absorb = newValue.second
+    }
   }
 
   var body: some View {
     GlassGroup(spacing: Metrics.melt) {
       ZStack(alignment: .topLeading) {
-        glass(LensShape(center: center, slot: slot))
-          .opacity(shown ? 1 : 0)
+        glass(LensShape(center: center, slot: slot, absorb: absorb))
+          // Going into the button it stays whole most of the way, then is gone as it arrives.
+          .opacity(shown ? 1 : absorb > 0 ? 1 - absorb * absorb * absorb : 0)
         button
           .position(x: width / 2, y: Metrics.fab / 2)
       }
@@ -231,6 +248,9 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
   /// Where a finger sliding along the capsule is, and the tab under it.
   @State private var dragX: CGFloat?
   @State private var hovered: Side?
+  /// The green wave out of the calendar's button as its tab is picked (0 → 1), and its beat.
+  @State private var halo: CGFloat = 0
+  @State private var beat = false
   /// With Reduce Motion on, the lens and the button move without springing past their place.
   @Environment(\.accessibilityReduceMotion) private var reduceMotion
 
@@ -281,7 +301,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     }
     let lifted = dragX != nil
     return LensLayer(
-      center: center, width: width, height: height, slot: slot,
+      center: center, absorb: props.selected == "center" && !lifted ? 1 : 0, width: width, height: height, slot: slot,
       tint: Color.primary.opacity(lifted ? 0.06 : 0.1), shown: lifted || selectedSide != nil,
       button: calendarButton
     )
@@ -360,9 +380,14 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
   // MARK: The calendar's button
 
   /// Drawn only: React Native lays a transparent button over it, which takes its touches. Filled
-  /// with the accent while the calendar's tab is on screen.
+  /// with the accent while the calendar's tab is on screen: once the lens has gone into it, with
+  /// a beat and a wave going out. Pressed, it narrows evenly round its centre and lights up from
+  /// within. Its size changes, not a scale: the glass container drew a scaled button pulled
+  /// towards a corner.
   private var calendarButton: some View {
     let on = props.selected == "center"
+    let pressed = props.calendarPressed
+    let size = Metrics.fab * (pressed ? 0.92 : beat ? 1.08 : 1)
     return VStack(spacing: 0) {
       Text(props.weekday)
         .font(.system(size: 10, weight: .bold))
@@ -373,17 +398,55 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
         .monospacedDigit()
         .foregroundStyle(on ? Color.white : Color.primary)
     }
-    .animation(.easeOut(duration: 0.2), value: on)
-    .frame(width: Metrics.fab, height: Metrics.fab)
+    .animation(.easeOut(duration: 0.25).delay(on ? 0.22 : 0), value: on)
+    .scaleEffect(pressed ? 0.94 : 1)
+    .frame(width: size, height: size)
     .barGlass(in: Circle(), tint: on ? props.accent : nil)
-    .scaleEffect(props.calendarPressed ? 0.9 : 1)
-    .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.6), value: props.calendarPressed)
+    .animation(.easeOut(duration: 0.3).delay(on ? 0.22 : 0), value: on)
+    .overlay {
+      Circle()
+        .fill(RadialGradient(
+          colors: [Color.white.opacity(0.4), Color.white.opacity(0)],
+          center: UnitPoint(x: 0.5, y: 0.4), startRadius: 0, endRadius: Metrics.fab * 0.55))
+        .opacity(pressed ? 1 : 0)
+    }
+    .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.6), value: pressed)
+    .animation(.spring(response: 0.3, dampingFraction: 0.5), value: beat)
+    .background { Circle().strokeBorder(props.accent, lineWidth: 3).modifier(Wave(progress: halo)) }
+    .frame(width: Metrics.fab, height: Metrics.fab)
+    // The one-value form: the app still runs on iOS 16.
+    .onChange(of: on) { now in
+      guard now, !reduceMotion else { return }
+      withAnimation(.easeOut(duration: 0.7).delay(0.24)) { halo = 1 }
+      // Back to the start unseen, ready for the next time.
+      DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { halo = 0 }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+        beat = true
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { beat = false }
+      }
+    }
     .allowsHitTesting(false)
     .accessibilityHidden(true)
   }
 
   private func select(_ side: Side) {
     props.onSelect(["tab": side.rawValue])
+  }
+}
+
+/// A ring going out from the button and fading, once, as `progress` runs from 0 to 1.
+private struct Wave: ViewModifier, Animatable {
+  var progress: CGFloat
+
+  var animatableData: CGFloat {
+    get { progress }
+    set { progress = newValue }
+  }
+
+  func body(content: Content) -> some View {
+    content
+      .scaleEffect(1 + 0.7 * progress)
+      .opacity(progress > 0 && progress < 1 ? Double(0.8 * (1 - progress)) : 0)
   }
 }
 
