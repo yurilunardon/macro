@@ -69,6 +69,15 @@ export function formatSoon(key: DateKey, today: DateKey = todayKey()): string | 
   return null;
 }
 
+/** "Oggi", "Ieri", or the day of the week within the last six days ("Giovedì"); null further back. */
+export function formatRecent(key: DateKey, today: DateKey = todayKey()): string | null {
+  const diff = daysBetween(key, today);
+  if (diff === 0) return 'Oggi';
+  if (diff === 1) return 'Ieri';
+  if (diff > 1 && diff < 7) return capitalize(weekdayName.format(fromDateKey(key)));
+  return null;
+}
+
 /**
  * The line under the day's title: the full date under "Oggi", "Ieri" and "Domani", and how far
  * from today any other day is.

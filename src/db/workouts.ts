@@ -379,6 +379,8 @@ export type WorkoutSummary = {
   id: number;
   name: string;
   icon: DayIcon;
+  /** The program day it was started from, if any and still there. */
+  dayId: number | null;
   date: DateKey;
   startedAt: string;
   endedAt: string;
@@ -389,8 +391,8 @@ export type WorkoutSummary = {
 
 /** Finished workouts, newest first. */
 export async function getWorkoutHistory(db: SQLiteDatabase, limit = 500): Promise<WorkoutSummary[]> {
-  const workouts = await db.getAllAsync<{ id: number; name: string; icon: string | null; date: string; started_at: string; ended_at: string }>(
-    `SELECT w.id, w.name, d.icon, w.date, w.started_at, w.ended_at FROM workouts w LEFT JOIN program_days d ON d.id = w.day_id
+  const workouts = await db.getAllAsync<{ id: number; name: string; icon: string | null; day_id: number | null; date: string; started_at: string; ended_at: string }>(
+    `SELECT w.id, w.name, d.icon, d.id AS day_id, w.date, w.started_at, w.ended_at FROM workouts w LEFT JOIN program_days d ON d.id = w.day_id
      WHERE w.ended_at IS NOT NULL ORDER BY w.started_at DESC LIMIT ?`,
     limit,
   );
@@ -409,6 +411,7 @@ export async function getWorkoutHistory(db: SQLiteDatabase, limit = 500): Promis
       id: w.id,
       name: w.name,
       icon: dayIcon(w.name, w.icon),
+      dayId: w.day_id,
       date: w.date,
       startedAt: w.started_at,
       endedAt: w.ended_at,
