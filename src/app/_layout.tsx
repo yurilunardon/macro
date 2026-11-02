@@ -93,6 +93,15 @@ export default function RootLayout() {
                 }}
               />
               <Stack.Screen
+                name="limits"
+                options={{
+                  presentation: 'formSheet',
+                  sheetAllowedDetents: [0.75, 1],
+                  sheetGrabberVisible: true,
+                  headerShown: false,
+                }}
+              />
+              <Stack.Screen
                 name="entry/[id]"
                 options={{
                   presentation: 'formSheet',

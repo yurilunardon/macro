@@ -19,7 +19,13 @@ export function rubberband(overshoot: number, dimension: number): number {
   return (overshoot * dimension * constant) / (dimension + constant * Math.abs(overshoot));
 }
 
-/** Swells a little and settles back, once: the "here it is" of Calendar's Today. */
+/** Starts and ends at rest, so the swell has no sudden start or stop. */
+const SWELL = Easing.bezier(0.37, 0, 0.63, 1);
+
+/**
+ * Swells a little and settles back, once: the "here it is" of Calendar's Today. It eases in and
+ * back with hardly any overshoot: a sharp rise and a loose spring looked like a jerk.
+ */
 export function beat(scale: SharedValue<number>): void {
-  scale.set(withSequence(withTiming(1.22, { duration: 160, easing: EASE_OUT }), withSpring(1, { duration: 420, dampingRatio: 0.5 })));
+  scale.set(withSequence(withTiming(1.14, { duration: 280, easing: SWELL }), withSpring(1, { duration: 620, dampingRatio: 0.85 })));
 }

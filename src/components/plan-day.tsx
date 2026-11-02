@@ -1,15 +1,13 @@
-import { useEffect, useRef, type ReactNode } from 'react';
-import { Pressable, StyleSheet, useColorScheme, View, type StyleProp, type ViewStyle } from 'react-native';
-import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
-import Animated, { Easing, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import { useEffect } from 'react';
+import { Pressable, StyleSheet, useColorScheme, View } from 'react-native';
+import Animated, { Easing, useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
-import { scheduleOnRN } from 'react-native-worklets';
 
 import { Radius, Spacing } from '@/constants/theme';
 import { useActivityColors } from '@/hooks/use-activity-colors';
 import { useTheme } from '@/hooks/use-theme';
 import type { ActivityType, AgendaItem } from '@/lib/calendar';
-import { formatLongDate, formatWeekdayInitial, type DateKey } from '@/lib/dates';
+import type { DateKey } from '@/lib/dates';
 import { formatNumber } from '@/lib/format';
 import { addMinutes, clockOf, type DayEntry, type DaySection } from '@/lib/plan';
 import { formatDose } from '@/lib/supplements';
@@ -18,136 +16,9 @@ import { AppText } from './app-text';
 import { Icon } from './icon';
 import { MenuButton } from './menu-button';
 import type { MenuGroup } from './menu-button.types';
-import { beat, EASE_OUT, project } from './motion';
 import { PressableScale } from './pressable-scale';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-
-/**
- * The week of the day on screen, Monday to Sunday: the day picked in a filled circle, and under
- * each day a dot in the colour of what it holds. Swiping turns the week.
- */
-export function PlanWeekStrip({
-  week,
-  selected,
-  today,
-  dots,
-  onSelect,
-  onChangeWeek,
-  pulse = 0,
-}: {
-  week: readonly DateKey[];
-  selected: DateKey;
-  today: DateKey;
-  /** Each day's main activity: its colour for the dot and its name for VoiceOver; none on a rest day. */
-  dots: ReadonlyMap<DateKey, { color: string; label: string }>;
-  onSelect: (day: DateKey) => void;
-  onChangeWeek: (direction: number) => void;
-  /** Each new value makes the selected day's circle beat once, to show where it is. */
-  pulse?: number;
-}) {
-  const theme = useTheme();
-  const stripX = useSharedValue(0);
-  const width = useSharedValue(0);
-  const turn = (direction: number) => {
-    onChangeWeek(direction);
-    stripX.set(direction * width.get() * 0.4);
-    stripX.set(withSpring(0, { duration: 420, dampingRatio: 1 }));
-  };
-  const pan = usePanGesture({
-    activeOffsetX: [-14, 14],
-    failOffsetY: [-12, 12],
-    onUpdate: (event) => {
-      'worklet';
-      stripX.set(event.translationX);
-    },
-    onDeactivate: (event) => {
-      'worklet';
-      const projected = event.translationX + project(event.velocityX, 0.99);
-      if (!event.canceled && Math.abs(projected) > width.get() * 0.25) {
-        const direction = projected < 0 ? 1 : -1;
-        stripX.set(
-          withTiming(-direction * width.get(), { duration: 160, easing: EASE_OUT }, (finished) => {
-            'worklet';
-            if (finished) scheduleOnRN(turn, direction);
-          }),
-        );
-        return;
-      }
-      stripX.set(withSpring(0, { duration: 380, dampingRatio: 0.9, velocity: event.velocityX }));
-    },
-  });
-  const stripStyle = useAnimatedStyle(() => ({ transform: [{ translateX: stripX.get() }] }));
-
-  return (
-    <GestureDetector gesture={pan} touchAction="pan-y">
-      <View style={styles.clip} onLayout={(event) => width.set(event.nativeEvent.layout.width)}>
-        <Animated.View style={[styles.weekRow, stripStyle]}>
-          {week.map((day) => {
-            const isSelected = day === selected;
-            const isToday = day === today;
-            const dot = dots.get(day);
-            return (
-              <Pressable
-                key={day}
-                onPress={() => onSelect(day)}
-                accessibilityRole="button"
-                accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={[formatLongDate(day), isToday ? 'oggi' : null, dot?.label ?? 'riposo'].filter(Boolean).join(', ')}
-                style={({ pressed }) => [styles.dayCell, pressed && styles.pressed]}>
-                <AppText variant="caption" weight="600" tone={isToday ? 'accent' : 'textSecondary'} maxFontSizeMultiplier={1.3}>
-                  {formatWeekdayInitial(day)}
-                </AppText>
-                <BeatingCircle
-                  pulse={pulse}
-                  selected={isSelected}
-                  style={[
-                    styles.dayCircle,
-                    isSelected && { backgroundColor: isToday ? theme.accent : theme.text },
-                  ]}>
-                  <AppText
-                    numeric
-                    // The number lives in a fixed circle, as in Calendar: it grows only so far.
-                    maxFontSizeMultiplier={1.3}
-                    style={[
-                      styles.dayNumber,
-                      { color: isSelected ? (isToday ? theme.onAccent : theme.background) : isToday ? theme.accent : theme.text },
-                    ]}>
-                    {String(Number(day.slice(8)))}
-                  </AppText>
-                </BeatingCircle>
-                <View style={[styles.dot, { backgroundColor: dot?.color ?? 'transparent' }]} />
-              </Pressable>
-            );
-          })}
-        </Animated.View>
-      </View>
-    </GestureDetector>
-  );
-}
-
-/** A circle that beats once each time `pulse` changes while it is the selected one. */
-function BeatingCircle({
-  pulse,
-  selected,
-  style,
-  children,
-}: {
-  pulse: number;
-  selected: boolean;
-  style: StyleProp<ViewStyle>;
-  children: ReactNode;
-}) {
-  const scale = useSharedValue(1);
-  const last = useRef(pulse);
-  useEffect(() => {
-    if (pulse === last.current) return;
-    last.current = pulse;
-    if (selected) beat(scale);
-  }, [pulse, selected, scale]);
-  const animated = useAnimatedStyle(() => ({ transform: [{ scale: scale.get() }] }));
-  return <Animated.View style={[style, animated]}>{children}</Animated.View>;
-}
 
 /** How much of the day is done, as a small ring with "3/7" in it. */
 export function DayRing({ done, total, size = 56 }: { done: number; total: number; size?: number }) {
@@ -211,6 +82,7 @@ export function ActivityCard({
   type,
   date,
   today,
+  interactive = true,
   onStart,
   onOpen,
   menu,
@@ -220,6 +92,8 @@ export function ActivityCard({
   type: ActivityType | undefined;
   date: DateKey;
   today: DateKey;
+  /** False on the pages kept ready beside the one on screen: the same look, without a real menu. */
+  interactive?: boolean;
   /** Shown on a gym day still to do, on the day itself. */
   onStart?: () => void;
   onOpen: () => void;
@@ -256,7 +130,7 @@ export function ActivityCard({
           </AppText>
         </PressableScale>
       ) : null}
-      <MenuButton icon="ellipsis" accessibilityLabel={`Altro su ${name}`} groups={menu} />
+      <MenuButton inert={!interactive} icon="ellipsis" accessibilityLabel={`Altro su ${name}`} groups={menu} />
     </View>
   );
 }
@@ -382,12 +256,6 @@ function describeEntry(entry: DayEntry, missed: boolean): { name: string; amount
 }
 
 const styles = StyleSheet.create({
-  clip: { overflow: 'hidden', marginBottom: Spacing.lg },
-  weekRow: { flexDirection: 'row' },
-  dayCell: { flex: 1, alignItems: 'center', gap: 6 },
-  dayCircle: { width: 36, height: 36, borderRadius: 18, alignItems: 'center', justifyContent: 'center' },
-  dayNumber: { fontSize: 17, lineHeight: 22, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  dot: { width: 6, height: 6, borderRadius: 3 },
   pressed: { opacity: 0.6 },
   ringCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   ringText: { fontSize: 15, lineHeight: 18 },

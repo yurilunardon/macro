@@ -5,22 +5,18 @@ import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } fr
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { Spacing } from '@/constants/theme';
-import { getDayPlans } from '@/db/days';
-import { getDailyTotals } from '@/db/entries';
-import { useLiveQuery } from '@/db/live';
 import { useTheme } from '@/hooks/use-theme';
-import { calorieStatus } from '@/lib/calories';
 import { formatLongDate, formatWeekdayInitial, weekOf, type DateKey } from '@/lib/dates';
-import { formatKcal } from '@/lib/format';
 
 import { AppText } from './app-text';
 import { beat, EASE_OUT, project } from './motion';
 
 const CIRCLE = 36;
-// Grows from about half its size with a small overshoot, so the new day is plain to see.
-const CIRCLE_SPRING = { duration: 420, dampingRatio: 0.55 };
+// Grows from a little over half its size with a slight overshoot, so the new day is plain to see.
+const CIRCLE_SPRING = { duration: 460, dampingRatio: 0.7 };
 
-const STATUS_TONE = { far: 'ringFar', closer: 'ringCloser', onTarget: 'ringOnTarget', over: 'ringFar' } as const;
+/** What a day holds, as a dot under it: its colour, and for VoiceOver what it stands for. */
+export type DayMark = { color: string; label: string };
 
 type WeekStripProps = {
   selected: DateKey;
@@ -28,22 +24,18 @@ type WeekStripProps = {
   onSelect: (day: DateKey) => void;
   /** Swiping the strip moves a week back (-1) or forward (1). */
   onChangeWeek: (direction: number) => void;
+  marks: ReadonlyMap<DateKey, DayMark>;
   /** Each new value makes the selected day's circle beat once, to show where it is. */
   pulse?: number;
 };
 
 /**
  * The week of the selected day, Monday to Sunday, as in Calendar: the selected day in a filled
- * circle (green when it is today), and under each day with food a dot in the colour of its
- * calorie ring.
+ * circle (green when it is today), and under a day its mark, if it has one.
  */
-export function WeekStrip({ selected, today, onSelect, onChangeWeek, pulse = 0 }: WeekStripProps) {
+export function WeekStrip({ selected, today, onSelect, onChangeWeek, marks, pulse = 0 }: WeekStripProps) {
   const theme = useTheme();
   const days = weekOf(selected);
-  const { data } = useLiveQuery(`week:${days[0]}`, async (database) => {
-    const [totals, plans] = await Promise.all([getDailyTotals(database, days[0], days[6]), getDayPlans(database, days)]);
-    return { kcal: new Map(totals.map((t) => [t.date, t.kcal])), plans };
-  }, ['food', 'settings']);
 
   // Swiping the strip turns the week: it follows the finger, then the new week slides in.
   const stripX = useSharedValue(0);
@@ -85,24 +77,24 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, pulse = 0 }
           {days.map((day) => {
             const isSelected = day === selected;
             const isToday = day === today;
-            const kcal = data?.kcal.get(day) ?? 0;
-            const target = data?.plans.get(day)?.targets.kcal ?? 0;
-            const tone = STATUS_TONE[calorieStatus(kcal, target)];
+            const mark = marks.get(day);
             return (
               <Pressable
                 key={day}
                 onPress={() => onSelect(day)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={`${formatLongDate(day)}${isToday ? ', oggi' : ''}${kcal > 0 ? `, ${formatKcal(kcal)} kcal` : ''}`}
+                accessibilityLabel={[formatLongDate(day), isToday ? 'oggi' : null, mark?.label].filter(Boolean).join(', ')}
                 style={styles.cell}>
-                <AppText variant="caption" weight="600" tone={isToday ? 'accent' : 'textSecondary'}>
+                <AppText variant="caption" weight="600" tone={isToday ? 'accent' : 'textSecondary'} maxFontSizeMultiplier={1.3}>
                   {formatWeekdayInitial(day)}
                 </AppText>
                 <View style={styles.slot}>
                   <DayCircle selected={isSelected} color={isToday ? theme.accent : theme.text} pulse={pulse} />
                   <AppText
                     numeric
+                    // The number lives in a fixed circle, as in Calendar: it grows only so far.
+                    maxFontSizeMultiplier={1.3}
                     style={[
                       styles.number,
                       { color: isSelected ? (isToday ? theme.onAccent : theme.background) : isToday ? theme.accent : theme.text },
@@ -110,7 +102,7 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, pulse = 0 }
                     {String(Number(day.slice(8)))}
                   </AppText>
                 </View>
-                <View style={[styles.dot, { backgroundColor: kcal > 0 ? theme[tone] : 'transparent' }]} />
+                <View style={[styles.dot, { backgroundColor: mark?.color ?? 'transparent' }]} />
               </Pressable>
             );
           })}
@@ -141,8 +133,8 @@ function DayCircle({ selected, color, pulse }: { selected: boolean; color: strin
     }
     if (selected) {
       visible.set(0.4);
-      visible.set(withTiming(1, { duration: 120 }));
-      scale.set(0.55);
+      visible.set(withTiming(1, { duration: 140 }));
+      scale.set(0.6);
       scale.set(withSpring(1, CIRCLE_SPRING));
     } else {
       visible.set(0);
@@ -153,7 +145,7 @@ function DayCircle({ selected, color, pulse }: { selected: boolean; color: strin
 }
 
 const styles = StyleSheet.create({
-  clip: { overflow: 'hidden', marginBottom: Spacing.md },
+  clip: { overflow: 'hidden', marginBottom: Spacing.sm },
   row: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', gap: 6 },
   slot: { width: CIRCLE, height: CIRCLE, alignItems: 'center', justifyContent: 'center' },

@@ -2,6 +2,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 
 import { DEFAULT_TARGETS, type Profile, type Targets } from '@/lib/goals';
 import type { DateKey } from '@/lib/dates';
+import { resolveLimits, type NutrientLimits } from '@/lib/limits';
 import type { Moment, WeighInPlan } from '@/lib/plan';
 import type { ReminderSettings } from '@/lib/reminders';
 
@@ -43,6 +44,8 @@ type SettingsMap = {
   planSeeded: number;
   /** The day the calendar asks to look the plan over again. */
   planReviewOn: DateKey;
+  /** The daily ceilings on sugars, saturated fat and salt, when changed from the usual ones. */
+  nutrientLimits: Partial<NutrientLimits>;
 };
 
 export type SettingKey = keyof SettingsMap;
@@ -70,6 +73,10 @@ export async function setSetting<K extends SettingKey>(db: SQLiteDatabase, key: 
 export async function getTargets(db: SQLiteDatabase): Promise<{ targets: Targets; isDefault: boolean }> {
   const targets = await getSetting(db, 'targets');
   return targets ? { targets, isDefault: false } : { targets: DEFAULT_TARGETS, isDefault: true };
+}
+
+export async function getLimits(db: SQLiteDatabase): Promise<NutrientLimits> {
+  return resolveLimits(await getSetting(db, 'nutrientLimits'));
 }
 
 export async function deleteSetting(db: SQLiteDatabase, key: SettingKey): Promise<void> {

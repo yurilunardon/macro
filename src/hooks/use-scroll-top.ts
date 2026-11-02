@@ -1,12 +1,14 @@
 import { useNavigation, useRoute } from 'expo-router';
 import type { NavigationProp, ParamListBase } from 'expo-router/react-navigation';
 import { useEffect, useRef, useState } from 'react';
-import Animated, { scrollTo, useAnimatedRef, useAnimatedScrollHandler, useSharedValue, type AnimatedRef } from 'react-native-reanimated';
+import Animated, { scrollTo, useAnimatedRef, useAnimatedScrollHandler, useSharedValue, type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnUI } from 'react-native-worklets';
 
 export type ScrollTop = {
   ref: AnimatedRef<Animated.ScrollView>;
   onScroll: ReturnType<typeof useAnimatedScrollHandler>;
+  /** How far the page is scrolled, as iOS reports it: negative under a bar. */
+  offset: SharedValue<number>;
   /** Scrolls back up to the top of the page; resolved once it is about there. */
   scrollToTop: () => Promise<void>;
 };
@@ -34,7 +36,7 @@ export function useScrollTop(): ScrollTop {
     // Resolved once the scroll has about come to rest.
     return new Promise((resolve) => setTimeout(resolve, Math.min(300 + far / 4, 650)));
   });
-  return { ref, onScroll, scrollToTop };
+  return { ref, onScroll, offset, scrollToTop };
 }
 
 /**

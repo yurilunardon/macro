@@ -1,3 +1,4 @@
+import type { LimitKey } from './limits';
 import type { Nutrients } from './nutrition';
 
 export type BreakdownKey = 'protein' | 'carbs' | 'fat' | 'fiber';
@@ -10,7 +11,7 @@ type Item = { id: number; totals: Nutrients };
  */
 export function nutrientBreakdown<T extends Item>(
   entries: readonly T[],
-  key: BreakdownKey,
+  key: BreakdownKey | LimitKey,
 ): { total: number; items: { entry: T; amount: number; share: number }[] } {
   const amounts = entries.map((entry) => ({ entry, amount: entry.totals[key] ?? 0 }));
   const total = amounts.reduce((sum, a) => sum + a.amount, 0);

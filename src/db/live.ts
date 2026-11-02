@@ -48,6 +48,20 @@ function versionOf(topics: readonly Topic[]): number {
  */
 const cache = new Map<string, Result<unknown>>();
 
+/**
+ * Reads under way: the days kept ready beside the one on screen often ask for the same week, and
+ * after a write they would all read it again at once.
+ */
+const reading = new Map<string, Promise<unknown>>();
+
+function readOnce<T>(token: string, read: () => Promise<T>): Promise<T> {
+  const under = reading.get(token) as Promise<T> | undefined;
+  if (under) return under;
+  const started = read().finally(() => reading.delete(token));
+  reading.set(token, started);
+  return started;
+}
+
 /** A screen's query, named once so the tap that opens the screen can run it ahead. */
 export type LiveQuery<T> = { key: string; query: (db: SQLiteDatabase) => Promise<T>; topics: readonly Topic[] };
 
@@ -93,7 +107,7 @@ export function useLiveQuery<T>(
 
   useEffect(() => {
     let cancelled = false;
-    query(db).then(
+    readOnce(token, () => query(db)).then(
       (data) => {
         if (cancelled) return;
         const next = { token, data: shareEqual(cache.get(key)?.data, data), error: undefined };

@@ -137,16 +137,28 @@ struct LensShape: Shape {
     radius: Metrics.cradleRadius + Metrics.lensInset + Metrics.cradleGap,
     shoulder: Metrics.shoulder - Metrics.lensInset)
 
+  /// Below this the spring coming back from the button is only settling, around 0 and for about a
+  /// second, and the lens is the whole lens again. Counted as a drop, it had no cradle cut out of
+  /// it and no neck, and slid along as a plain rounded rectangle.
+  private static let settling: CGFloat = 0.04
+
   func path(in rect: CGRect) -> Path {
     let room = rect.insetBy(dx: Metrics.lensInset, dy: Metrics.lensInset)
-    if absorb > 0 {
-      // Free of the cradle, which would cut it off under the button: the drop goes into it.
+    let drawn = min(max((absorb - Self.settling) / (1 - Self.settling), 0), 1)
+    if drawn > 0 {
       let drop: CGFloat = 16
-      let width = slot + (drop - slot) * absorb
-      let height = room.height + (drop - room.height) * absorb
-      let y = room.midY + (rect.minY + Metrics.fabSink - room.midY) * absorb
+      let width = slot + (drop - slot) * drawn
+      let height = room.height + (drop - room.height) * drawn
+      let button = CGPoint(x: rect.midX, y: rect.minY + Metrics.fabSink)
+      let y = room.midY + (button.y - room.midY) * drawn
       let shape = CGRect(x: center - width / 2, y: y - height / 2, width: width, height: height)
-      return Path(roundedRect: shape, cornerRadius: min(width, height) / 2)
+      let rounded = Path(roundedRect: shape, cornerRadius: min(width, height) / 2).cgPath
+      // The cradle closes up quickly as the drop leaves it for the button, inside whose glass the
+      // rest of the hole no longer shows; picked up again, the lens fits back round it.
+      let gap = (Metrics.cradleRadius + Metrics.lensInset + Metrics.cradleGap) * (1 - drawn) * (1 - drawn)
+      let hole = CGPath(
+        ellipseIn: CGRect(x: button.x - gap, y: button.y - gap, width: 2 * gap, height: 2 * gap), transform: nil)
+      return Path(rounded.subtracting(hole))
     }
     let lens = CGRect(x: center - slot / 2, y: room.minY, width: slot, height: room.height)
     let capsule = CGPath(
@@ -248,6 +260,9 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
   /// Where a finger sliding along the capsule is, and the tab under it.
   @State private var dragX: CGFloat?
   @State private var hovered: Side?
+  /// The tab just picked here, until React Native answers with it. The answer takes a moment, in
+  /// which the lens let go by a finger went back towards the old tab, or into the calendar's button.
+  @State private var picked: Side?
   /// The green wave out of the calendar's button as its tab is picked (0 → 1), and its beat.
   @State private var halo: CGFloat = 0
   @State private var beat = false
@@ -281,11 +296,17 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
       }
       .frame(width: width, height: geometry.size.height, alignment: .topLeading)
     }
+    // The one-value form: the app still runs on iOS 16.
+    .onChange(of: props.selected) { _ in
+      picked = nil
+    }
   }
 
   // MARK: The lens
 
-  private var selectedSide: Side? { Side(rawValue: props.selected) }
+  private var selection: String { picked?.rawValue ?? props.selected }
+
+  private var selectedSide: Side? { Side(rawValue: selection) }
 
   private func lensLayer(width: CGFloat, height: CGFloat, slot: CGFloat) -> some View {
     let restLeft = Metrics.lensInset + slot / 2
@@ -293,7 +314,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     let center: CGFloat
     if let dragX {
       center = min(max(dragX, restLeft), restRight)
-    } else if props.selected == "center" {
+    } else if selection == "center" {
       // Into the button as it fades, since that is where the tab on screen now is.
       center = width / 2
     } else {
@@ -301,7 +322,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     }
     let lifted = dragX != nil
     return LensLayer(
-      center: center, absorb: props.selected == "center" && !lifted ? 1 : 0, width: width, height: height, slot: slot,
+      center: center, absorb: selection == "center" && !lifted ? 1 : 0, width: width, height: height, slot: slot,
       tint: Color.primary.opacity(lifted ? 0.06 : 0.1), shown: lifted || selectedSide != nil,
       button: calendarButton
     )
@@ -385,7 +406,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
   /// within. Its size changes, not a scale: the glass container drew a scaled button pulled
   /// towards a corner.
   private var calendarButton: some View {
-    let on = props.selected == "center"
+    let on = selection == "center"
     let pressed = props.calendarPressed
     let size = Metrics.fab * (pressed ? 0.92 : beat ? 1.08 : 1)
     return VStack(spacing: 0) {
@@ -430,7 +451,10 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
   }
 
   private func select(_ side: Side) {
+    picked = side
     props.onSelect(["tab": side.rawValue])
+    // The tab already on screen gets no answer, as nothing changes: the prop rules again by then.
+    DispatchQueue.main.asyncAfter(deadline: .now() + 0.6) { picked = nil }
   }
 }
 

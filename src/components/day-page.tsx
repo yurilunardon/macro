@@ -21,6 +21,7 @@ import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 import { AppText } from './app-text';
 import { Card, ListGroup } from './card';
+import type { DayPageProps as PagerProps } from './day-pager';
 import { Icon } from './icon';
 import { MenuButton } from './menu-button';
 import { MacroBars } from './nutrient-grid';
@@ -50,17 +51,14 @@ function entryDetail(entry: Entry): string | null {
   return [`${formatNumber(entry.quantity, 1)} ${entry.unit}`, entry.brand].filter(Boolean).join(' · ');
 }
 
-type DayPageProps = {
+/**
+ * Only the day on screen gets menus, swipe actions and context menus (`interactive`). The days
+ * around it are drawn ahead as the same layout without them, so they cost little to keep ready
+ * and nothing moves when a day becomes the current one.
+ */
+type DayPageProps = PagerProps & {
   date: DateKey;
   today: DateKey;
-  /**
-   * Only the day on screen gets menus, swipe actions and context menus. The days around it are
-   * drawn ahead as the same layout without them, so they cost little to keep ready and nothing
-   * moves when a day becomes the current one.
-   */
-  interactive: boolean;
-  /** Called once the day's data is on screen. */
-  onReady?: (date: DateKey) => void;
   /** Scrolls the screen back up to the day's ring; resolved once there. */
   scrollToTop?: () => Promise<void>;
 };
