@@ -8,7 +8,7 @@ import { NotificationSync } from '@/components/notification-sync';
 import { ToastHost } from '@/components/toast';
 import { UpdateCheck } from '@/components/update-check';
 import { TAB_STACK_OPTIONS } from '@/constants/navigation';
-import { seedStartingPlan } from '@/db/plan';
+import { pinGymDays, seedStartingPlan } from '@/db/plan';
 import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
@@ -22,6 +22,7 @@ export const unstable_settings = { anchor: '(tabs)' };
 async function openDatabase(db: SQLiteDatabase): Promise<void> {
   await migrateDatabase(db);
   await seedStartingPlan(db, todayKey());
+  await pinGymDays(db, todayKey());
 }
 
 function Loading() {

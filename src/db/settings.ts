@@ -44,6 +44,8 @@ type SettingsMap = {
   planSeeded: number;
   /** The day the calendar asks to look the plan over again. */
   planReviewOn: DateKey;
+  /** The agreed gym days were tied to their days of the program, which is done only once. */
+  gymDaysPinned: boolean;
   /** The daily ceilings on sugars, saturated fat and salt, when changed from the usual ones. */
   nutrientLimits: Partial<NutrientLimits>;
 };

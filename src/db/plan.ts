@@ -5,7 +5,8 @@ import { addDays, type DateKey } from '@/lib/dates';
 import { DEFAULT_MOMENTS, DEFAULT_WEIGH_IN, type Moment, type WeighInPlan } from '@/lib/plan';
 import type { DoseUnit, SupplementSchedule } from '@/lib/supplements';
 
-import { addPlan, endPlan, getActivityTypes, getCalendar, updatePlan, type PlanInput } from './calendar';
+import { addPlan, endPlan, getActivityTypes, getCalendar, setPlanProgramDay, updatePlan, type PlanInput } from './calendar';
+import { getPrograms } from './programs';
 import { getSetting, setSetting } from './settings';
 import { addSupplement, getSupplements } from './supplements';
 
@@ -159,4 +160,35 @@ export async function seedStartingPlan(db: SQLiteDatabase, today: DateKey): Prom
 
   if (!(await getSetting(db, 'planReviewOn'))) await setSetting(db, 'planReviewOn', addDays(today, 28));
   await setSetting(db, 'planSeeded', STARTING_PLAN);
+}
+
+/** The agreed gym days and the names their day of the program goes by. */
+const GYM_DAYS: readonly { weekday: number; names: readonly string[] }[] = [
+  { weekday: 3, names: ['push'] },
+  { weekday: 5, names: ['pull'] },
+  { weekday: 0, names: ['legs', 'gambe'] },
+];
+
+/**
+ * Ties the agreed gym days to their days of the program, once: Wednesday Push, Friday Pull, Sunday
+ * Legs. Following the rotation, one extra workout moved them all and could put legs on the eve of
+ * Saturday's match. Waits for a program with those days; a day already tied by hand is left alone,
+ * and all of them can be changed afterwards.
+ */
+export async function pinGymDays(db: SQLiteDatabase, today: DateKey): Promise<void> {
+  if (await getSetting(db, 'gymDaysPinned')) return;
+  const program = (await getPrograms(db)).find((p) => p.active);
+  const dayFor = (names: readonly string[]) => program?.days.find((d) => names.includes(d.name.trim().toLowerCase()));
+  if (!GYM_DAYS.some(({ names }) => dayFor(names))) return;
+  for (const { weekday, names } of GYM_DAYS) {
+    const day = dayFor(names);
+    if (!day) continue;
+    // Read again each time: tying one day of a plan with several splits that plan.
+    const { plans, gymTypeId } = await getCalendar(db, today, addDays(today, 6));
+    const plan = plans.find((p) => p.typeId === gymTypeId && p.weekdays.includes(weekday) && p.dayId === null && (p.endDate === null || p.endDate >= today));
+    if (!plan) continue;
+    if (plan.weekdays.length === 1) await setPlanProgramDay(db, plan.id, day.id);
+    else await setWeekday(db, weekday, { typeId: plan.typeId, time: plan.time, minutes: plan.minutes, dayId: day.id, note: plan.note }, today);
+  }
+  await setSetting(db, 'gymDaysPinned', true);
 }

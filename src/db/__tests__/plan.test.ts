@@ -4,9 +4,11 @@ import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { expandActivities } from '@/lib/calendar';
 import { DEFAULT_MOMENTS, DEFAULT_WEIGH_IN, buildDay, momentOf, sortMoments, trainingTimes } from '@/lib/plan';
 import { dosesDue } from '@/lib/supplements';
+import { PROGRAM_TEMPLATES } from '@/lib/templates';
 
-import { getActivityTypes, getCalendar } from '../calendar';
-import { seedStartingPlan, setWeekday } from '../plan';
+import { addPlan, getActivityTypes, getCalendar, setPlanProgramDay } from '../calendar';
+import { pinGymDays, seedStartingPlan, setWeekday } from '../plan';
+import { createProgramFromTemplate, getPrograms, setActiveProgram } from '../programs';
 import { migrateDatabase } from '../schema';
 import { deleteSupplement, getSupplements } from '../supplements';
 
@@ -105,5 +107,78 @@ describe('the day', () => {
     const occurrence = { key: 'p1:2026-11-03', recordId: null, planId: 1, typeId: 1, date: '2026-11-03', time: '21:00', minutes: 120, dayId: null, note: null, status: 'planned' as const };
     expect(trainingTimes([{ kind: 'activity', key: 'x', occurrence, status: 'planned', dayId: null }], types)).toEqual({ start: '21:00', end: '23:00' });
     expect(trainingTimes([], types)).toBeNull();
+  });
+});
+
+describe('pinning the gym days', () => {
+  const TODAY = '2026-11-02';
+
+  const useProgram = async () => {
+    await createProgramFromTemplate(db, PROGRAM_TEMPLATES[0]);
+    const program = (await getPrograms(db))[0];
+    await setActiveProgram(db, program.id);
+    return new Map(program.days.map((d) => [d.name, d.id]));
+  };
+  const dayOn = async (weekday: number) => {
+    const { plans, gymTypeId } = await getCalendar(db, TODAY, '2026-11-08');
+    return plans.find((p) => p.typeId === gymTypeId && p.weekdays.includes(weekday) && (p.endDate === null || p.endDate >= TODAY))?.dayId;
+  };
+
+  it('ties Wednesday to Push, Friday to Pull and Sunday to Legs, keeping when and what', async () => {
+    await seedStartingPlan(db, TODAY);
+    const days = await useProgram();
+    await pinGymDays(db, TODAY);
+    expect([await dayOn(3), await dayOn(5), await dayOn(0)]).toEqual([days.get('Push'), days.get('Pull'), days.get('Legs')]);
+    const { plans, gymTypeId } = await getCalendar(db, TODAY, '2026-11-08');
+    const sunday = plans.find((p) => p.typeId === gymTypeId && p.weekdays.includes(0));
+    expect(sunday).toMatchObject({ time: '17:00', minutes: 90, note: 'Gambe' });
+  });
+
+  it('waits for a program, then does it', async () => {
+    await seedStartingPlan(db, TODAY);
+    await pinGymDays(db, TODAY);
+    expect(await dayOn(3)).toBeNull();
+    const days = await useProgram();
+    await pinGymDays(db, TODAY);
+    expect(await dayOn(3)).toBe(days.get('Push'));
+  });
+
+  it('does it only once, so a later change stays', async () => {
+    await seedStartingPlan(db, TODAY);
+    await useProgram();
+    await pinGymDays(db, TODAY);
+    const { plans, gymTypeId } = await getCalendar(db, TODAY, '2026-11-08');
+    const wednesday = plans.find((p) => p.typeId === gymTypeId && p.weekdays.includes(3));
+    await setPlanProgramDay(db, wednesday?.id ?? 0, null);
+    await pinGymDays(db, TODAY);
+    expect(await dayOn(3)).toBeNull();
+  });
+
+  it('leaves alone a day already tied by hand', async () => {
+    await seedStartingPlan(db, TODAY);
+    const days = await useProgram();
+    const { plans, gymTypeId } = await getCalendar(db, TODAY, '2026-11-08');
+    const wednesday = plans.find((p) => p.typeId === gymTypeId && p.weekdays.includes(3));
+    await setPlanProgramDay(db, wednesday?.id ?? 0, days.get('Legs') ?? null);
+    await pinGymDays(db, TODAY);
+    expect(await dayOn(3)).toBe(days.get('Legs'));
+  });
+
+  it('splits a plan that holds several gym days', async () => {
+    const types = await getActivityTypes(db);
+    const gym = types.find((t) => t.ref === 'gym');
+    await addPlan(db, { typeId: gym?.id ?? 0, weekdays: [0, 3, 5], time: '20:00', minutes: 60, dayId: null, note: null, startDate: '2026-10-01' });
+    const days = await useProgram();
+    await pinGymDays(db, TODAY);
+    expect([await dayOn(3), await dayOn(5), await dayOn(0)]).toEqual([days.get('Push'), days.get('Pull'), days.get('Legs')]);
+  });
+
+  it('keeps the tie when the time of the day changes in the plan', async () => {
+    await seedStartingPlan(db, TODAY);
+    const days = await useProgram();
+    await pinGymDays(db, TODAY);
+    const { gymTypeId } = await getCalendar(db, TODAY, '2026-11-08');
+    await setWeekday(db, 3, { typeId: gymTypeId ?? 0, time: '20:00', minutes: 90, dayId: days.get('Push') ?? null, note: 'Push' }, TODAY);
+    expect(await dayOn(3)).toBe(days.get('Push'));
   });
 });

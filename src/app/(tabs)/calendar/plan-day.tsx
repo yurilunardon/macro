@@ -40,6 +40,7 @@ export default function PlanDayScreen() {
       types={data.types.filter((t) => !t.archived)}
       initial={{
         typeId: plan?.typeId ?? null,
+        dayId: plan?.dayId ?? null,
         name: plan?.note ?? '',
         time: plan?.time ?? '21:00',
         minutes: plan?.minutes ?? data.types.find((t) => t.id === plan?.typeId)?.minutes ?? 90,
@@ -55,7 +56,7 @@ function PlanDayForm({
 }: {
   weekday: number;
   types: ActivityType[];
-  initial: { typeId: number | null; name: string; time: string; minutes: number };
+  initial: { typeId: number | null; dayId: number | null; name: string; time: string; minutes: number };
 }) {
   const db = useSQLiteContext();
   const router = useRouter();
@@ -79,7 +80,8 @@ function PlanDayForm({
     await setWeekday(
       db,
       weekday,
-      typeId ? { typeId, time, minutes, dayId: null, note: name.trim() === '' ? null : name.trim() } : null,
+      // A gym day tied to a day of the program stays tied when its time or length change.
+      typeId ? { typeId, time, minutes, dayId: isGym ? initial.dayId : null, note: name.trim() === '' ? null : name.trim() } : null,
       today,
     );
     haptics.success();

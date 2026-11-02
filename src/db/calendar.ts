@@ -415,6 +415,12 @@ export async function updatePlan(db: SQLiteDatabase, id: number, input: PlanInpu
 }
 
 /** Stops a plan from `from` on; one that had not started yet is deleted. */
+/** Ties a plan to a day of the program, or back to the rotation; the dates changed by hand stay as they are. */
+export async function setPlanProgramDay(db: SQLiteDatabase, id: number, dayId: number | null): Promise<void> {
+  await db.runAsync('UPDATE activity_plans SET day_id = ? WHERE id = ?', dayId, id);
+  changed();
+}
+
 export async function endPlan(db: SQLiteDatabase, id: number, from: DateKey): Promise<void> {
   const plan = await getPlan(db, id);
   if (!plan) return;
