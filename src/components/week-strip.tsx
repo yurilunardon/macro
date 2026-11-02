@@ -1,7 +1,9 @@
+import type { SFSymbol } from 'expo-symbols';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { useEffect, useRef } from 'react';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Svg, { Circle } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { Spacing } from '@/constants/theme';
@@ -9,14 +11,22 @@ import { useTheme } from '@/hooks/use-theme';
 import { formatLongDate, formatWeekdayInitial, weekOf, type DateKey } from '@/lib/dates';
 
 import { AppText } from './app-text';
+import { Icon } from './icon';
 import { beat, EASE_OUT, project } from './motion';
 
-const CIRCLE = 36;
+/** The day's number with room for a ring round it, and the circle of the selected day inside that. */
+const SLOT = 42;
+const CIRCLE = 32;
+const RING_WIDTH = 3;
+const RING_RADIUS = (SLOT - RING_WIDTH) / 2;
+const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
 // Grows from a little over half its size with a slight overshoot, so the new day is plain to see.
 const CIRCLE_SPRING = { duration: 460, dampingRatio: 0.7 };
 
-/** What a day holds, as a dot under it: its colour, and for VoiceOver what it stands for. */
-export type DayMark = { color: string; label: string };
+/** How far along a day is, from 0 to 1, and for VoiceOver what that stands for. */
+export type DayProgress = { progress: number; label: string };
+/** What a day holds, and for VoiceOver its name. */
+export type DaySymbol = { symbol: SFSymbol; label: string };
 
 type WeekStripProps = {
   selected: DateKey;
@@ -24,16 +34,20 @@ type WeekStripProps = {
   onSelect: (day: DateKey) => void;
   /** Swiping the strip moves a week back (-1) or forward (1). */
   onChangeWeek: (direction: number) => void;
-  marks: ReadonlyMap<DateKey, DayMark>;
+  /** How much: a ring round every day, as the week in Fitness. */
+  rings?: ReadonlyMap<DateKey, DayProgress>;
+  /** What: a small symbol under the days that have one, whose place is kept under the others. */
+  symbols?: ReadonlyMap<DateKey, DaySymbol>;
   /** Each new value makes the selected day's circle beat once, to show where it is. */
   pulse?: number;
 };
 
 /**
  * The week of the selected day, Monday to Sunday, as in Calendar: the selected day in a filled
- * circle (green when it is today), and under a day its mark, if it has one.
+ * circle (green when it is today). A ring says how much, a symbol says what, so the two cannot be
+ * taken for each other as two dots of different meaning were.
  */
-export function WeekStrip({ selected, today, onSelect, onChangeWeek, marks, pulse = 0 }: WeekStripProps) {
+export function WeekStrip({ selected, today, onSelect, onChangeWeek, rings, symbols, pulse = 0 }: WeekStripProps) {
   const theme = useTheme();
   const days = weekOf(selected);
 
@@ -77,19 +91,21 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, marks, puls
           {days.map((day) => {
             const isSelected = day === selected;
             const isToday = day === today;
-            const mark = marks.get(day);
+            const ring = rings?.get(day);
+            const symbol = symbols?.get(day);
             return (
               <Pressable
                 key={day}
                 onPress={() => onSelect(day)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={[formatLongDate(day), isToday ? 'oggi' : null, mark?.label].filter(Boolean).join(', ')}
+                accessibilityLabel={[formatLongDate(day), isToday ? 'oggi' : null, ring?.label, symbol?.label].filter(Boolean).join(', ')}
                 style={styles.cell}>
                 <AppText variant="caption" weight="600" tone={isToday ? 'accent' : 'textSecondary'} maxFontSizeMultiplier={1.3}>
                   {formatWeekdayInitial(day)}
                 </AppText>
                 <View style={styles.slot}>
+                  {rings ? <DayRing progress={ring?.progress ?? 0} /> : null}
                   <DayCircle selected={isSelected} color={isToday ? theme.accent : theme.text} pulse={pulse} />
                   <AppText
                     numeric
@@ -102,13 +118,39 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, marks, puls
                     {String(Number(day.slice(8)))}
                   </AppText>
                 </View>
-                <View style={[styles.dot, { backgroundColor: mark?.color ?? 'transparent' }]} />
+                {symbols ? <View style={styles.symbol}>{symbol ? <Icon name={symbol.symbol} size={15} tone="textSecondary" /> : null}</View> : null}
               </Pressable>
             );
           })}
         </Animated.View>
       </View>
     </GestureDetector>
+  );
+}
+
+/** How far along the day is: a thin ring round it, full from the goal on, in one colour. */
+function DayRing({ progress }: { progress: number }) {
+  const theme = useTheme();
+  const center = SLOT / 2;
+  return (
+    <View pointerEvents="none" style={styles.ring}>
+      <Svg width={SLOT} height={SLOT}>
+        <Circle cx={center} cy={center} r={RING_RADIUS} stroke={theme.track} strokeWidth={RING_WIDTH} fill="none" />
+        {progress > 0 ? (
+          <Circle
+            cx={center}
+            cy={center}
+            r={RING_RADIUS}
+            stroke={theme.accent}
+            strokeWidth={RING_WIDTH}
+            strokeLinecap="round"
+            strokeDasharray={`${RING_LENGTH * Math.min(1, progress)} ${RING_LENGTH}`}
+            fill="none"
+            transform={`rotate(-90 ${center} ${center})`}
+          />
+        ) : null}
+      </Svg>
+    </View>
   );
 }
 
@@ -147,9 +189,10 @@ function DayCircle({ selected, color, pulse }: { selected: boolean; color: strin
 const styles = StyleSheet.create({
   clip: { overflow: 'hidden', marginBottom: Spacing.sm },
   row: { flexDirection: 'row' },
-  cell: { flex: 1, alignItems: 'center', gap: 6 },
-  slot: { width: CIRCLE, height: CIRCLE, alignItems: 'center', justifyContent: 'center' },
-  circle: { ...StyleSheet.absoluteFill, borderRadius: CIRCLE / 2 },
+  cell: { flex: 1, alignItems: 'center', gap: Spacing.xs },
+  slot: { width: SLOT, height: SLOT, alignItems: 'center', justifyContent: 'center' },
+  ring: { ...StyleSheet.absoluteFill },
+  circle: { position: 'absolute', width: CIRCLE, height: CIRCLE, borderRadius: CIRCLE / 2 },
   number: { fontSize: 16, lineHeight: 21, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  dot: { width: 5, height: 5, borderRadius: 2.5 },
+  symbol: { height: 16, alignItems: 'center', justifyContent: 'center' },
 });

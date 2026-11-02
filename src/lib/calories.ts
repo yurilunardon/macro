@@ -1,15 +1,3 @@
-/** How the day's calories compare with the goal. Within 10% either way counts as on target. */
-export type CalorieStatus = 'far' | 'closer' | 'onTarget' | 'over';
-
-export function calorieStatus(eaten: number, target: number): CalorieStatus {
-  if (target <= 0) return 'far';
-  const ratio = eaten / target;
-  if (ratio > 1.1) return 'over';
-  if (ratio >= 0.9) return 'onTarget';
-  if (ratio >= 0.5) return 'closer';
-  return 'far';
-}
-
 /**
  * Ring colour along the way to the goal, as stops on eaten / target: red while far from it,
  * orange closer, green on target, red again when well over. In between the colours blend.

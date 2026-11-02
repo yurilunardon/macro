@@ -9,7 +9,7 @@ import { DayPager, useDayPager } from '@/components/day-pager';
 import { Icon } from '@/components/icon';
 import { PinnedStrip } from '@/components/pinned-strip';
 import { ScreenScroll } from '@/components/screen';
-import { WeekStrip, type DayMark } from '@/components/week-strip';
+import { WeekStrip, type DayProgress } from '@/components/week-strip';
 import { Spacing } from '@/constants/theme';
 import { getDayPlans } from '@/db/days';
 import { getDailyTotals } from '@/db/entries';
@@ -18,7 +18,6 @@ import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { useScrollTop } from '@/hooks/use-scroll-top';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
-import { calorieStatus } from '@/lib/calories';
 import { addDays, isDateKey, weekOf, type DateKey } from '@/lib/dates';
 import { formatKcal } from '@/lib/format';
 import { mealForTime } from '@/lib/meals';
@@ -27,24 +26,20 @@ import { formatExpiry, type ExpiryStatus } from '@/lib/provisioning';
 /** UIBarButtonItem's width: passed through to the native button, though not in the props' type. */
 const WIDE: object = { width: 64 };
 
-const STATUS_TONE = { far: 'ringFar', closer: 'ringCloser', onTarget: 'ringOnTarget', over: 'ringFar' } as const;
-
-/** Under each day with food, a dot in the colour of its calorie ring. */
-function useCalorieMarks(date: DateKey): Map<DateKey, DayMark> {
-  const theme = useTheme();
+/** Round each day, how much of its calorie goal was eaten. */
+function useCalorieRings(date: DateKey): Map<DateKey, DayProgress> {
   const days = weekOf(date);
   const { data } = useLiveQuery(`week:${days[0]}`, async (database) => {
     const [totals, plans] = await Promise.all([getDailyTotals(database, days[0], days[6]), getDayPlans(database, days)]);
     return { kcal: new Map(totals.map((t) => [t.date, t.kcal])), plans };
   }, ['food', 'settings']);
-  const marks = new Map<DateKey, DayMark>();
+  const rings = new Map<DateKey, DayProgress>();
   for (const day of days) {
     const kcal = data?.kcal.get(day) ?? 0;
-    if (kcal <= 0) continue;
-    const tone = STATUS_TONE[calorieStatus(kcal, data?.plans.get(day)?.targets.kcal ?? 0)];
-    marks.set(day, { color: theme[tone], label: `${formatKcal(kcal)} kcal` });
+    const target = data?.plans.get(day)?.targets.kcal ?? 0;
+    if (kcal > 0) rings.set(day, { progress: target > 0 ? kcal / target : 0, label: `${formatKcal(kcal)} kcal` });
   }
-  return marks;
+  return rings;
 }
 
 export default function NutritionScreen() {
@@ -61,7 +56,7 @@ export default function NutritionScreen() {
   // The pages around the one on screen are kept ready; see DayPage for why they cost little.
   const pager = useDayPager(today, asked, scrollToTop);
   const { date } = pager;
-  const marks = useCalorieMarks(date);
+  const rings = useCalorieRings(date);
 
   // Opened on a day from the calendar: slide to it as if it were picked above, then forget it, so
   // the same day can be asked for again.
@@ -108,7 +103,7 @@ export default function NutritionScreen() {
         <WeekStrip
           selected={date}
           today={today}
-          marks={marks}
+          rings={rings}
           pulse={pager.pulse}
           onSelect={pager.goTo}
           onChangeWeek={(direction) => pager.goTo(addDays(date, direction * 7))}

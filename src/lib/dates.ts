@@ -7,6 +7,7 @@ const weekdayDayMonth = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day:
 const weekdayName = new Intl.DateTimeFormat('it-IT', { weekday: 'long' });
 const dayMonth = new Intl.DateTimeFormat('it-IT', { day: 'numeric', month: 'short' });
 const weekdayShort = new Intl.DateTimeFormat('it-IT', { weekday: 'narrow' });
+const weekdayAbbreviated = new Intl.DateTimeFormat('it-IT', { weekday: 'short' });
 
 function pad(n: number): string {
   return String(n).padStart(2, '0');
@@ -60,15 +61,6 @@ export function formatDayTitle(key: DateKey, today: DateKey = todayKey()): strin
   return capitalize(weekdayDayMonth.format(fromDateKey(key)));
 }
 
-/** "Oggi", "Domani", or the day of the week within the next six days ("Venerdì"); null further on. */
-export function formatSoon(key: DateKey, today: DateKey = todayKey()): string | null {
-  const diff = daysBetween(today, key);
-  if (diff === 0) return 'Oggi';
-  if (diff === 1) return 'Domani';
-  if (diff > 1 && diff < 7) return capitalize(weekdayName.format(fromDateKey(key)));
-  return null;
-}
-
 /** "Oggi", "Ieri", or the day of the week within the last six days ("Giovedì"); null further back. */
 export function formatRecent(key: DateKey, today: DateKey = todayKey()): string | null {
   const diff = daysBetween(key, today);
@@ -90,6 +82,12 @@ export function formatDaySubtitle(key: DateKey, today: DateKey = todayKey()): st
 
 export function formatShortDate(key: DateKey): string {
   return dayMonth.format(fromDateKey(key));
+}
+
+/** "Mer 4": the day of the week and of the month, for a row with little room. */
+export function formatWeekdayAndDay(key: DateKey): string {
+  const date = fromDateKey(key);
+  return `${capitalize(weekdayAbbreviated.format(date))} ${date.getDate()}`;
 }
 
 export function formatWeekdayInitial(key: DateKey): string {

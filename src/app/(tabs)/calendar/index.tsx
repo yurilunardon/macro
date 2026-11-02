@@ -1,12 +1,12 @@
 import { Stack, useRouter } from 'expo-router';
+import type { SFSymbol } from 'expo-symbols';
 
 import { CalendarDay } from '@/components/calendar-day';
 import { DayPager, useDayPager } from '@/components/day-pager';
 import { PinnedStrip } from '@/components/pinned-strip';
 import { activityName } from '@/components/plan-day';
 import { ScreenScroll } from '@/components/screen';
-import { WeekStrip, type DayMark } from '@/components/week-strip';
-import { useActivityColors } from '@/hooks/use-activity-colors';
+import { WeekStrip, type DaySymbol } from '@/components/week-strip';
 import { useAgenda } from '@/hooks/use-agenda';
 import { useScrollTop } from '@/hooks/use-scroll-top';
 import { useToday } from '@/hooks/use-today';
@@ -18,24 +18,23 @@ import { addDays, weekOf, type DateKey } from '@/lib/dates';
  */
 export default function CalendarScreen() {
   const router = useRouter();
-  const colors = useActivityColors();
   const today = useToday();
   const scroll = useScrollTop();
   const pager = useDayPager(today, null, scroll.scrollToTop);
   const { date } = pager;
 
-  // Each day's main activity under it in the week: its colour, and its name for VoiceOver.
+  // Each day's main activity under it in the week: its symbol, and its name for VoiceOver.
   const week = weekOf(date);
   const { data: calendar, agenda, types } = useAgenda(week[0], week[6], today);
   const gymTypeId = calendar?.gymTypeId ?? null;
   const dayNames = calendar?.dayNames ?? new Map<number, string>();
-  const marks = new Map<DateKey, DayMark>();
+  const symbols = new Map<DateKey, DaySymbol>();
   for (const day of week) {
     const first = (agenda.get(day) ?? []).find((i) => i.kind === 'workout' || i.status !== 'skipped');
     if (!first) continue;
     const typeId = first.kind === 'workout' ? gymTypeId : first.occurrence.typeId;
     const type = typeId === null ? undefined : types.get(typeId);
-    marks.set(day, { color: colors[type?.color ?? 'green'], label: activityName(first, types, gymTypeId, dayNames) });
+    symbols.set(day, { symbol: (type?.symbol ?? 'dumbbell.fill') as SFSymbol, label: activityName(first, types, gymTypeId, dayNames) });
   }
 
   return (
@@ -75,7 +74,7 @@ export default function CalendarScreen() {
         <WeekStrip
           selected={date}
           today={today}
-          marks={marks}
+          symbols={symbols}
           pulse={pager.pulse}
           onSelect={pager.goTo}
           onChangeWeek={(direction) => pager.goTo(addDays(date, direction * 7))}
