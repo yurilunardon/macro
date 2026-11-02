@@ -12,7 +12,7 @@ import { ScreenScroll } from '@/components/screen';
 import { WeekStrip, type DayProgress } from '@/components/week-strip';
 import { Spacing } from '@/constants/theme';
 import { getDayPlans } from '@/db/days';
-import { getDailyTotals } from '@/db/entries';
+import { getEntriesForDate } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { useScrollTop } from '@/hooks/use-scroll-top';
@@ -22,23 +22,32 @@ import { addDays, isDateKey, weekOf, type DateKey } from '@/lib/dates';
 import { formatKcal } from '@/lib/format';
 import { mealForTime } from '@/lib/meals';
 import { formatExpiry, type ExpiryStatus } from '@/lib/provisioning';
+import { CLEAR_MS, useDrainingDay } from '@/services/draining-day';
+import { usePendingDeletes } from '@/services/undo';
 
 /** UIBarButtonItem's width: passed through to the native button, though not in the props' type. */
 const WIDE: object = { width: 64 };
 
-/** Round each day, how much of its calorie goal was eaten. */
+/**
+ * Round each day, how much of its calorie goal was eaten. It counts what the day's page counts, so
+ * the two go down together when a food is deleted and back up together on "Annulla".
+ */
 function useCalorieRings(date: DateKey): Map<DateKey, DayProgress> {
   const days = weekOf(date);
+  const hidden = usePendingDeletes();
+  const draining = useDrainingDay();
   const { data } = useLiveQuery(`week:${days[0]}`, async (database) => {
-    const [totals, plans] = await Promise.all([getDailyTotals(database, days[0], days[6]), getDayPlans(database, days)]);
-    return { kcal: new Map(totals.map((t) => [t.date, t.kcal])), plans };
+    const [entries, plans] = await Promise.all([Promise.all(days.map((day) => getEntriesForDate(database, day))), getDayPlans(database, days)]);
+    return { entries, plans };
   }, ['food', 'settings']);
   const rings = new Map<DateKey, DayProgress>();
-  for (const day of days) {
-    const kcal = data?.kcal.get(day) ?? 0;
+  days.forEach((day, index) => {
+    const kcal = (data?.entries[index] ?? []).reduce((sum, e) => (hidden.has(`entry:${e.id}`) ? sum : sum + e.totals.kcal), 0);
     const target = data?.plans.get(day)?.targets.kcal ?? 0;
-    if (kcal > 0) rings.set(day, { progress: target > 0 ? kcal / target : 0, label: `${formatKcal(kcal)} kcal` });
-  }
+    const label = `${formatKcal(kcal)} kcal`;
+    if (day === draining) rings.set(day, { progress: 0, label, slowMs: CLEAR_MS });
+    else if (kcal > 0) rings.set(day, { progress: target > 0 ? kcal / target : 0, label });
+  });
   return rings;
 }
 

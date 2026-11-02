@@ -25,15 +25,17 @@ import { PressableScale } from '@/components/pressable-scale';
 import { ScreenScroll } from '@/components/screen';
 import { Segmented } from '@/components/segmented';
 import { Radius, Spacing } from '@/constants/theme';
+import { FoldChevron } from '@/components/fold-chevron';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
 import { restFor } from '@/db/exercises';
 import { prefetch, prefetchLiveQuery, useLiveQuery } from '@/db/live';
 import { getDay, getNextDay, getPrograms, setActiveProgram, type DaySummary, type ProgramDay } from '@/db/programs';
 import { dayScreen } from '@/db/screens';
-import { getActiveWorkout, getWorkoutHistory, startWorkout, type WorkoutSummary } from '@/db/workouts';
+import { getActiveWorkout, getWorkoutHistory, type WorkoutSummary } from '@/db/workouts';
 import { useAgenda } from '@/hooks/use-agenda';
 import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
+import { useFrozen } from '@/hooks/use-frozen';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { addDays, daysBetween, daysFrom, formatRecent, formatShortDate, formatWeekdayAndDay, weekOf, type DateKey } from '@/lib/dates';
@@ -43,6 +45,7 @@ import { formatDuration, formatWorkoutLength } from '@/lib/training';
 import { buildTrainingLine, type LineRow } from '@/lib/training-line';
 import { endWorkout } from '@/services/end-workout';
 import { haptics } from '@/services/haptics';
+import { startAndOpenWorkout, useWorkoutStarting } from '@/services/start-workout';
 
 type Period = 'week' | 'month' | 'year';
 const PERIODS = [
@@ -50,9 +53,6 @@ const PERIODS = [
   { key: 'month', label: 'Mese' },
   { key: 'year', label: 'Anno' },
 ] as const;
-
-/** Exercises listed in the open day; the rest are counted. */
-const SHOWN_EXERCISES = 5;
 
 /**
  * The gym, in three parts that look different from each other: the program on top, as a line that
@@ -65,7 +65,9 @@ export default function TrainingScreen() {
   const theme = useTheme();
   const today = useToday();
   const { names } = useExerciseNames();
-  const { data } = useLiveQuery(
+  // While the workout's sheet rises, this page stays as it was; it changes once covered.
+  const starting = useWorkoutStarting();
+  const { data: live } = useLiveQuery(
     'training-home',
     async (database) => {
       const [active, next, programs, history] = await Promise.all([
@@ -80,6 +82,7 @@ export default function TrainingScreen() {
     },
     ['training', 'settings'],
   );
+  const data = useFrozen(live, starting);
   // The gym days to come in the calendar, so this page says the same: which day, and when.
   const soon = useAgenda(today, addDays(today, 13), today);
   const gymTypeId = soon.data?.gymTypeId ?? null;
@@ -92,19 +95,9 @@ export default function TrainingScreen() {
     );
   const hasGymDays = (soon.data?.plans ?? []).some((p) => p.typeId === gymTypeId);
   const breath = useBreath(Boolean(data?.active));
-  // While the workout sheet rises, this page stays as it was; the card changes once covered.
-  const [starting, setStarting] = useState(false);
   const [period, setPeriod] = useState<Period>('week');
 
-  const start = async (dayId: number | null) => {
-    setStarting(true);
-    await startWorkout(db, { dayId });
-    // The sheet rises with the exercises already in it.
-    await prefetchLiveQuery(db, ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS);
-    haptics.success();
-    router.push('/workout');
-    setTimeout(() => setStarting(false), 700);
-  };
+  const start = (dayId: number | null) => startAndOpenWorkout(db, router, dayId);
 
   const endActive = async () => {
     if (!data?.active) return;
@@ -117,6 +110,7 @@ export default function TrainingScreen() {
   const programs = data?.programs ?? [];
   const history = data?.history ?? [];
   const next = data?.next ?? null;
+  const rows = useFrozen(next ? buildTrainingLine({ history, dayIds: next.program.days.map((d) => d.id), nextId: next.day.id, upcoming }) : [], starting);
   const openDay = (dayId: number) => {
     void prefetch(db, dayScreen(dayId));
     router.push({ pathname: '/training/day', params: { id: dayId } });
@@ -136,7 +130,7 @@ export default function TrainingScreen() {
       </Stack.Toolbar>
 
       {/* The workout in progress comes before everything: the whole card opens it. */}
-      {data?.active && !starting ? (
+      {data?.active ? (
         <Animated.View key="active" entering={HERO_IN} exiting={HERO_OUT} style={styles.activeSlot}>
           <PressableScale
             onPressIn={() => void prefetchLiveQuery(db, ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS)}
@@ -216,7 +210,7 @@ export default function TrainingScreen() {
             </View>
           </MenuButton>
           <TrainingLine
-            rows={buildTrainingLine({ history, dayIds: next.program.days.map((d) => d.id), nextId: next.day.id, upcoming })}
+            rows={rows}
             days={next.program.days}
             details={data?.days ?? []}
             today={today}
@@ -298,18 +292,18 @@ type TrainingLineProps = {
 
 /**
  * The program on a line that follows time: what was done above, the next workout, what comes after
- * below, so a day done never shows among those to come. Tapping a row only opens it: a day done
- * shows how it went, a day to come its exercises and "Inizia", on any day, whatever the plan says.
+ * below, so a day done never shows among those to come. Tapping a row only opens or folds it,
+ * leaving the others as they are: a day done shows how it went, a day to come its exercises and
+ * "Inizia", on any day, whatever the plan says.
  */
 function TrainingLine({ rows, days, details, today, canStart, names, onOpenDay, onStart, onOpenWorkout }: TrainingLineProps) {
   const theme = useTheme();
-  // One row open at a time: the next workout, until another is picked.
-  const nextKey = rows.find((r) => r.kind === 'next')?.key ?? null;
-  const [picked, setPicked] = useState<string | null | undefined>(undefined);
-  const openKey = picked === undefined || (picked !== null && !rows.some((r) => r.key === picked)) ? nextKey : picked;
-  const toggle = (key: string) => {
+  // The next workout starts open and the others folded; each then stays as it was left.
+  const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
+  const isOpen = (row: LineRow<WorkoutSummary>) => toggled.get(row.key) ?? row.kind === 'next';
+  const toggle = (row: LineRow<WorkoutSummary>) => {
     haptics.selection();
-    setPicked(openKey === key ? null : key);
+    setToggled(new Map(toggled).set(row.key, !isOpen(row)));
   };
 
   return (
@@ -318,7 +312,7 @@ function TrainingLine({ rows, days, details, today, canStart, names, onOpenDay, 
         const dotY = row.kind === 'next' ? NEXT_DOT_Y : DOT_Y;
         const first = index === 0;
         const last = index === rows.length - 1;
-        const open = row.key === openKey;
+        const open = isOpen(row);
         const day = row.kind === 'past' ? null : days.find((d) => d.id === row.dayId);
         return (
           <Animated.View key={row.key} layout={LAYOUT} style={styles.step}>
@@ -337,7 +331,7 @@ function TrainingLine({ rows, days, details, today, canStart, names, onOpenDay, 
             <View style={styles.stepBody}>
               <View style={[styles.dayCard, { backgroundColor: theme.card }]}>
                 {row.kind === 'past' ? (
-                  <PastDay workout={row.workout} today={today} open={open} onToggle={() => toggle(row.key)} onOpen={() => onOpenWorkout(row.workout.id)} />
+                  <PastDay workout={row.workout} today={today} open={open} onToggle={() => toggle(row)} onOpen={() => onOpenWorkout(row.workout.id)} />
                 ) : day ? (
                   <ComingDay
                     day={day}
@@ -347,7 +341,7 @@ function TrainingLine({ rows, days, details, today, canStart, names, onOpenDay, 
                     open={open}
                     canStart={canStart}
                     names={names}
-                    onToggle={() => toggle(row.key)}
+                    onToggle={() => toggle(row)}
                     onEdit={() => onOpenDay(day.id)}
                     onStart={() => onStart(day.id)}
                   />
@@ -389,6 +383,7 @@ function PastDay({ workout, today, open, onToggle, onOpen }: { workout: WorkoutS
         <AppText variant="footnote" tone="accent" numberOfLines={1}>
           {`✓ ${when}`}
         </AppText>
+        <FoldChevron open={open} />
       </Pressable>
       {open ? (
         <Animated.View entering={DAY_IN} style={styles.dayOpen}>
@@ -432,9 +427,7 @@ function ComingDay({
 }) {
   const theme = useTheme();
   const exercises = detail?.exercises ?? [];
-  const rest = exercises.length - SHOWN_EXERCISES;
   const meta = [
-    rest > 0 ? `+ ${countLabel(rest, 'altro esercizio', 'altri esercizi')}` : null,
     exercises.length > 0 ? `circa ${formatWorkoutLength(estimateSeconds(detail))}` : 'Nessun esercizio',
     day.muscles.slice(0, 2).map(muscleLabel).join(', ') || null,
   ]
@@ -464,12 +457,13 @@ function ComingDay({
         <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
           {when}
         </AppText>
+        <FoldChevron open={open} />
       </Pressable>
       {open ? (
         <Animated.View entering={DAY_IN} style={styles.dayOpen}>
           {exercises.length > 0 ? (
             <View style={styles.exercises}>
-              {exercises.slice(0, SHOWN_EXERCISES).map((planned) => (
+              {exercises.map((planned) => (
                 <View key={planned.id} style={styles.exercise}>
                   <AppText variant="subhead" numberOfLines={1} style={styles.flex}>
                     {names(planned.exercise).title}

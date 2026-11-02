@@ -16,6 +16,7 @@ import { dayTypeFor, type DayType } from '@/lib/goals';
 import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
 import { sumNutrients } from '@/lib/nutrition';
 import { QUICK_ADD_NAME } from '@/lib/quick-add';
+import { CLEAR_MS, setDrainingDay } from '@/services/draining-day';
 import { haptics } from '@/services/haptics';
 import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
@@ -38,11 +39,6 @@ const ENTRY_OUT = FadeOut.duration(150);
 // together they would slide over it as it fades.
 const DRAIN_LAYOUT = LinearTransition.duration(240).delay(120).easing(Easing.inOut(Easing.cubic));
 
-/**
- * Emptying the day: the ring drains in one slow, even movement over this long, while the foods
- * leave one after the other in the same time.
- */
-const CLEAR_MS = 1600;
 const wait = (ms: number) => new Promise((resolve) => setTimeout(resolve, ms));
 
 /** "120 g · Barilla", or for a quick entry just that it was typed by hand. */
@@ -172,6 +168,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
     const order = MEALS.flatMap((m) => entries.filter((e) => e.meal === m.key));
     const step = CLEAR_MS / order.length;
     const ids = new Set<number>();
+    setDrainingDay(date);
     for (const [index, entry] of order.entries()) {
       ids.add(entry.id);
       setCleared({ from: data, ids: new Set(ids) });
@@ -180,6 +177,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
       await wait(step);
     }
     await Promise.all(MEALS.map((m) => deleteMealEntries(db, date, m.key)));
+    setDrainingDay(null);
     haptics.success();
   };
 

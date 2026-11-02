@@ -9,6 +9,7 @@ import { setActivityStatus, setPlanDay } from '@/db/calendar';
 import { setDoseTaken } from '@/db/supplements';
 import { useClock } from '@/hooks/use-clock';
 import { useDayPlan } from '@/hooks/use-day-plan';
+import { useFrozen } from '@/hooks/use-frozen';
 import { useTheme } from '@/hooks/use-theme';
 import type { AgendaItem, StoredStatus } from '@/lib/calendar';
 import { formatDaySubtitle, formatDayTitle, type DateKey } from '@/lib/dates';
@@ -16,7 +17,7 @@ import { addMinutes, clockOf, type DayEntry } from '@/lib/plan';
 import { haptics } from '@/services/haptics';
 import { logWeight } from '@/services/log-weight';
 import { openAgendaItem } from '@/services/open-agenda-item';
-import { startAndOpenWorkout } from '@/services/start-workout';
+import { startAndOpenWorkout, useWorkoutStarting } from '@/services/start-workout';
 
 import { AppText } from './app-text';
 import { Button } from './button';
@@ -34,7 +35,8 @@ export const CalendarDay = memo(function CalendarDay({ date, today, interactive,
   const router = useRouter();
   const theme = useTheme();
   const now = clockOf(new Date(useClock(60_000)).toISOString());
-  const plan = useDayPlan(date, today);
+  // Under the workout's rising sheet the page stays as it was; it changes once covered.
+  const plan = useFrozen(useDayPlan(date, today), useWorkoutStarting());
   const gymTypeId = plan.calendar?.gymTypeId ?? null;
   const dayNames = plan.calendar?.dayNames ?? new Map<number, string>();
 

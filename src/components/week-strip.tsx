@@ -2,12 +2,13 @@ import type { SFSymbol } from 'expo-symbols';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { useEffect, useRef } from 'react';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { Easing, interpolateColor, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
+import { RING_STOPS, RING_TONES } from '@/lib/calories';
 import { formatLongDate, formatWeekdayInitial, weekOf, type DateKey } from '@/lib/dates';
 
 import { AppText } from './app-text';
@@ -20,11 +21,17 @@ const CIRCLE = 32;
 const RING_WIDTH = 3;
 const RING_RADIUS = (SLOT - RING_WIDTH) / 2;
 const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
+const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 // Grows from a little over half its size with a slight overshoot, so the new day is plain to see.
 const CIRCLE_SPRING = { duration: 460, dampingRatio: 0.7 };
 
 /** How far along a day is, from 0 to 1, and for VoiceOver what that stands for. */
-export type DayProgress = { progress: number; label: string };
+export type DayProgress = {
+  progress: number;
+  label: string;
+  /** A slow, even change instead of the quick one, e.g. while the day is emptied. */
+  slowMs?: number;
+};
 /** What a day holds, and for VoiceOver its name. */
 export type DaySymbol = { symbol: SFSymbol; label: string };
 
@@ -105,7 +112,7 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, rings, symb
                   {formatWeekdayInitial(day)}
                 </AppText>
                 <View style={styles.slot}>
-                  {rings ? <DayRing progress={ring?.progress ?? 0} /> : null}
+                  {rings ? <DayRing progress={ring?.progress ?? 0} slowMs={ring?.slowMs} /> : null}
                   <DayCircle selected={isSelected} color={isToday ? theme.accent : theme.text} pulse={pulse} />
                   <AppText
                     numeric
@@ -128,27 +135,42 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, rings, symb
   );
 }
 
-/** How far along the day is: a thin ring round it, full from the goal on, in one colour. */
-function DayRing({ progress }: { progress: number }) {
+/**
+ * How far along the day is: a thin ring round it, in the colours of the day's big ring, red far
+ * from the goal and green on it, and moving as that one does when food is added or taken away.
+ */
+function DayRing({ progress, slowMs }: { progress: number; slowMs?: number }) {
   const theme = useTheme();
   const center = SLOT / 2;
+  const tones = RING_TONES.map((tone) => theme[tone]);
+  const shown = useSharedValue(progress);
+  useEffect(() => {
+    shown.set(withTiming(progress, slowMs ? { duration: slowMs, easing: Easing.inOut(Easing.cubic) } : { duration: 700, easing: Easing.bezier(0.23, 1, 0.32, 1) }));
+  }, [shown, progress, slowMs]);
+  const ringProps = useAnimatedProps(() => {
+    const p = shown.get();
+    return {
+      strokeDashoffset: RING_LENGTH * (1 - Math.min(1, p)),
+      stroke: interpolateColor(p, RING_STOPS, tones, 'HSV'),
+      // A ring with nothing in it would still draw the round cap as a dot.
+      strokeOpacity: p > 0.002 ? 1 : 0,
+    };
+  });
   return (
     <View pointerEvents="none" style={styles.ring}>
       <Svg width={SLOT} height={SLOT}>
         <Circle cx={center} cy={center} r={RING_RADIUS} stroke={theme.track} strokeWidth={RING_WIDTH} fill="none" />
-        {progress > 0 ? (
-          <Circle
-            cx={center}
-            cy={center}
-            r={RING_RADIUS}
-            stroke={theme.accent}
-            strokeWidth={RING_WIDTH}
-            strokeLinecap="round"
-            strokeDasharray={`${RING_LENGTH * Math.min(1, progress)} ${RING_LENGTH}`}
-            fill="none"
-            transform={`rotate(-90 ${center} ${center})`}
-          />
-        ) : null}
+        <AnimatedCircle
+          cx={center}
+          cy={center}
+          r={RING_RADIUS}
+          strokeWidth={RING_WIDTH}
+          strokeLinecap="round"
+          strokeDasharray={`${RING_LENGTH} ${RING_LENGTH}`}
+          fill="none"
+          transform={`rotate(-90 ${center} ${center})`}
+          animatedProps={ringProps}
+        />
       </Svg>
     </View>
   );
