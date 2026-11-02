@@ -18,6 +18,7 @@ export default function TrainingLayout() {
       <Stack.Screen name="history" options={{ title: 'Storico' }} />
       <Stack.Screen name="muscle" options={{ title: 'Muscolo' }} />
       <Stack.Screen name="session" options={{ title: 'Allenamento' }} />
+      <Stack.Screen name="progress" options={{ title: 'Progressi' }} />
     </Stack>
   );
 }

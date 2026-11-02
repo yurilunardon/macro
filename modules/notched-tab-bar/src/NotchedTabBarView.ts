@@ -22,6 +22,11 @@ export type NotchedTabBarProps = ViewProps & {
    * button laid over the drawn one, so the calendar can grow out of it.
    */
   calendarPressed: boolean;
+  /** While a workout runs, the right tab shows this time and a ring in place of its icon and name. */
+  rightTime?: string;
+  /** How full that ring is, from 0 to 1, and its colour. */
+  rightProgress?: number;
+  rightTint?: ColorValue;
   onSelect: (event: NativeSyntheticEvent<{ tab: NotchedTabBarTab }>) => void;
 };
 
@@ -31,20 +36,7 @@ export const NOTCHED_TAB_BAR_BUTTON = 60;
 /** How tall the view is: the button rises above the 62pt capsule by half its size less 4pt. */
 export const NOTCHED_TAB_BAR_HEIGHT = 62 + NOTCHED_TAB_BAR_BUTTON / 2 - 4;
 
-const nativeModule = requireOptionalNativeModule<{ hasAccessory?: boolean }>('NotchedTabBar');
-
 /** Null where the native code is not included: on the web, or in an app built before it. */
-export const NotchedTabBarView: ComponentType<NotchedTabBarProps> | null = nativeModule
+export const NotchedTabBarView: ComponentType<NotchedTabBarProps> | null = requireOptionalNativeModule('NotchedTabBar')
   ? requireNativeView<NotchedTabBarProps>('NotchedTabBar', 'NotchedTabBarView')
-  : null;
-
-/** How far the workout's capsule comes down over the top of the calendar's button. */
-export const NOTCHED_ACCESSORY_OVERLAP = 14;
-
-/**
- * The glass of the workout's capsule, with the bar's cradle cut into its bottom edge; drawn only.
- * Null without the native code, and in builds from before it (up to 1.8.6).
- */
-export const NotchedAccessoryView: ComponentType<ViewProps> | null = nativeModule?.hasAccessory
-  ? requireNativeView<ViewProps>('NotchedTabBar', 'NotchedAccessoryView')
   : null;

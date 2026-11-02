@@ -1,26 +1,25 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
+import { useRouter } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
+import { useSQLiteContext } from 'expo-sqlite';
 import type { SFSymbol } from 'expo-symbols';
 import { createContext, use, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
+import Svg, { Circle } from 'react-native-svg';
 
 import { Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
+import { useWorkoutStatus, type WorkoutStatus } from '@/hooks/use-workout-status';
 import { weekdayShort } from '@/lib/calendar';
 import { weekdayOf } from '@/lib/dates';
 import { haptics } from '@/services/haptics';
+import { openActiveWorkout } from '@/services/start-workout';
 
-import {
-  NOTCHED_ACCESSORY_OVERLAP,
-  NOTCHED_TAB_BAR_BUTTON,
-  NOTCHED_TAB_BAR_HEIGHT,
-  NotchedAccessoryView,
-  NotchedTabBarView,
-} from '../../modules/notched-tab-bar';
+import { NOTCHED_TAB_BAR_BUTTON, NOTCHED_TAB_BAR_HEIGHT, NotchedTabBarView } from '../../modules/notched-tab-bar';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
@@ -37,18 +36,6 @@ const HEIGHT = NOTCHED_TAB_BAR_HEIGHT;
 const LENS_INSET = 4;
 const LENS_SPRING = { duration: 380, dampingRatio: 0.78 };
 const FOLLOW_SPRING = { duration: 160, dampingRatio: 1 };
-/** The workout in progress, in a capsule of its own above. */
-const ACCESSORY = 56;
-const ACCESSORY_WIDTH = 330;
-/**
- * Where the native code draws it, the capsule comes down round the top of the calendar's button,
- * with the bar's cradle cut into its bottom edge: taller, and its row only in the part above the
- * cradle, which reaches this far up into it.
- */
-const HUG = NotchedAccessoryView !== null;
-const HUG_HEIGHT = 64;
-const HUG_CRADLE = NOTCHED_TAB_BAR_BUTTON / 2 + 6 - (NOTCHED_TAB_BAR_BUTTON / 2 - NOTCHED_ACCESSORY_OVERLAP);
-
 type Side = 'left' | 'right';
 /** What is on screen: one of the two tabs, or the calendar behind the round button. */
 type Focus = Side | 'center';
@@ -72,9 +59,8 @@ function barBottom(safeBottom: number): number {
  * How much of the page the bar covers above the safe area, which iOS already keeps clear: the
  * scroll views inside the tabs add it at the bottom so their end can scroll out from under it.
  */
-export function tabBarInset(safeBottom: number, accessory: boolean): number {
-  const above = HUG ? HUG_HEIGHT - NOTCHED_ACCESSORY_OVERLAP : ACCESSORY + Spacing.md;
-  const top = barBottom(safeBottom) + HEIGHT + Spacing.sm + (accessory ? above : 0);
+export function tabBarInset(safeBottom: number): number {
+  const top = barBottom(safeBottom) + HEIGHT + Spacing.sm;
   return Platform.OS === 'web' ? top : top - safeBottom;
 }
 
@@ -99,18 +85,19 @@ type TabBarProps = BottomTabBarProps & {
   right: string;
   center: string;
   tabs: Record<string, Tab>;
-  /** Shown in a capsule of its own above, as the mini player in Music. */
-  accessory?: ReactNode;
 };
 
 /**
  * A tab bar in Liquid Glass with a round button floating over its middle. The capsule holds two
  * tabs and runs on under the button, which sits on its own in a cradle cut into the capsule and
  * is the third tab, the calendar's. Holding and sliding along the capsule moves its lens from one
- * tab to the other, under the button, and picks the tab on release.
+ * tab to the other, under the button, and picks the tab on release. While a workout runs, the right
+ * tab shows its time and a ring, and brings it back when tapped.
  */
-export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left, right, center, tabs, accessory }: TabBarProps) {
-  const theme = useTheme();
+export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left, right, center, tabs }: TabBarProps) {
+  const db = useSQLiteContext();
+  const router = useRouter();
+  const workout = useWorkoutStatus();
   const width = Math.min(screen - 2 * Spacing.xl, BAR_WIDTH);
 
   const focusedName = state.routes[state.index]?.name;
@@ -120,33 +107,23 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
     const route = state.routes.find((r) => r.name === name);
     if (!route) return;
     const on = state.routes[state.index]?.key === route.key;
+    // Back to the workout, over its tab's page: closing it leaves that page on screen.
+    if (name === right && workout) {
+      haptics.selection();
+      if (!on) navigateToTab(route.key);
+      void openActiveWorkout(db, router);
+      return;
+    }
     // A tap on the tab on screen goes back to its first page, as in iOS.
     const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
     if (on || event.defaultPrevented) return;
     haptics.selection();
     navigateToTab(route.key);
   };
-  const bar: BarProps = { width, focused, tabs, left, right, press, openCalendar: () => press(center) };
+  const bar: BarProps = { width, focused, tabs, left, right, workout, press, openCalendar: () => press(center) };
 
   return (
     <View pointerEvents="box-none" style={[styles.root, { bottom: barBottom(safeBottom) }]}>
-      {accessory && NotchedAccessoryView ? (
-        // Under the bar, which is drawn after it: the button sits in its cradle.
-        <View style={[styles.hugSlot, { width: Math.min(screen - 2 * Spacing.xl, ACCESSORY_WIDTH) }]}>
-          <NotchedAccessoryView pointerEvents="none" style={StyleSheet.absoluteFill} />
-          <View style={styles.hugRow}>{accessory}</View>
-        </View>
-      ) : accessory ? (
-        <View style={[styles.accessorySlot, { width: Math.min(screen - 2 * Spacing.xl, ACCESSORY_WIDTH) }]}>
-          {glass ? (
-            <GlassView style={styles.accessory} glassEffectStyle="regular" isInteractive>
-              {accessory}
-            </GlassView>
-          ) : (
-            <View style={[styles.accessory, styles.solid, { backgroundColor: theme.card, borderColor: theme.separator }]}>{accessory}</View>
-          )}
-        </View>
-      ) : null}
       {NotchedTabBarView ? <SwiftUIBar {...bar} /> : <ReactBar {...bar} />}
     </View>
   );
@@ -158,6 +135,7 @@ type BarProps = {
   tabs: Record<string, Tab>;
   left: string;
   right: string;
+  workout: WorkoutStatus | null;
   press: (name: string) => void;
   openCalendar: () => void;
 };
@@ -195,7 +173,7 @@ function CalendarButton({
  * shape. The calendar's button is drawn there too, under a transparent React Native one that
  * takes its touches.
  */
-function SwiftUIBar({ width, focused, tabs, left, right, press, openCalendar }: BarProps) {
+function SwiftUIBar({ width, focused, tabs, left, right, workout, press, openCalendar }: BarProps) {
   const theme = useTheme();
   const today = useToday();
   const last = useRef({ tab: '', at: 0 });
@@ -219,6 +197,9 @@ function SwiftUIBar({ width, focused, tabs, left, right, press, openCalendar }: 
         day={String(Number(today.slice(8)))}
         accent={theme.accent}
         calendarPressed={pressed}
+        rightTime={workout?.time}
+        rightProgress={workout?.progress ?? 0}
+        rightTint={workout?.resting ? theme.warning : theme.accent}
         onSelect={({ nativeEvent: { tab } }) => {
           // A tap that is also a short slide can report the same pick twice.
           const now = Date.now();
@@ -240,7 +221,7 @@ function SwiftUIBar({ width, focused, tabs, left, right, press, openCalendar }: 
 }
 
 /** The same bar in React Native, where the native one is missing (the web): without the cradle. */
-function ReactBar({ width, focused, tabs, left, right, press, openCalendar }: BarProps) {
+function ReactBar({ width, focused, tabs, left, right, workout, press, openCalendar }: BarProps) {
   const theme = useTheme();
   const scheme = useColorScheme();
   const slot = slotWidth(width);
@@ -315,6 +296,8 @@ function ReactBar({ width, focused, tabs, left, right, press, openCalendar }: Ba
     if (!item) return null;
     const on = focused === side;
     const tint = on ? theme.accent : theme.text;
+    const running = side === 'right' ? workout : null;
+    const runningTint = running?.resting ? theme.warning : theme.accent;
     return (
       <Pressable
         key={side}
@@ -325,10 +308,21 @@ function ReactBar({ width, focused, tabs, left, right, press, openCalendar }: Ba
         accessibilityState={{ selected: on }}
         accessibilityLabel={item.label}
         style={[styles.tab, { left: rest[side], width: slot }]}>
-        <Icon name={on ? (item.selectedIcon ?? item.icon) : item.icon} size={22} color={tint} weight="semibold" />
-        <AppText variant="caption" weight="600" numberOfLines={1} style={[styles.label, { color: tint }]}>
-          {item.label}
-        </AppText>
+        {running ? (
+          <>
+            <WorkoutRing progress={running.progress} color={runningTint} track={theme.track} />
+            <AppText variant="caption" weight="600" numeric numberOfLines={1} style={[styles.label, { color: runningTint }]}>
+              {running.time}
+            </AppText>
+          </>
+        ) : (
+          <>
+            <Icon name={on ? (item.selectedIcon ?? item.icon) : item.icon} size={22} color={tint} weight="semibold" />
+            <AppText variant="caption" weight="600" numberOfLines={1} style={[styles.label, { color: tint }]}>
+              {item.label}
+            </AppText>
+          </>
+        )}
       </Pressable>
     );
   };
@@ -380,6 +374,35 @@ function ReactBar({ width, focused, tabs, left, right, press, openCalendar }: Ba
   );
 }
 
+const WORKOUT_RING = 20;
+
+/** The workout's progress, in the tab, filled clockwise from the top. */
+function WorkoutRing({ progress, color, track }: { progress: number; color: string; track: string }) {
+  const stroke = 2.5;
+  const center = WORKOUT_RING / 2;
+  const radius = (WORKOUT_RING - stroke) / 2;
+  const length = 2 * Math.PI * radius;
+  const filled = Math.max(0, Math.min(1, progress));
+  return (
+    <Svg width={WORKOUT_RING} height={WORKOUT_RING}>
+      <Circle cx={center} cy={center} r={radius} stroke={track} strokeWidth={stroke} fill="none" />
+      {filled > 0 ? (
+        <Circle
+          cx={center}
+          cy={center}
+          r={radius}
+          stroke={color}
+          strokeWidth={stroke}
+          fill="none"
+          strokeLinecap="round"
+          strokeDasharray={`${length * filled} ${length}`}
+          transform={`rotate(-90 ${center} ${center})`}
+        />
+      ) : null}
+    </Svg>
+  );
+}
+
 /** Today's weekday and date, as on the Calendar app's icon. */
 function CalendarDate({ weekdayColor, dayColor }: { weekdayColor: string; dayColor: string }) {
   const today = useToday();
@@ -409,8 +432,4 @@ const styles = StyleSheet.create({
   fabTouch: { width: FAB, height: FAB, borderRadius: FAB / 2, alignItems: 'center', justifyContent: 'center' },
   weekday: { fontSize: 10, lineHeight: 12, letterSpacing: 0.8 },
   date: { fontSize: 24, lineHeight: 26 },
-  accessorySlot: { marginBottom: Spacing.md },
-  hugSlot: { height: HUG_HEIGHT, marginBottom: -NOTCHED_ACCESSORY_OVERLAP },
-  hugRow: { height: HUG_HEIGHT - HUG_CRADLE, justifyContent: 'center' },
-  accessory: { height: ACCESSORY, borderRadius: ACCESSORY / 2, borderCurve: 'continuous', justifyContent: 'center' },
 });

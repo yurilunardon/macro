@@ -23,7 +23,6 @@ import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { PressableScale } from '@/components/pressable-scale';
 import { ScreenScroll } from '@/components/screen';
-import { Segmented } from '@/components/segmented';
 import { Radius, Spacing } from '@/constants/theme';
 import { FoldChevron } from '@/components/fold-chevron';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
@@ -31,33 +30,27 @@ import { restFor } from '@/db/exercises';
 import { prefetch, prefetchLiveQuery, useLiveQuery } from '@/db/live';
 import { getDay, getNextDay, getPrograms, setActiveProgram, type DaySummary, type ProgramDay } from '@/db/programs';
 import { dayScreen } from '@/db/screens';
-import { getActiveWorkout, getWorkoutHistory, type WorkoutSummary } from '@/db/workouts';
+import { getActiveWorkout, getWorkout, getWorkoutHistory, type Workout, type WorkoutSummary } from '@/db/workouts';
 import { useAgenda } from '@/hooks/use-agenda';
 import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useFrozen } from '@/hooks/use-frozen';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
-import { addDays, daysBetween, daysFrom, formatRecent, formatShortDate, formatWeekdayAndDay, weekOf, type DateKey } from '@/lib/dates';
+import { addDays, daysBetween, daysFrom, formatMonthName, formatRecent, formatShortDate, formatWeekdayAndDay, monthOf, type DateKey } from '@/lib/dates';
 import { muscleLabel } from '@/lib/exercises';
-import { countLabel, formatNumber } from '@/lib/format';
-import { formatDuration, formatWorkoutLength } from '@/lib/training';
-import { buildTrainingLine, type LineRow } from '@/lib/training-line';
+import { countLabel } from '@/lib/format';
+import { periodRange, totalsOf, volumeBuckets, workoutsBetween } from '@/lib/progress';
+import { formatDuration, formatLifted, formatSetShort, formatWorkoutLength, formatWorkoutLengthShort, isWorkSet } from '@/lib/training';
+import { buildTrainingLine, PAST_SHOWN, type LineRow } from '@/lib/training-line';
 import { endWorkout } from '@/services/end-workout';
 import { haptics } from '@/services/haptics';
 import { startAndOpenWorkout, useWorkoutStarting } from '@/services/start-workout';
 
-type Period = 'week' | 'month' | 'year';
-const PERIODS = [
-  { key: 'week', label: 'Settimana' },
-  { key: 'month', label: 'Mese' },
-  { key: 'year', label: 'Anno' },
-] as const;
-
 /**
  * The gym, in three parts that look different from each other: the program on top, as a line that
- * follows time, with the next workout open; how the week, month or year went, in numbers; and the
- * archive (the past workouts and the exercise library) as two tiles.
+ * follows time, with the next workout open; a card that opens the progress page; and the archive
+ * (the past workouts and the exercise library) as two tiles.
  */
 export default function TrainingScreen() {
   const db = useSQLiteContext();
@@ -78,7 +71,9 @@ export default function TrainingScreen() {
       ]);
       // Every day of the program in use, with its exercises, so whichever is picked opens at once.
       const days = next ? await Promise.all(next.program.days.map((d) => getDay(database, d.id))) : [];
-      return { active, next, programs, history, days: days.filter((d): d is ProgramDay => d !== null) };
+      // The sets of the workouts on the line, so they open at once.
+      const past = await Promise.all(history.slice(0, PAST_SHOWN).map((w) => getWorkout(database, w.id)));
+      return { active, next, programs, history, days: days.filter((d): d is ProgramDay => d !== null), past: past.filter((w): w is Workout => w !== null) };
     },
     ['training', 'settings'],
   );
@@ -95,7 +90,6 @@ export default function TrainingScreen() {
     );
   const hasGymDays = (soon.data?.plans ?? []).some((p) => p.typeId === gymTypeId);
   const breath = useBreath(Boolean(data?.active));
-  const [period, setPeriod] = useState<Period>('week');
 
   const start = (dayId: number | null) => startAndOpenWorkout(db, router, dayId);
 
@@ -213,6 +207,7 @@ export default function TrainingScreen() {
             rows={rows}
             days={next.program.days}
             details={data?.days ?? []}
+            past={data?.past ?? []}
             today={today}
             canStart={!data?.active}
             names={names}
@@ -246,14 +241,10 @@ export default function TrainingScreen() {
         </Card>
       ) : null}
 
-      {/* 2 · How it went, in numbers. */}
+      {/* 2 · How it is going: the numbers are on their own page. */}
       {data ? (
-        <Animated.View layout={LAYOUT}>
-          <AppText variant="title3" style={styles.sectionTitle}>
-            Riepilogo
-          </AppText>
-          <Segmented options={PERIODS} value={period} onChange={setPeriod} />
-          <Summary history={history} period={period} today={today} />
+        <Animated.View layout={LAYOUT} style={styles.progressSlot}>
+          <ProgressCard history={history} today={today} onPress={() => router.push('/training/progress')} />
         </Animated.View>
       ) : null}
 
@@ -282,6 +273,8 @@ type TrainingLineProps = {
   rows: readonly LineRow<WorkoutSummary>[];
   days: readonly DaySummary[];
   details: readonly ProgramDay[];
+  /** The workouts done on the line, with their sets. */
+  past: readonly Workout[];
   today: DateKey;
   canStart: boolean;
   names: ReturnType<typeof useExerciseNames>['names'];
@@ -296,7 +289,7 @@ type TrainingLineProps = {
  * leaving the others as they are: a day done shows how it went, a day to come its exercises and
  * "Inizia", on any day, whatever the plan says.
  */
-function TrainingLine({ rows, days, details, today, canStart, names, onOpenDay, onStart, onOpenWorkout }: TrainingLineProps) {
+function TrainingLine({ rows, days, details, past, today, canStart, names, onOpenDay, onStart, onOpenWorkout }: TrainingLineProps) {
   const theme = useTheme();
   // The next workout starts open and the others folded; each then stays as it was left.
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
@@ -323,21 +316,34 @@ function TrainingLine({ rows, days, details, today, canStart, names, onOpenDay, 
               <View style={[styles.dotSlot, { top: dotY - 7 }]}>
                 {row.kind === 'next' ? (
                   <View style={[styles.dotCurrent, { borderColor: theme.accent, backgroundColor: theme.background }]} />
+                ) : row.kind === 'past' ? (
+                  // Done: the tick is on the line, so the row only has to say when.
+                  <View style={[styles.dotDone, { backgroundColor: theme.accent }]}>
+                    <Icon name="checkmark" size={11} weight="bold" color={theme.onAccent} />
+                  </View>
                 ) : (
-                  <View style={[styles.dot, { backgroundColor: row.kind === 'past' ? theme.accent : theme.separator }]} />
+                  <View style={[styles.dot, { backgroundColor: theme.separator }]} />
                 )}
               </View>
             </View>
             <View style={styles.stepBody}>
               <View style={[styles.dayCard, { backgroundColor: theme.card }]}>
                 {row.kind === 'past' ? (
-                  <PastDay workout={row.workout} today={today} open={open} onToggle={() => toggle(row)} onOpen={() => onOpenWorkout(row.workout.id)} />
+                  <PastDay
+                    workout={row.workout}
+                    detail={past.find((w) => w.id === row.workout.id) ?? null}
+                    today={today}
+                    open={open}
+                    names={names}
+                    onToggle={() => toggle(row)}
+                    onOpen={() => onOpenWorkout(row.workout.id)}
+                  />
                 ) : day ? (
                   <ComingDay
                     day={day}
                     detail={details.find((d) => d.id === day.id) ?? null}
                     isNext={row.kind === 'next'}
-                    when={comingLabel(row, today)}
+                    caption={comingCaption(row, today)}
                     open={open}
                     canStart={canStart}
                     names={names}
@@ -355,41 +361,85 @@ function TrainingLine({ rows, days, details, today, canStart, names, onOpenDay, 
   );
 }
 
-/** "Oggi · 21:00", "Mer 4 · 21:00", or "Dopo" for a day the calendar has no date for yet. */
-function comingLabel(row: Exclude<LineRow<WorkoutSummary>, { kind: 'past' }>, today: DateKey): string {
-  if (row.date === null) return row.kind === 'next' ? '' : 'Dopo';
-  const away = daysBetween(today, row.date);
-  const day = away === 0 ? 'Oggi' : away === 1 ? 'Domani' : formatWeekdayAndDay(row.date);
-  return [day, row.time].filter(Boolean).join(' · ');
+/** "PROSSIMO · MER 4, 21:00", "VEN 6, 21:00", or "DOPO" for a day the calendar has no date for yet. */
+function comingCaption(row: Exclude<LineRow<WorkoutSummary>, { kind: 'past' }>, today: DateKey): string {
+  const away = row.date === null ? null : daysBetween(today, row.date);
+  const day = row.date === null ? null : away === 0 ? 'Oggi' : away === 1 ? 'Domani' : formatWeekdayAndDay(row.date);
+  const when = [day, row.time].filter(Boolean).join(', ');
+  if (row.kind === 'next') return (when ? `Prossimo · ${when}` : 'Prossimo').toUpperCase();
+  return (when || 'Dopo').toUpperCase();
 }
 
-/** A workout done, and once open how it went. */
-function PastDay({ workout, today, open, onToggle, onOpen }: { workout: WorkoutSummary; today: DateKey; open: boolean; onToggle: () => void; onOpen: () => void }) {
+/** A workout done, with when above what, and once open how it went. */
+function PastDay({
+  workout,
+  detail,
+  today,
+  open,
+  names,
+  onToggle,
+  onOpen,
+}: {
+  workout: WorkoutSummary;
+  detail: Workout | null;
+  today: DateKey;
+  open: boolean;
+  names: TrainingLineProps['names'];
+  onToggle: () => void;
+  onOpen: () => void;
+}) {
   const theme = useTheme();
-  const when = (formatRecent(workout.date, today) ?? formatShortDate(workout.date)).toLowerCase();
+  const when = formatRecent(workout.date, today) ?? formatShortDate(workout.date);
   const seconds = (new Date(workout.endedAt).getTime() - new Date(workout.startedAt).getTime()) / 1000;
+  const metrics = [
+    { label: 'durata', value: formatWorkoutLengthShort(seconds) },
+    { label: 'serie', value: String(workout.workSets) },
+    { label: 'sollevati', value: formatLifted(workout.tonnage) },
+  ];
   return (
     <>
       <Pressable
         onPress={onToggle}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={`${workout.name}, fatto ${when}`}
+        accessibilityLabel={`${workout.name}, fatto ${when.toLowerCase()}`}
         style={({ pressed }) => [styles.dayHead, pressed && { backgroundColor: theme.cardPressed }]}>
-        <DayBadge icon={workout.icon} size={28} />
-        <AppText numberOfLines={1} tone="textSecondary" style={styles.flex}>
-          {workout.name}
-        </AppText>
-        <AppText variant="footnote" tone="accent" numberOfLines={1}>
-          {`✓ ${when}`}
-        </AppText>
+        <View style={styles.flex}>
+          <AppText variant="caption" weight="600" tone="textSecondary" numberOfLines={1}>
+            {when.toUpperCase()}
+          </AppText>
+          <AppText numberOfLines={1}>{workout.name}</AppText>
+        </View>
         <FoldChevron open={open} />
       </Pressable>
       {open ? (
         <Animated.View entering={DAY_IN} style={styles.dayOpen}>
-          <AppText variant="subhead" tone="textSecondary" numeric>
-            {[formatWorkoutLength(seconds), `${workout.workSets} serie`, formatLifted(workout.tonnage)].join(' · ')}
-          </AppText>
+          <View style={styles.metrics}>
+            {metrics.map((m) => (
+              <View key={m.label} style={styles.metric}>
+                <AppText variant="headline" numeric numberOfLines={1}>
+                  {m.value}
+                </AppText>
+                <AppText variant="caption" tone="textSecondary">
+                  {m.label}
+                </AppText>
+              </View>
+            ))}
+          </View>
+          <View style={[styles.rule, { backgroundColor: theme.separator }]} />
+          {(detail?.exercises ?? []).map((exercise) => {
+            const sets = exercise.sets.filter(isWorkSet);
+            return sets.length > 0 ? (
+              <View key={exercise.id}>
+                <AppText variant="subhead" numberOfLines={1}>
+                  {names(exercise.exercise).title}
+                </AppText>
+                <AppText variant="footnote" tone="textSecondary" numeric>
+                  {sets.map((set) => formatSetShort(set, exercise.exercise.kind)).join(' · ')}
+                </AppText>
+              </View>
+            ) : null;
+          })}
           <Pressable onPress={onOpen} accessibilityRole="button" hitSlop={8} style={({ pressed }) => [styles.dayLink, pressed && styles.pressed]}>
             <AppText variant="subhead" weight="600" tone="accent">
               Apri allenamento
@@ -406,7 +456,7 @@ function ComingDay({
   day,
   detail,
   isNext,
-  when,
+  caption,
   open,
   canStart,
   names,
@@ -417,7 +467,7 @@ function ComingDay({
   day: DaySummary;
   detail: ProgramDay | null;
   isNext: boolean;
-  when: string;
+  caption: string;
   open: boolean;
   canStart: boolean;
   names: TrainingLineProps['names'];
@@ -440,23 +490,17 @@ function ComingDay({
         onLongPress={onEdit}
         accessibilityRole="button"
         accessibilityState={{ expanded: open }}
-        accessibilityLabel={[day.name, isNext ? 'prossimo' : null, when].filter(Boolean).join(', ')}
+        accessibilityLabel={`${day.name}, ${caption.toLowerCase()}`}
         accessibilityHint="Tieni premuto per modificarlo"
         style={({ pressed }) => [styles.dayHead, pressed && { backgroundColor: theme.cardPressed }]}>
-        <DayBadge icon={day.icon} size={isNext ? 36 : 28} />
         <View style={styles.flex}>
-          {isNext ? (
-            <AppText variant="footnote" weight="600" tone="accent">
-              PROSSIMO
-            </AppText>
-          ) : null}
+          <AppText variant="caption" weight="600" tone={isNext ? 'accent' : 'textSecondary'} numeric numberOfLines={1}>
+            {caption}
+          </AppText>
           <AppText variant={isNext ? 'title2' : undefined} numberOfLines={1}>
             {day.name}
           </AppText>
         </View>
-        <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
-          {when}
-        </AppText>
         <FoldChevron open={open} />
       </Pressable>
       {open ? (
@@ -498,43 +542,32 @@ function estimateSeconds(day: ProgramDay | null): number {
   return day.exercises.reduce((sum, e) => sum + e.sets * (40 + (e.restSeconds ?? restFor(e.exercise))), 0);
 }
 
-/** "6,1 t" or "850 kg". */
-function formatLifted(kg: number): string {
-  return kg >= 1000 ? `${formatNumber(kg / 1000, 1)} t` : `${Math.round(kg)} kg`;
-}
-
-function periodStart(period: Period, today: DateKey): DateKey {
-  if (period === 'week') return weekOf(today)[0];
-  if (period === 'month') return `${today.slice(0, 7)}-01` as DateKey;
-  return `${today.slice(0, 4)}-01-01` as DateKey;
-}
-
-/** The workouts of the week, month or year so far, as four numbers. */
-function Summary({ history, period, today }: { history: readonly WorkoutSummary[]; period: Period; today: DateKey }) {
-  const from = periodStart(period, today);
-  const done = history.filter((w) => w.date >= from && w.date <= today);
-  const seconds = done.reduce((sum, w) => sum + (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000, 0);
-  const sets = done.reduce((sum, w) => sum + w.workSets, 0);
-  const kg = done.reduce((sum, w) => sum + w.tonnage, 0);
-  const stats = [
-    { value: String(done.length), label: done.length === 1 ? 'allenamento' : 'allenamenti' },
-    { value: done.length > 0 ? formatWorkoutLength(seconds) : '0 min', label: 'in palestra' },
-    { value: String(sets), label: 'serie' },
-    { value: formatLifted(kg), label: 'sollevati' },
-  ];
+/** A way into the progress page: this month's workouts, and how the volume went week by week. */
+function ProgressCard({ history, today, onPress }: { history: readonly WorkoutSummary[]; today: DateKey; onPress: () => void }) {
+  const theme = useTheme();
+  const range = periodRange('month', today);
+  const inside = workoutsBetween(history, range.from, range.to);
+  const buckets = volumeBuckets('month', inside, range);
+  const most = Math.max(1, ...buckets.map((b) => b.kg));
   return (
-    <View style={styles.stats}>
-      {stats.map((s) => (
-        <Card key={s.label} style={styles.stat}>
-          <AppText variant="title2" numeric>
-            {s.value}
-          </AppText>
-          <AppText variant="footnote" tone="textSecondary">
-            {s.label}
-          </AppText>
-        </Card>
-      ))}
-    </View>
+    <Pressable
+      onPress={onPress}
+      accessibilityRole="button"
+      accessibilityLabel="Progressi"
+      style={({ pressed }) => [styles.progressCard, { backgroundColor: pressed ? theme.cardPressed : theme.card }]}>
+      <View style={styles.flex}>
+        <AppText variant="headline">Progressi</AppText>
+        <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+          {`${countLabel(totalsOf(inside).count, 'allenamento', 'allenamenti')} in ${formatMonthName(monthOf(today)).toLowerCase()}`}
+        </AppText>
+      </View>
+      <View style={styles.miniBars}>
+        {buckets.map((b) => (
+          <View key={b.key} style={[styles.miniBar, b.kg > 0 ? { height: `${Math.max(10, (b.kg / most) * 100)}%`, backgroundColor: theme.accent } : { height: 2, backgroundColor: theme.track }]} />
+        ))}
+      </View>
+      <Icon name="chevron.right" size={13} tone="textTertiary" weight="semibold" />
+    </Pressable>
   );
 }
 
@@ -557,9 +590,9 @@ function Tile({ symbol, label, detail, onPress }: { symbol: 'clock.arrow.circlep
   );
 }
 
-/** Where the dot sits on each step of the line, level with the day's name. */
-const DOT_Y = 24;
-const NEXT_DOT_Y = 34;
+/** Where the dot sits on each step of the line, in the middle of the row when folded. */
+const DOT_Y = 29;
+const NEXT_DOT_Y = 32;
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
@@ -578,24 +611,30 @@ const styles = StyleSheet.create({
   programTitle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: Spacing.xs },
   line: { marginTop: Spacing.xs },
   step: { flexDirection: 'row', gap: Spacing.sm },
-  rail: { width: 16, alignItems: 'center' },
-  lineSegment: { position: 'absolute', width: 2, left: 7 },
-  dotSlot: { position: 'absolute', width: 16, height: 14, alignItems: 'center', justifyContent: 'center' },
+  rail: { width: 20, alignItems: 'center' },
+  lineSegment: { position: 'absolute', width: 2, left: 9 },
+  dotSlot: { position: 'absolute', width: 20, height: 14, alignItems: 'center', justifyContent: 'center' },
+  dotDone: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   // The gap between the rows is in here, so the rail beside them runs on unbroken.
   stepBody: { flex: 1, minWidth: 0, paddingBottom: Spacing.sm },
   dot: { width: 10, height: 10, borderRadius: 5 },
   dotCurrent: { width: 14, height: 14, borderRadius: 7, borderWidth: 3 },
   dayCard: { borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },
-  dayHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 48, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
-  dayOpen: { gap: Spacing.md, paddingHorizontal: Spacing.md, paddingBottom: Spacing.md },
+  dayHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 58, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm + 2 },
+  dayOpen: { gap: Spacing.md, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
+  metrics: { flexDirection: 'row', gap: Spacing.sm },
+  metric: { flex: 1, gap: 1 },
+  rule: { height: StyleSheet.hairlineWidth },
   dayMeta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   dayLink: { alignSelf: 'flex-start', paddingVertical: Spacing.xs },
   exercises: { gap: Spacing.xs + 2 },
   exercise: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   setup: { marginTop: Spacing.md },
   sectionTitle: { marginTop: Spacing.xl, marginBottom: Spacing.sm, paddingHorizontal: Spacing.xs },
-  stats: { flexDirection: 'row', flexWrap: 'wrap', gap: Spacing.sm, marginTop: Spacing.md },
-  stat: { flexBasis: '48%', flexGrow: 1, gap: 2 },
+  progressSlot: { marginTop: Spacing.sm },
+  progressCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 72, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radius.lg, borderCurve: 'continuous' },
+  miniBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 36 },
+  miniBar: { width: 8, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
   tiles: { flexDirection: 'row', gap: Spacing.sm },
   tile: { flex: 1, gap: Spacing.sm, padding: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous', minHeight: 104 },
 });

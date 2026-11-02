@@ -122,6 +122,18 @@ export function formatSet(set: Pick<LoggedSet, 'weight' | 'reps' | 'seconds'>, k
   return reps ? `${weight} ${reps}` : weight;
 }
 
+/** A set in little room, for a line with all of an exercise's sets: "90×6", "×12", "45 s". */
+export function formatSetShort(set: Pick<LoggedSet, 'weight' | 'reps' | 'seconds'>, kind: ExerciseKind): string {
+  if (kind === 'time') return set.seconds !== null ? `${formatNumber(set.seconds, 0)} s` : '—';
+  const reps = set.reps !== null ? `×${set.reps}` : '';
+  return set.weight === null || set.weight === 0 ? reps || '—' : `${formatNumber(set.weight, 2)}${reps}`;
+}
+
+/** "6,1 t" or "850 kg". */
+export function formatLifted(kg: number): string {
+  return kg >= 1000 ? `${formatNumber(kg / 1000, 1)} t` : `${Math.round(kg)} kg`;
+}
+
 /** "1:30" for a rest; "32:10" or "1:02:05" for a workout that is running. */
 export function formatDuration(totalSeconds: number): string {
   const s = Math.max(0, Math.round(totalSeconds));
@@ -136,6 +148,13 @@ export function formatWorkoutLength(totalSeconds: number): string {
   const minutes = Math.max(1, Math.round(totalSeconds / 60));
   if (minutes < 60) return `${minutes} min`;
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')} min`;
+}
+
+/** "41 min" or "1 h 02", for a number in a narrow column. */
+export function formatWorkoutLengthShort(totalSeconds: number): string {
+  const minutes = Math.max(1, Math.round(totalSeconds / 60));
+  if (minutes < 60) return `${minutes} min`;
+  return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`;
 }
 
 /** Sum of kg × reps over the work sets: the usual "volume" of a session. */

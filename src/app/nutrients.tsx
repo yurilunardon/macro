@@ -1,6 +1,6 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
-import { useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { useEffect, useRef, useState, type ComponentRef } from 'react';
+import { ActivityIndicator, ScrollView, StyleSheet, useWindowDimensions, View, type NativeScrollEvent, type NativeSyntheticEvent } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -9,8 +9,8 @@ import { Segmented } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { isOver, NUTRIENT_LABELS, nutrientTarget } from '@/components/nutrient-grid';
 import { ProgressBar } from '@/components/progress';
-import { Radius, Spacing } from '@/constants/theme';
-import { getDayPlan } from '@/db/days';
+import { Spacing } from '@/constants/theme';
+import { getDayPlan, type DayPlan } from '@/db/days';
 import { getEntriesForDate, type Entry } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { getLimits } from '@/db/settings';
@@ -20,14 +20,18 @@ import { formatLongDate, isDateKey, todayKey } from '@/lib/dates';
 import { countLabel, formatGrams, formatNumber } from '@/lib/format';
 import { LIMIT_KEYS, LIMIT_LABELS, limitGrams, type LimitKey, type NutrientLimits } from '@/lib/limits';
 import { mealLabel } from '@/lib/meals';
+import { haptics } from '@/services/haptics';
 
 const KEYS: readonly BreakdownKey[] = ['protein', 'carbs', 'fat', 'fiber'];
-type Tab = BreakdownKey | 'limits';
+type Tab = BreakdownKey | 'other';
 /** Five segments in the sheet's width: "Carboidrati" in full would be cut. */
 const OPTIONS: readonly { key: Tab; label: string }[] = [
   ...KEYS.map((key) => ({ key, label: key === 'carbs' ? 'Carbo' : NUTRIENT_LABELS[key] })),
-  { key: 'limits', label: 'Limiti' },
+  { key: 'other', label: 'Altro' },
 ];
+
+/** How the list under the limits names each. */
+const LIMIT_WORDS: Record<LimitKey, string> = { sugars: 'zuccheri', satFat: 'saturi', salt: 'sale' };
 
 function isBreakdownKey(value: unknown): value is BreakdownKey {
   return KEYS.includes(value as BreakdownKey);
@@ -38,7 +42,6 @@ export default function NutrientsSheet() {
   const theme = useTheme();
   const params = useLocalSearchParams<{ date?: string; key?: string }>();
   const date = isDateKey(params.date) ? params.date : todayKey();
-  const [tab, setTab] = useState<Tab>(isBreakdownKey(params.key) ? params.key : 'protein');
 
   const { data } = useLiveQuery(`nutrients:${date}`, async (database) => {
     const [entries, plan, limits] = await Promise.all([getEntriesForDate(database, date), getDayPlan(database, date), getLimits(database)]);
@@ -53,20 +56,97 @@ export default function NutrientsSheet() {
     );
   }
 
+  return <NutrientPages date={formatLongDate(date)} initial={isBreakdownKey(params.key) ? params.key : 'protein'} {...data} />;
+}
+
+/**
+ * The nutrients as pages side by side, as the days in the diary: swiped with the finger or picked
+ * above, the two following each other.
+ */
+function NutrientPages({ date, initial, entries, plan, limits }: { date: string; initial: Tab; entries: readonly Entry[]; plan: DayPlan; limits: NutrientLimits }) {
+  const theme = useTheme();
+  const { width } = useWindowDimensions();
+  const [tab, setTab] = useState<Tab>(initial);
+  const pager = useRef<ComponentRef<typeof ScrollView>>(null);
+  const indexOf = (key: Tab) => OPTIONS.findIndex((o) => o.key === key);
+
+  // The pager is as tall as the page on screen; while moving it only grows, so nothing is cut.
+  const heights = useRef(new Map<Tab, number>());
+  const [height, setHeight] = useState<number | undefined>(undefined);
+  const shown = useRef(initial);
+  const grow = (key: Tab) => {
+    const h = heights.current.get(key);
+    if (h !== undefined) setHeight((current) => Math.max(current ?? 0, h));
+  };
+  const fit = () => {
+    const h = heights.current.get(shown.current);
+    if (h !== undefined) setHeight(h);
+  };
+
+  // A slide started by a tap: the pages going past it must not change the segment on the way.
+  const sliding = useRef(false);
+  const slideTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(slideTimer.current), []);
+  const endSlide = () => {
+    clearTimeout(slideTimer.current);
+    sliding.current = false;
+    fit();
+  };
+
+  const pick = (key: Tab) => {
+    setTab(key);
+    shown.current = key;
+    grow(key);
+    sliding.current = true;
+    pager.current?.scrollTo({ x: indexOf(key) * width, animated: true });
+    // Should the end of the animation not be reported, finish anyway.
+    clearTimeout(slideTimer.current);
+    slideTimer.current = setTimeout(endSlide, 600);
+  };
+
+  const onScroll = (event: NativeSyntheticEvent<NativeScrollEvent>) => {
+    if (sliding.current) return;
+    const key = OPTIONS[Math.round(event.nativeEvent.contentOffset.x / width)]?.key;
+    if (!key || key === shown.current) return;
+    shown.current = key;
+    setTab(key);
+    grow(key);
+    haptics.selection();
+  };
+
   return (
     <ScrollView style={{ backgroundColor: theme.background }} contentContainerStyle={styles.content}>
       <View style={styles.header}>
         <AppText variant="title2">Nutrienti</AppText>
         <AppText variant="subhead" tone="textSecondary">
-          {formatLongDate(date)}
+          {date}
         </AppText>
       </View>
-      <Segmented options={OPTIONS} value={tab} onChange={setTab} />
-      {tab === 'limits' ? (
-        <LimitsTab entries={data.entries} limits={data.limits} kcal={data.plan.targets.kcal} />
-      ) : (
-        <MacroTab nutrient={tab} entries={data.entries} target={nutrientTarget(tab, data.plan.targets)} />
-      )}
+      <Segmented options={OPTIONS} value={tab} onChange={pick} />
+      <ScrollView
+        ref={pager}
+        horizontal
+        pagingEnabled
+        directionalLockEnabled
+        showsHorizontalScrollIndicator={false}
+        scrollEventThrottle={16}
+        contentOffset={{ x: indexOf(initial) * width, y: 0 }}
+        onScroll={onScroll}
+        onMomentumScrollEnd={endSlide}
+        contentContainerStyle={styles.pages}
+        style={[styles.pager, { width, height }]}>
+        {OPTIONS.map(({ key }) => (
+          <View
+            key={key}
+            onLayout={(event) => {
+              heights.current.set(key, event.nativeEvent.layout.height);
+              if (key === shown.current) setHeight(event.nativeEvent.layout.height);
+            }}
+            style={[styles.page, { width }]}>
+            {key === 'other' ? <OtherTab entries={entries} limits={limits} kcal={plan.targets.kcal} /> : <MacroTab nutrient={key} entries={entries} target={nutrientTarget(key, plan.targets)} />}
+          </View>
+        ))}
+      </ScrollView>
     </ScrollView>
   );
 }
@@ -99,7 +179,29 @@ function MacroTab({ nutrient, entries, target }: { nutrient: BreakdownKey; entri
 
       <SectionTitle>Da dove arrivano</SectionTitle>
       {items.length > 0 ? (
-        <Sources items={items} color={theme[nutrient]} />
+        <ListGroup>
+          {items.map(({ entry, amount, share }) => (
+            <View key={entry.id} style={styles.row}>
+              <View style={styles.rowTop}>
+                <View style={styles.flex}>
+                  <AppText numberOfLines={1}>{entry.name}</AppText>
+                  <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                    {entry.quick ? mealLabel(entry.meal) : `${mealLabel(entry.meal)} · ${formatNumber(entry.quantity, 0)} ${entry.unit}`}
+                  </AppText>
+                </View>
+                <View style={styles.amount}>
+                  <AppText variant="headline" numeric>
+                    {formatGrams(amount)}
+                  </AppText>
+                  <AppText variant="caption" tone="textSecondary" numeric>
+                    {`${Math.round(share * 100)}%`}
+                  </AppText>
+                </View>
+              </View>
+              <ProgressBar value={share} target={1} color={theme[nutrient]} height={4} />
+            </View>
+          ))}
+        </ListGroup>
       ) : (
         <AppText tone="textSecondary" style={styles.empty}>
           {nutrient === 'fiber' && entries.length > 0
@@ -117,104 +219,74 @@ function MacroTab({ nutrient, entries, target }: { nutrient: BreakdownKey; entri
 }
 
 /**
- * Sugars, saturated fat and salt against their daily ceilings. Not goals to fill: the bars stay
- * grey and turn orange only past the limit. Tapping one shows the foods it came from.
+ * Sugars, saturated fat and salt against their daily limits, as the bars beside the calorie ring,
+ * then the foods they came from, all of the first, then all of the next.
  */
-function LimitsTab({ entries, limits, kcal }: { entries: readonly Entry[]; limits: NutrientLimits; kcal: number }) {
+function OtherTab({ entries, limits, kcal }: { entries: readonly Entry[]; limits: NutrientLimits; kcal: number }) {
   const theme = useTheme();
   const router = useRouter();
-  const [picked, setPicked] = useState<LimitKey>('sugars');
-  const { items } = nutrientBreakdown(entries, picked);
-  // Without a value on the label a food counts as nothing: the total may be short by that much.
-  const missing = entries.filter((e) => e.totals[picked] === null).length;
+  const sources = LIMIT_KEYS.flatMap((key) => nutrientBreakdown(entries, key).items.map((item) => ({ ...item, key })));
+  // Without a value on the label a food counts as nothing: the totals may be short by that much.
+  const missing = entries.filter((e) => LIMIT_KEYS.some((key) => e.totals[key] === null)).length;
 
   return (
     <>
-      <View style={styles.limits}>
+      <Card style={styles.limits}>
         {LIMIT_KEYS.map((key) => {
           const known = entries.some((e) => e.totals[key] !== null);
           const value = nutrientBreakdown(entries, key).total;
           const limit = limitGrams(key, limits[key], kcal);
           const over = known && value > limit;
-          const left = limit - value;
           return (
-            <Pressable
+            <View
               key={key}
-              onPress={() => setPicked(key)}
-              accessibilityRole="button"
-              accessibilityState={{ selected: key === picked }}
-              accessibilityLabel={`${LIMIT_LABELS[key]}: ${known ? `${formatNumber(value, 1)} su ${limit} grammi` : 'nessun dato'}`}
-              accessibilityHint="Mostra da quali alimenti arriva"
-              style={({ pressed }) => [
-                styles.limit,
-                { backgroundColor: pressed ? theme.cardPressed : theme.card, borderColor: key === picked ? theme.textSecondary : 'transparent' },
-              ]}>
+              accessible
+              accessibilityLabel={`${LIMIT_LABELS[key]}: ${known ? `${formatNumber(value, 1)} su ${limit} grammi${over ? ', oltre il limite' : ''}` : 'nessun dato'}`}
+              style={styles.limit}>
               <View style={styles.limitTop}>
-                <AppText variant="headline" style={styles.flex}>
-                  {LIMIT_LABELS[key]}
-                </AppText>
-                {over ? <Icon name="exclamationmark.circle.fill" size={15} tone="warning" /> : null}
-                <AppText variant="headline" numeric tone={over ? 'warning' : 'text'}>
-                  {known ? `${Math.round((value / limit) * 100)}%` : '—'}
+                <View style={styles.limitName}>
+                  <AppText variant="subhead" weight="600" style={{ color: theme[key] }} numberOfLines={1}>
+                    {LIMIT_LABELS[key]}
+                  </AppText>
+                  {over ? <Icon name="exclamationmark.circle.fill" size={14} tone="warning" /> : null}
+                </View>
+                <AppText variant="subhead" numeric>
+                  <AppText variant="subhead" weight="600" numeric>
+                    {known ? formatNumber(value, value < 10 ? 1 : 0) : '—'}
+                  </AppText>
+                  <AppText variant="subhead" tone="textSecondary" numeric>
+                    {` / ${formatNumber(limit, 0)} g`}
+                  </AppText>
                 </AppText>
               </View>
-              <ProgressBar value={value} target={limit} color={over ? theme.warning : theme.textSecondary} height={6} />
-              <AppText variant="footnote" tone={over ? 'warning' : 'textSecondary'} numeric>
-                {!known
-                  ? `Limite ${formatGrams(limit)} · nessun dato`
-                  : over
-                    ? `${formatGrams(value)} di ${formatGrams(limit)} · oltre di ${formatGrams(-left)}`
-                    : `${formatGrams(value)} di ${formatGrams(limit)} · restano ${formatGrams(left)}`}
-              </AppText>
-            </Pressable>
+              <ProgressBar value={value} target={limit} color={theme[key]} height={5} />
+            </View>
           );
         })}
-      </View>
+      </Card>
 
-      <SectionTitle>{`${LIMIT_LABELS[picked]}: da dove arrivano`}</SectionTitle>
-      {items.length > 0 ? (
-        <Sources items={items} color={theme.textSecondary} />
-      ) : (
-        <AppText tone="textSecondary" style={styles.empty}>
-          Nessun alimento di questo giorno lo indica.
-        </AppText>
-      )}
-      {missing > 0 && items.length > 0 ? (
-        <SectionFooter>{`${countLabel(missing, 'alimento non lo indica', 'alimenti non lo indicano')}.`}</SectionFooter>
+      {sources.length > 0 ? (
+        <>
+          <SectionTitle>Da dove arrivano</SectionTitle>
+          <ListGroup>
+            {sources.map(({ entry, amount, key }) => (
+              <View key={`${key}:${entry.id}`} style={styles.source}>
+                <View style={[styles.dot, { backgroundColor: theme[key] }]} />
+                <AppText numberOfLines={1} style={styles.flex}>
+                  {entry.name}
+                </AppText>
+                <AppText variant="subhead" tone="textSecondary" numeric>
+                  {`${formatGrams(amount)} ${LIMIT_WORDS[key]}`}
+                </AppText>
+              </View>
+            ))}
+          </ListGroup>
+        </>
       ) : null}
+      {missing > 0 ? <SectionFooter>{`${countLabel(missing, 'alimento non li indica', 'alimenti non li indicano')} tutti.`}</SectionFooter> : null}
 
-      <View style={styles.edit}>
-        <Button title="Modifica limiti" variant="tinted" compact onPress={() => router.push('/limits')} />
-      </View>
+      <Button title="Modifica limiti" variant="plain" compact onPress={() => router.push('/limits')} />
     </>
-  );
-}
-
-function Sources({ items, color }: { items: ReturnType<typeof nutrientBreakdown<Entry>>['items']; color: string }) {
-  return (
-    <ListGroup>
-      {items.map(({ entry, amount, share }) => (
-        <View key={entry.id} style={styles.row}>
-          <View style={styles.rowTop}>
-            <View style={styles.flex}>
-              <AppText numberOfLines={1}>{entry.name}</AppText>
-              <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                {entry.quick ? mealLabel(entry.meal) : `${mealLabel(entry.meal)} · ${formatNumber(entry.quantity, 0)} ${entry.unit}`}
-              </AppText>
-            </View>
-            <View style={styles.amount}>
-              <AppText variant="headline" numeric>
-                {formatGrams(amount)}
-              </AppText>
-              <AppText variant="caption" tone="textSecondary" numeric>
-                {`${Math.round(share * 100)}%`}
-              </AppText>
-            </View>
-          </View>
-          <ProgressBar value={share} target={1} color={color} height={4} />
-        </View>
-      ))}
-    </ListGroup>
   );
 }
 
@@ -222,6 +294,10 @@ const styles = StyleSheet.create({
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: Spacing.lg, paddingTop: Spacing.xl, paddingBottom: Spacing.xxl * 2, gap: Spacing.md },
   header: { gap: 2, marginBottom: Spacing.xs },
+  // Out of the sheet's side margins, as the pages in the diary.
+  pager: { marginHorizontal: -Spacing.lg },
+  pages: { alignItems: 'flex-start' },
+  page: { paddingHorizontal: Spacing.lg, gap: Spacing.md },
   total: { gap: Spacing.sm },
   over: { flexDirection: 'row', alignItems: 'center', gap: 6 },
   row: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.sm },
@@ -229,8 +305,10 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   amount: { alignItems: 'flex-end' },
   empty: { paddingHorizontal: Spacing.lg },
-  limits: { gap: Spacing.sm },
-  limit: { gap: Spacing.sm, padding: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous', borderWidth: 1.5 },
-  limitTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  edit: { marginTop: Spacing.sm },
+  limits: { gap: Spacing.lg },
+  limit: { gap: Spacing.xs + 2 },
+  limitTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  limitName: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  source: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 44, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
+  dot: { width: 8, height: 8, borderRadius: 4 },
 });

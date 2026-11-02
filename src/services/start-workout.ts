@@ -35,6 +35,12 @@ export function useWorkoutStarting(): boolean {
   return useSyncExternalStore(subscribe, () => starting);
 }
 
+/** Brings back the workout in progress, its sheet rising already filled. */
+export async function openActiveWorkout(db: SQLiteDatabase, router: ReturnType<typeof useRouter>): Promise<void> {
+  await prefetchLiveQuery(db, ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS);
+  router.push('/workout');
+}
+
 /**
  * Starts a workout of a day of the program and opens it; one already running is opened instead.
  * Without a day it takes `name`, e.g. the "Push" planned in the calendar.

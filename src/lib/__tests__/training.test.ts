@@ -6,8 +6,11 @@ import {
   dayIcon,
   estimateOneRepMax,
   formatDuration,
+  formatLifted,
   formatSet,
+  formatSetShort,
   formatWorkoutLength,
+  formatWorkoutLengthShort,
   muscleShare,
   nextInRotation,
   progression,
@@ -214,5 +217,24 @@ describe('dayIcon', () => {
     expect(dayIcon('Lower 2')).toBe('figure.stairs');
     expect(dayIcon('Full body')).toBe('figure.cross.training');
     expect(dayIcon('Giorno 3')).toBe('figure.strengthtraining.functional');
+  });
+});
+
+describe('short formats', () => {
+  it('writes a set in little room', () => {
+    expect(formatSetShort({ weight: 90, reps: 6, seconds: null }, 'weight')).toBe('90×6');
+    expect(formatSetShort({ weight: 22.5, reps: 8, seconds: null }, 'weight')).toBe('22,5×8');
+    expect(formatSetShort({ weight: null, reps: 12, seconds: null }, 'bodyweight')).toBe('×12');
+    expect(formatSetShort({ weight: null, reps: null, seconds: 45 }, 'time')).toBe('45 s');
+  });
+
+  it('writes a length for a narrow column', () => {
+    expect(formatWorkoutLengthShort(41 * 60)).toBe('41 min');
+    expect(formatWorkoutLengthShort(62 * 60)).toBe('1 h 02');
+  });
+
+  it('writes what was lifted in kilos, then tons', () => {
+    expect(formatLifted(850)).toBe('850 kg');
+    expect(formatLifted(6100)).toBe('6,1 t');
   });
 });

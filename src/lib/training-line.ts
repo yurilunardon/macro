@@ -9,7 +9,7 @@ export type LineRow<W> =
   | { kind: 'next' | 'later'; key: string; dayId: number; date: DateKey | null; time: string | null };
 
 /** The workouts done shown above the next one. */
-const PAST_SHOWN = 2;
+export const PAST_SHOWN = 2;
 
 /**
  * The training page's line, in the order of time: the last workouts done, oldest first, then the

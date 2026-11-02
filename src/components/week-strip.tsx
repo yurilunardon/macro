@@ -2,8 +2,7 @@ import type { SFSymbol } from 'expo-symbols';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { useEffect, useRef } from 'react';
-import Animated, { Easing, interpolateColor, useAnimatedProps, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
-import Svg, { Circle } from 'react-native-svg';
+import Animated, { Easing, interpolateColor, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { Spacing } from '@/constants/theme';
@@ -15,13 +14,8 @@ import { AppText } from './app-text';
 import { Icon } from './icon';
 import { beat, EASE_OUT, project } from './motion';
 
-/** The day's number with room for a ring round it, and the circle of the selected day inside that. */
-const SLOT = 42;
-const CIRCLE = 32;
-const RING_WIDTH = 3;
-const RING_RADIUS = (SLOT - RING_WIDTH) / 2;
-const RING_LENGTH = 2 * Math.PI * RING_RADIUS;
-const AnimatedCircle = Animated.createAnimatedComponent(Circle);
+const CIRCLE = 36;
+const BAR_WIDTH = 26;
 // Grows from a little over half its size with a slight overshoot, so the new day is plain to see.
 const CIRCLE_SPRING = { duration: 460, dampingRatio: 0.7 };
 
@@ -41,8 +35,8 @@ type WeekStripProps = {
   onSelect: (day: DateKey) => void;
   /** Swiping the strip moves a week back (-1) or forward (1). */
   onChangeWeek: (direction: number) => void;
-  /** How much: a ring round every day, as the week in Fitness. */
-  rings?: ReadonlyMap<DateKey, DayProgress>;
+  /** How much: a short bar under every day, as those of the macros on the page. */
+  progress?: ReadonlyMap<DateKey, DayProgress>;
   /** What: a small symbol under the days that have one, whose place is kept under the others. */
   symbols?: ReadonlyMap<DateKey, DaySymbol>;
   /** Each new value makes the selected day's circle beat once, to show where it is. */
@@ -51,10 +45,10 @@ type WeekStripProps = {
 
 /**
  * The week of the selected day, Monday to Sunday, as in Calendar: the selected day in a filled
- * circle (green when it is today). A ring says how much, a symbol says what, so the two cannot be
+ * circle (green when it is today). A bar says how much, a symbol says what, so the two cannot be
  * taken for each other as two dots of different meaning were.
  */
-export function WeekStrip({ selected, today, onSelect, onChangeWeek, rings, symbols, pulse = 0 }: WeekStripProps) {
+export function WeekStrip({ selected, today, onSelect, onChangeWeek, progress, symbols, pulse = 0 }: WeekStripProps) {
   const theme = useTheme();
   const days = weekOf(selected);
 
@@ -98,7 +92,7 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, rings, symb
           {days.map((day) => {
             const isSelected = day === selected;
             const isToday = day === today;
-            const ring = rings?.get(day);
+            const bar = progress?.get(day);
             const symbol = symbols?.get(day);
             return (
               <Pressable
@@ -106,13 +100,12 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, rings, symb
                 onPress={() => onSelect(day)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={[formatLongDate(day), isToday ? 'oggi' : null, ring?.label, symbol?.label].filter(Boolean).join(', ')}
+                accessibilityLabel={[formatLongDate(day), isToday ? 'oggi' : null, bar?.label, symbol?.label].filter(Boolean).join(', ')}
                 style={styles.cell}>
                 <AppText variant="caption" weight="600" tone={isToday ? 'accent' : 'textSecondary'} maxFontSizeMultiplier={1.3}>
                   {formatWeekdayInitial(day)}
                 </AppText>
                 <View style={styles.slot}>
-                  {rings ? <DayRing progress={ring?.progress ?? 0} slowMs={ring?.slowMs} /> : null}
                   <DayCircle selected={isSelected} color={isToday ? theme.accent : theme.text} pulse={pulse} />
                   <AppText
                     numeric
@@ -125,6 +118,7 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, rings, symb
                     {String(Number(day.slice(8)))}
                   </AppText>
                 </View>
+                {progress ? <DayBar progress={bar?.progress ?? 0} slowMs={bar?.slowMs} /> : null}
                 {symbols ? <View style={styles.symbol}>{symbol ? <Icon name={symbol.symbol} size={15} tone="textSecondary" /> : null}</View> : null}
               </Pressable>
             );
@@ -136,42 +130,23 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, rings, symb
 }
 
 /**
- * How far along the day is: a thin ring round it, in the colours of the day's big ring, red far
+ * How far along the day is: a short bar under it, in the colours of the day's big ring, red far
  * from the goal and green on it, and moving as that one does when food is added or taken away.
  */
-function DayRing({ progress, slowMs }: { progress: number; slowMs?: number }) {
+function DayBar({ progress, slowMs }: { progress: number; slowMs?: number }) {
   const theme = useTheme();
-  const center = SLOT / 2;
   const tones = RING_TONES.map((tone) => theme[tone]);
   const shown = useSharedValue(progress);
   useEffect(() => {
     shown.set(withTiming(progress, slowMs ? { duration: slowMs, easing: Easing.inOut(Easing.cubic) } : { duration: 700, easing: Easing.bezier(0.23, 1, 0.32, 1) }));
   }, [shown, progress, slowMs]);
-  const ringProps = useAnimatedProps(() => {
+  const fill = useAnimatedStyle(() => {
     const p = shown.get();
-    return {
-      strokeDashoffset: RING_LENGTH * (1 - Math.min(1, p)),
-      stroke: interpolateColor(p, RING_STOPS, tones, 'HSV'),
-      // A ring with nothing in it would still draw the round cap as a dot.
-      strokeOpacity: p > 0.002 ? 1 : 0,
-    };
+    return { width: BAR_WIDTH * Math.min(1, p), backgroundColor: interpolateColor(p, RING_STOPS, tones, 'HSV') };
   });
   return (
-    <View pointerEvents="none" style={styles.ring}>
-      <Svg width={SLOT} height={SLOT}>
-        <Circle cx={center} cy={center} r={RING_RADIUS} stroke={theme.track} strokeWidth={RING_WIDTH} fill="none" />
-        <AnimatedCircle
-          cx={center}
-          cy={center}
-          r={RING_RADIUS}
-          strokeWidth={RING_WIDTH}
-          strokeLinecap="round"
-          strokeDasharray={`${RING_LENGTH} ${RING_LENGTH}`}
-          fill="none"
-          transform={`rotate(-90 ${center} ${center})`}
-          animatedProps={ringProps}
-        />
-      </Svg>
+    <View style={[styles.bar, { backgroundColor: theme.track }]}>
+      <Animated.View style={[styles.barFill, fill]} />
     </View>
   );
 }
@@ -212,9 +187,10 @@ const styles = StyleSheet.create({
   clip: { overflow: 'hidden', marginBottom: Spacing.sm },
   row: { flexDirection: 'row' },
   cell: { flex: 1, alignItems: 'center', gap: Spacing.xs },
-  slot: { width: SLOT, height: SLOT, alignItems: 'center', justifyContent: 'center' },
-  ring: { ...StyleSheet.absoluteFill },
-  circle: { position: 'absolute', width: CIRCLE, height: CIRCLE, borderRadius: CIRCLE / 2 },
+  slot: { width: CIRCLE, height: CIRCLE, alignItems: 'center', justifyContent: 'center' },
+  circle: { ...StyleSheet.absoluteFill, borderRadius: CIRCLE / 2 },
+  bar: { width: BAR_WIDTH, height: 4, borderRadius: 2, overflow: 'hidden' },
+  barFill: { height: '100%', borderRadius: 2 },
   number: { fontSize: 16, lineHeight: 21, fontWeight: '600', fontVariant: ['tabular-nums'] },
   symbol: { height: 16, alignItems: 'center', justifyContent: 'center' },
 });

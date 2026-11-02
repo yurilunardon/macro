@@ -466,6 +466,28 @@ export async function getRecords(
   return records;
 }
 
+/**
+ * Exercises whose best estimated 1RM between two dates beats every session before them, with how
+ * much it grew: the records of a week, a month or a year, best gain first.
+ */
+export async function getPeriodRecords(db: SQLiteDatabase, from: DateKey, to: DateKey): Promise<{ exercise: Exercise; gain: number }[]> {
+  const rows = await db.getAllAsync<ExerciseRow>(
+    `SELECT DISTINCT ${EXERCISE_COLUMNS} FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id JOIN exercises e ON e.id = we.exercise_id
+     WHERE w.ended_at IS NOT NULL AND w.date BETWEEN ? AND ?`,
+    from,
+    to,
+  );
+  const records: { exercise: Exercise; gain: number }[] = [];
+  for (const row of rows) {
+    const exercise = exerciseFromRow(row);
+    const sessions = await getExerciseHistory(db, exercise.id);
+    const before = Math.max(0, ...sessions.filter((s) => s.date < from).map((s) => s.oneRepMax ?? 0));
+    const now = Math.max(0, ...sessions.filter((s) => s.date >= from && s.date <= to).map((s) => s.oneRepMax ?? 0));
+    if (before > 0 && now > before) records.push({ exercise, gain: now - before });
+  }
+  return records.sort((a, b) => b.gain - a.gain);
+}
+
 /** The last finished workout of the same day of the program before this one, to compare with. */
 export async function getPreviousOfSameDay(db: SQLiteDatabase, workoutId: number): Promise<Workout | null> {
   const row = await db.getFirstAsync<{ id: number }>(

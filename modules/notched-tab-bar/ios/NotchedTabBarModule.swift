@@ -8,11 +8,7 @@ public class NotchedTabBarModule: Module {
   public func definition() -> ModuleDefinition {
     Name("NotchedTabBar")
 
-    /// Lets the JavaScript side tell this build, which has the workout's capsule, from older ones.
-    Constant("hasAccessory") { true }
-
     View(NotchedTabBarView.self)
-    View(NotchedAccessoryView.self)
   }
 }
 
@@ -32,6 +28,11 @@ public final class NotchedTabBarProps: ExpoSwiftUI.ViewProps {
   /// While a finger is down on the calendar's button. React Native handles that touch, so the
   /// calendar can grow out of the button.
   @Field var calendarPressed: Bool = false
+  /// While a workout runs, the right tab shows this time and a ring in place of its icon and name.
+  @Field var rightTime: String?
+  /// How full that ring is, from 0 to 1, and its colour.
+  @Field var rightProgress: Double = 0
+  @Field var rightTint: Color = .green
   /// `{ tab: "left" | "right" }` when a tab is picked.
   var onSelect = EventDispatcher()
 }
@@ -57,8 +58,6 @@ private enum Metrics {
   /// How far the button rises above the capsule: the view is `rise + bar` tall.
   static var rise: CGFloat { fab / 2 - fabSink }
   static var cradleRadius: CGFloat { fab / 2 + cradleMargin }
-  /// How far the workout's capsule above comes down over the button's top.
-  static let accessoryOverlap: CGFloat = 14
 }
 
 private enum Side: String {
@@ -377,16 +376,34 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     let selectedIcon = (side == .left ? props.leftSelectedIcon : props.rightSelectedIcon) ?? icon
     // The tab under a sliding finger lights up before the finger lifts.
     let on = (hovered ?? selectedSide) == side
+    let running: String? = side == .right ? props.rightTime : nil
     return Button {
       select(side)
     } label: {
       VStack(spacing: 2) {
-        Image(systemName: on ? selectedIcon : icon)
-          .font(.system(size: 20, weight: .semibold))
+        if let running {
+          ZStack {
+            Circle().stroke(Color.primary.opacity(0.18), lineWidth: 2.5)
+            Circle()
+              .trim(from: 0, to: CGFloat(min(max(props.rightProgress, 0), 1)))
+              .stroke(props.rightTint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
+              .rotationEffect(.degrees(-90))
+          }
+          .frame(width: 20, height: 20)
           .frame(height: 24)
-        Text(label)
-          .font(.system(size: 10, weight: .semibold))
-          .lineLimit(1)
+          Text(running)
+            .font(.system(size: 11, weight: .semibold))
+            .monospacedDigit()
+            .foregroundStyle(props.rightTint)
+            .lineLimit(1)
+        } else {
+          Image(systemName: on ? selectedIcon : icon)
+            .font(.system(size: 20, weight: .semibold))
+            .frame(height: 24)
+          Text(label)
+            .font(.system(size: 10, weight: .semibold))
+            .lineLimit(1)
+        }
       }
       .foregroundStyle(on ? props.accent : Color.primary)
       .animation(.easeOut(duration: 0.15), value: on)
@@ -394,7 +411,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityLabel(label)
+    .accessibilityLabel(running.map { "\(label), \($0)" } ?? label)
     .accessibilityAddTraits(selectedSide == side ? [.isSelected, .isButton] : .isButton)
   }
 
@@ -471,37 +488,6 @@ private struct Wave: ViewModifier, Animatable {
     content
       .scaleEffect(1 + 0.7 * progress)
       .opacity(progress > 0 && progress < 1 ? Double(0.8 * (1 - progress)) : 0)
-  }
-}
-
-// MARK: The workout's capsule
-
-public final class NotchedAccessoryProps: ExpoSwiftUI.ViewProps {}
-
-/// The glass of the workout in progress, above the bar: a capsule with the same cradle as the
-/// bar's, cut into its bottom edge, so the calendar's button sits between the two. Drawn only:
-/// React Native lays the workout's row over it and takes the touches.
-struct NotchedAccessoryView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
-  @ObservedObject var props: NotchedAccessoryProps
-
-  init(props: NotchedAccessoryProps) {
-    self.props = props
-  }
-
-  /// The bar's shape turned upside down: the button's centre is below the bottom edge, by half
-  /// the button less the overlap.
-  private let shape = NotchedCapsule(
-    sink: Metrics.accessoryOverlap - Metrics.fab / 2,
-    radius: Metrics.cradleRadius,
-    shoulder: Metrics.shoulder
-  ).rotation(.degrees(180))
-
-  var body: some View {
-    Color.clear
-      .frame(maxWidth: .infinity, maxHeight: .infinity)
-      .barGlass(in: shape, tint: nil)
-      .allowsHitTesting(false)
-      .accessibilityHidden(true)
   }
 }
 

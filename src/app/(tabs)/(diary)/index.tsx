@@ -29,10 +29,10 @@ import { usePendingDeletes } from '@/services/undo';
 const WIDE: object = { width: 64 };
 
 /**
- * Round each day, how much of its calorie goal was eaten. It counts what the day's page counts, so
+ * For each day, how much of its calorie goal was eaten. It counts what the day's page counts, so
  * the two go down together when a food is deleted and back up together on "Annulla".
  */
-function useCalorieRings(date: DateKey): Map<DateKey, DayProgress> {
+function useCalorieProgress(date: DateKey): Map<DateKey, DayProgress> {
   const days = weekOf(date);
   const hidden = usePendingDeletes();
   const draining = useDrainingDay();
@@ -40,15 +40,15 @@ function useCalorieRings(date: DateKey): Map<DateKey, DayProgress> {
     const [entries, plans] = await Promise.all([Promise.all(days.map((day) => getEntriesForDate(database, day))), getDayPlans(database, days)]);
     return { entries, plans };
   }, ['food', 'settings']);
-  const rings = new Map<DateKey, DayProgress>();
+  const progress = new Map<DateKey, DayProgress>();
   days.forEach((day, index) => {
     const kcal = (data?.entries[index] ?? []).reduce((sum, e) => (hidden.has(`entry:${e.id}`) ? sum : sum + e.totals.kcal), 0);
     const target = data?.plans.get(day)?.targets.kcal ?? 0;
     const label = `${formatKcal(kcal)} kcal`;
-    if (day === draining) rings.set(day, { progress: 0, label, slowMs: CLEAR_MS });
-    else if (kcal > 0) rings.set(day, { progress: target > 0 ? kcal / target : 0, label });
+    if (day === draining) progress.set(day, { progress: 0, label, slowMs: CLEAR_MS });
+    else if (kcal > 0) progress.set(day, { progress: target > 0 ? kcal / target : 0, label });
   });
-  return rings;
+  return progress;
 }
 
 export default function NutritionScreen() {
@@ -65,7 +65,7 @@ export default function NutritionScreen() {
   // The pages around the one on screen are kept ready; see DayPage for why they cost little.
   const pager = useDayPager(today, asked, scrollToTop);
   const { date } = pager;
-  const rings = useCalorieRings(date);
+  const calories = useCalorieProgress(date);
 
   // Opened on a day from the calendar: slide to it as if it were picked above, then forget it, so
   // the same day can be asked for again.
@@ -112,7 +112,7 @@ export default function NutritionScreen() {
         <WeekStrip
           selected={date}
           today={today}
-          rings={rings}
+          progress={calories}
           pulse={pager.pulse}
           onSelect={pager.goTo}
           onChangeWeek={(direction) => pager.goTo(addDays(date, direction * 7))}
