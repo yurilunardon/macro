@@ -40,7 +40,7 @@ import { ActionRow, ListGroup } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { ProgressBar } from '@/components/progress';
-import { confirmDestructive, editText } from '@/components/prompt';
+import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { RangeFlag } from '@/components/range-flag';
 import { RestPicker } from '@/components/rest-picker';
@@ -302,7 +302,7 @@ export default function WorkoutScreen() {
               // Filled in once there is a note.
               icon={workout?.notes ? 'note.text' : 'square.and.pencil'}
               accessibilityLabel={workout?.notes ? 'Nota dell’allenamento' : 'Aggiungi una nota'}
-              onPress={() => workout && router.push({ pathname: '/workout-note', params: { id: workout.id, text: workout.notes ?? '' } })}
+              onPress={() => workout && router.push({ pathname: '/note-sheet', params: { kind: 'workout', id: workout.id, text: workout.notes ?? '' } })}
             />
           )}
           {editing ? null : (
@@ -411,7 +411,7 @@ export default function WorkoutScreen() {
 /** An exercise's fixed note: a tap changes or deletes it. */
 function NoteRow({ text, onPress }: { text: string; onPress: () => void }) {
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Modifica o elimina la nota" style={styles.noteRow}>
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Modifica la nota" style={styles.noteRow}>
       <Icon name="pin.fill" size={12} tone="warning" />
       <AppText variant="footnote" tone="text" style={styles.flex}>
         {text}
@@ -504,13 +504,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
   const currentIndex = item.sets.findIndex((set) => set.id === currentSetId);
   const holdsCurrent = collapsed && currentIndex >= 0;
 
-  const editNote = () =>
-    editText({
-      title: 'Nota fissa',
-      message: 'Visibile in ogni allenamento con questo esercizio.',
-      value: exercise.note,
-      onSave: (text) => void updateExerciseOptions(db, exercise.id, { note: text }),
-    });
+  const editNote = () => router.push({ pathname: '/note-sheet', params: { kind: 'exercise', id: exercise.id, text: exercise.note ?? '' } });
 
   return (
     <View style={styles.exercise}>

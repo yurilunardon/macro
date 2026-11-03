@@ -94,7 +94,7 @@ export default function RootLayout() {
                 }}
               />
               <Stack.Screen
-                name="workout-note"
+                name="note-sheet"
                 options={{
                   presentation: 'formSheet',
                   sheetAllowedDetents: [0.6, 1],

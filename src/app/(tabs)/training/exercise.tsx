@@ -5,7 +5,7 @@ import { ActivityIndicator, StyleSheet, Switch, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { Card, ListGroup, Row, SectionTitle } from '@/components/card';
 import { WeightChart } from '@/components/charts';
-import { confirmDestructive, editText } from '@/components/prompt';
+import { confirmDestructive } from '@/components/prompt';
 import { RestPicker } from '@/components/rest-picker';
 import { ScreenScroll } from '@/components/screen';
 import { Spacing } from '@/constants/theme';
@@ -68,13 +68,7 @@ export default function ExerciseScreen({ sheet = false }: { sheet?: boolean }) {
     .map((s) => ({ date: s.date, kg: Math.round((s.oneRepMax ?? 0) * 10) / 10 }));
   const rest = restFor(exercise);
 
-  const editNote = () =>
-    editText({
-      title: 'Nota fissa',
-      message: 'Visibile in ogni allenamento con questo esercizio.',
-      value: exercise.note,
-      onSave: (text) => void updateExerciseOptions(db, exercise.id, { note: text }),
-    });
+  const editNote = () => router.push({ pathname: '/note-sheet', params: { kind: 'exercise', id: exercise.id, text: exercise.note ?? '' } });
 
   const remove = async () => {
     const ok = await confirmDestructive({

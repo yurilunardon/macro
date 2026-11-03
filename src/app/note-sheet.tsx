@@ -6,19 +6,21 @@ import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { Spacing } from '@/constants/theme';
+import { updateExerciseOptions } from '@/db/exercises';
 import { updateWorkoutNotes } from '@/db/workouts';
 import { useTheme } from '@/hooks/use-theme';
 
 /**
- * The workout's note, in a sheet from the button in the bar: it opens ready to type and saves
- * itself. Emptied, the note is gone.
+ * A note, on the workout (`kind` "workout") or fixed on an exercise ("exercise"), in a sheet: it
+ * opens ready to type and saves itself. Emptied, the note is gone.
  */
-export default function WorkoutNoteSheet() {
+export default function NoteSheet() {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
-  const params = useLocalSearchParams<{ id?: string; text?: string }>();
+  const params = useLocalSearchParams<{ kind?: string; id?: string; text?: string }>();
   const id = Number(params.id);
+  const fixed = params.kind === 'exercise';
   const [text, setText] = useState(params.text ?? '');
   const saved = useRef(params.text ?? '');
   const latest = useRef(text);
@@ -28,7 +30,8 @@ export default function WorkoutNoteSheet() {
   const save = (next: string) => {
     if (next.trim() === saved.current.trim()) return;
     saved.current = next;
-    void updateWorkoutNotes(db, id, next);
+    if (fixed) void updateExerciseOptions(db, id, { note: next });
+    else void updateWorkoutNotes(db, id, next);
   };
   useEffect(() => {
     const timer = setTimeout(() => save(text), 500);
@@ -47,7 +50,7 @@ export default function WorkoutNoteSheet() {
     <ScrollView style={{ backgroundColor: theme.background }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
       <View style={styles.header}>
         <AppText variant="title2" style={styles.flex}>
-          Nota
+          {fixed ? 'Nota fissa' : 'Nota'}
         </AppText>
         <Button title="Fine" variant="plain" compact onPress={() => router.back()} />
       </View>
@@ -56,9 +59,9 @@ export default function WorkoutNoteSheet() {
         onChangeText={setText}
         autoFocus
         multiline
-        placeholder="Come è andata, sensazioni, dolori…"
+        placeholder={fixed ? 'Sedile al 4, presa larga…' : 'Come è andata, sensazioni, dolori…'}
         placeholderTextColor={theme.textTertiary}
-        accessibilityLabel="Nota dell’allenamento"
+        accessibilityLabel={fixed ? 'Nota fissa dell’esercizio' : 'Nota dell’allenamento'}
         style={[styles.input, { color: theme.text, backgroundColor: theme.card }]}
       />
     </ScrollView>
