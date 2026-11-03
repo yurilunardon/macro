@@ -11,7 +11,6 @@ import { RING_STOPS, RING_TONES } from '@/lib/calories';
 import { formatLongDate, formatWeekdayInitial, weekOf, type DateKey } from '@/lib/dates';
 
 import { AppText } from './app-text';
-import { Icon } from './icon';
 import { beat, EASE_OUT, project } from './motion';
 
 const CIRCLE = 36;
@@ -26,7 +25,7 @@ export type DayProgress = {
   /** A slow, even change instead of the quick one, e.g. while the day is emptied. */
   slowMs?: number;
 };
-/** What a day holds, and for VoiceOver its name. */
+/** What a day holds, and for VoiceOver its name: a symbol under it in the month. */
 export type DaySymbol = { symbol: SFSymbol; label: string };
 
 type WeekStripProps = {
@@ -37,18 +36,15 @@ type WeekStripProps = {
   onChangeWeek: (direction: number) => void;
   /** How much: a short bar under every day, as those of the macros on the page. */
   progress?: ReadonlyMap<DateKey, DayProgress>;
-  /** What: a small symbol under the days that have one, whose place is kept under the others. */
-  symbols?: ReadonlyMap<DateKey, DaySymbol>;
   /** Each new value makes the selected day's circle beat once, to show where it is. */
   pulse?: number;
 };
 
 /**
  * The week of the selected day, Monday to Sunday, as in Calendar: the selected day in a filled
- * circle (green when it is today). A bar says how much, a symbol says what, so the two cannot be
- * taken for each other as two dots of different meaning were.
+ * circle (green when it is today) and under each a bar of how far along it is.
  */
-export function WeekStrip({ selected, today, onSelect, onChangeWeek, progress, symbols, pulse = 0 }: WeekStripProps) {
+export function WeekStrip({ selected, today, onSelect, onChangeWeek, progress, pulse = 0 }: WeekStripProps) {
   const theme = useTheme();
   const days = weekOf(selected);
 
@@ -93,14 +89,13 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, progress, s
             const isSelected = day === selected;
             const isToday = day === today;
             const bar = progress?.get(day);
-            const symbol = symbols?.get(day);
             return (
               <Pressable
                 key={day}
                 onPress={() => onSelect(day)}
                 accessibilityRole="button"
                 accessibilityState={{ selected: isSelected }}
-                accessibilityLabel={[formatLongDate(day), isToday ? 'oggi' : null, bar?.label, symbol?.label].filter(Boolean).join(', ')}
+                accessibilityLabel={[formatLongDate(day), isToday ? 'oggi' : null, bar?.label].filter(Boolean).join(', ')}
                 style={styles.cell}>
                 <AppText variant="caption" weight="600" tone={isToday ? 'accent' : 'textSecondary'} maxFontSizeMultiplier={1.3}>
                   {formatWeekdayInitial(day)}
@@ -119,7 +114,6 @@ export function WeekStrip({ selected, today, onSelect, onChangeWeek, progress, s
                   </AppText>
                 </View>
                 {progress ? <DayBar progress={bar?.progress ?? 0} slowMs={bar?.slowMs} /> : null}
-                {symbols ? <View style={styles.symbol}>{symbol ? <Icon name={symbol.symbol} size={15} tone="textSecondary" /> : null}</View> : null}
               </Pressable>
             );
           })}
@@ -155,7 +149,7 @@ function DayBar({ progress, slowMs }: { progress: number; slowMs?: number }) {
  * The circle behind the selected day, as in Calendar: it does not travel from the old day, it
  * just appears on the new one, growing a touch into place.
  */
-function DayCircle({ selected, color, pulse }: { selected: boolean; color: string; pulse: number }) {
+export function DayCircle({ selected, color, pulse }: { selected: boolean; color: string; pulse: number }) {
   const visible = useSharedValue(selected ? 1 : 0);
   const scale = useSharedValue(1);
   const first = useRef(true);
@@ -192,5 +186,4 @@ const styles = StyleSheet.create({
   bar: { width: BAR_WIDTH, height: 4, borderRadius: 2, overflow: 'hidden' },
   barFill: { height: '100%', borderRadius: 2 },
   number: { fontSize: 16, lineHeight: 21, fontWeight: '600', fontVariant: ['tabular-nums'] },
-  symbol: { height: 16, alignItems: 'center', justifyContent: 'center' },
 });

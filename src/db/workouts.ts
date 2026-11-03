@@ -134,12 +134,12 @@ async function insertSets(
 /** The workout in progress, if any: there is only ever one. */
 export async function getActiveWorkout(
   db: SQLiteDatabase,
-): Promise<{ id: number; name: string; icon: DayIcon; startedAt: string } | null> {
-  const row = await db.getFirstAsync<{ id: number; name: string; icon: string | null; started_at: string }>(
-    `SELECT w.id, w.name, d.icon, w.started_at FROM workouts w LEFT JOIN program_days d ON d.id = w.day_id
+): Promise<{ id: number; name: string; icon: DayIcon; startedAt: string; dayId: number | null } | null> {
+  const row = await db.getFirstAsync<{ id: number; name: string; icon: string | null; started_at: string; day_id: number | null }>(
+    `SELECT w.id, w.name, d.icon, w.started_at, d.id AS day_id FROM workouts w LEFT JOIN program_days d ON d.id = w.day_id
      WHERE w.ended_at IS NULL ORDER BY w.started_at DESC LIMIT 1`,
   );
-  return row ? { id: row.id, name: row.name, icon: dayIcon(row.name, row.icon), startedAt: row.started_at } : null;
+  return row ? { id: row.id, name: row.name, icon: dayIcon(row.name, row.icon), startedAt: row.started_at, dayId: row.day_id } : null;
 }
 
 /**

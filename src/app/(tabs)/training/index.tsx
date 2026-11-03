@@ -5,7 +5,6 @@ import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
   FadeIn,
-  FadeOut,
   LinearTransition,
   type SharedValue,
   useAnimatedStyle,
@@ -18,34 +17,31 @@ import Animated, {
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
 import { Card, ListGroup, Row } from '@/components/card';
-import { DayBadge } from '@/components/day-badge';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
-import { PressableScale } from '@/components/pressable-scale';
+import { ProgressBar } from '@/components/progress';
 import { ScreenScroll } from '@/components/screen';
 import { Radius, Spacing } from '@/constants/theme';
 import { FoldChevron } from '@/components/fold-chevron';
-import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
 import { restFor } from '@/db/exercises';
-import { prefetch, prefetchLiveQuery, useLiveQuery } from '@/db/live';
+import { prefetch, useLiveQuery } from '@/db/live';
 import { getDay, getNextDay, getPrograms, setActiveProgram, type DaySummary, type ProgramDay } from '@/db/programs';
 import { dayScreen } from '@/db/screens';
 import { getActiveWorkout, getWorkout, getWorkoutHistory, type Workout, type WorkoutSummary } from '@/db/workouts';
 import { useAgenda } from '@/hooks/use-agenda';
-import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useFrozen } from '@/hooks/use-frozen';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
+import { useWorkoutStatus } from '@/hooks/use-workout-status';
 import { addDays, daysBetween, daysFrom, formatMonthName, formatRecent, formatShortDate, formatWeekdayAndDay, monthOf, type DateKey } from '@/lib/dates';
 import { muscleLabel } from '@/lib/exercises';
 import { countLabel } from '@/lib/format';
 import { periodRange, totalsOf, volumeBuckets, workoutsBetween } from '@/lib/progress';
-import { formatDuration, formatLifted, formatSetShort, formatWorkoutLength, formatWorkoutLengthShort, isWorkSet } from '@/lib/training';
+import { formatLifted, formatSetShort, formatWorkoutLength, formatWorkoutLengthShort, isWorkSet } from '@/lib/training';
 import { buildTrainingLine, PAST_SHOWN, type LineRow } from '@/lib/training-line';
-import { endWorkout } from '@/services/end-workout';
 import { haptics } from '@/services/haptics';
-import { startAndOpenWorkout, useWorkoutStarting } from '@/services/start-workout';
+import { openActiveWorkout, startAndOpenWorkout, useWorkoutStarting } from '@/services/start-workout';
 
 /**
  * The gym, in three parts that look different from each other: the program on top, as a line that
@@ -55,7 +51,6 @@ import { startAndOpenWorkout, useWorkoutStarting } from '@/services/start-workou
 export default function TrainingScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const theme = useTheme();
   const today = useToday();
   const { names } = useExerciseNames();
   // While the workout's sheet rises, this page stays as it was; it changes once covered.
@@ -89,22 +84,13 @@ export default function TrainingScreen() {
         : [],
     );
   const hasGymDays = (soon.data?.plans ?? []).some((p) => p.typeId === gymTypeId);
-  const breath = useBreath(Boolean(data?.active));
 
   const start = (dayId: number | null, name: string) => startAndOpenWorkout(db, router, dayId, name);
-
-  const endActive = async () => {
-    if (!data?.active) return;
-    const id = data.active.id;
-    if ((await endWorkout(db, id, { confirm: true })) === 'finished') {
-      router.push({ pathname: '/workout-summary', params: { id } });
-    }
-  };
 
   const programs = data?.programs ?? [];
   const history = data?.history ?? [];
   const next = data?.next ?? null;
-  const rows = useFrozen(next ? buildTrainingLine({ history, dayIds: next.program.days.map((d) => d.id), nextId: next.day.id, upcoming }) : [], starting);
+  const rows = useFrozen(next ? buildTrainingLine({ history, dayIds: next.program.days.map((d) => d.id), nextId: next.day.id, upcoming, active: data?.active }) : [], starting);
   const openDay = (dayId: number) => {
     void prefetch(db, dayScreen(dayId));
     router.push({ pathname: '/training/day', params: { id: dayId } });
@@ -122,48 +108,6 @@ export default function TrainingScreen() {
           </Stack.Toolbar.MenuAction>
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
-
-      {/* The workout in progress comes before everything: the whole card opens it. */}
-      {data?.active ? (
-        <Animated.View key="active" entering={HERO_IN} exiting={HERO_OUT} style={styles.activeSlot}>
-          <PressableScale
-            onPressIn={() => void prefetchLiveQuery(db, ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS)}
-            onPress={() => router.push('/workout')}
-            accessibilityRole="button"
-            accessibilityHint="Apre l’allenamento">
-            <Card style={styles.hero}>
-              <Breathing breath={breath} />
-              <View style={styles.heroTop}>
-                <LiveDot breath={breath} />
-                <AppText variant="footnote" weight="600" tone="accent" style={styles.flex}>
-                  IN CORSO
-                </AppText>
-                <Icon name="chevron.right" size={14} tone="accent" weight="semibold" />
-              </View>
-              <View style={styles.heroName}>
-                <DayBadge icon={data.active.icon} size={40} />
-                <View style={styles.flex}>
-                  <AppText variant="title" numberOfLines={1}>
-                    {data.active.name}
-                  </AppText>
-                  <Elapsed since={data.active.startedAt} />
-                </View>
-                {/* Small and to the side: ending is a rare, deliberate act here. */}
-                <Pressable
-                  onPress={() => void endActive()}
-                  hitSlop={8}
-                  accessibilityRole="button"
-                  accessibilityLabel="Termina allenamento"
-                  style={({ pressed }) => [styles.end, { backgroundColor: theme.fill }, pressed && styles.pressed]}>
-                  <AppText variant="subhead" weight="600" tone="danger">
-                    Termina
-                  </AppText>
-                </Pressable>
-              </View>
-            </Card>
-          </PressableScale>
-        </Animated.View>
-      ) : null}
 
       {/* 1 · The program. */}
       {next ? (
@@ -214,6 +158,7 @@ export default function TrainingScreen() {
             onOpenDay={openDay}
             onStart={(dayId, name) => void start(dayId, name)}
             onOpenWorkout={(id) => router.push({ pathname: '/training/session', params: { id } })}
+            onResume={() => openActiveWorkout(db, router)}
           />
           {/* Without gym days in the calendar there is no "today": one tap sets them up. */}
           {soon.data && gymTypeId !== null && !hasGymDays ? (
@@ -284,6 +229,7 @@ type TrainingLineProps = {
   onOpenDay: (dayId: number) => void;
   onStart: (dayId: number, name: string) => void;
   onOpenWorkout: (id: number) => void;
+  onResume: () => void;
 };
 
 /**
@@ -292,8 +238,9 @@ type TrainingLineProps = {
  * leaving the others as they are: a day done shows how it went, a day to come its exercises and
  * "Inizia", on any day, whatever the plan says.
  */
-function TrainingLine({ rows, days, details, past, today, canStart, names, onOpenDay, onStart, onOpenWorkout }: TrainingLineProps) {
+function TrainingLine({ rows, days, details, past, today, canStart, names, onOpenDay, onStart, onOpenWorkout, onResume }: TrainingLineProps) {
   const theme = useTheme();
+  const breath = useBreath(rows.some((r) => r.kind === 'active'));
   // The next workout starts open and the others folded; each then stays as it was left.
   const [toggled, setToggled] = useState<ReadonlyMap<string, boolean>>(new Map());
   const isOpen = (row: LineRow<WorkoutSummary>) => toggled.get(row.key) ?? row.kind === 'next';
@@ -305,11 +252,11 @@ function TrainingLine({ rows, days, details, past, today, canStart, names, onOpe
   return (
     <View style={styles.line}>
       {rows.map((row, index) => {
-        const dotY = row.kind === 'next' ? NEXT_DOT_Y : DOT_Y;
+        const dotY = row.kind === 'next' || row.kind === 'active' ? NEXT_DOT_Y : DOT_Y;
         const first = index === 0;
         const last = index === rows.length - 1;
         const open = isOpen(row);
-        const day = row.kind === 'past' ? null : days.find((d) => d.id === row.dayId);
+        const day = row.kind === 'past' || row.kind === 'active' ? null : days.find((d) => d.id === row.dayId);
         return (
           <Animated.View key={row.key} layout={LAYOUT} style={styles.step}>
             <View style={styles.rail}>
@@ -317,7 +264,9 @@ function TrainingLine({ rows, days, details, past, today, canStart, names, onOpe
                 <View style={[styles.lineSegment, { backgroundColor: theme.separator }, first ? { top: dotY } : { top: 0 }, last ? { height: dotY } : { bottom: 0 }]} />
               ) : null}
               <View style={[styles.dotSlot, { top: dotY - 7 }]}>
-                {row.kind === 'next' ? (
+                {row.kind === 'active' ? (
+                  <LiveDot breath={breath} />
+                ) : row.kind === 'next' ? (
                   <View style={[styles.dotCurrent, { borderColor: theme.accent, backgroundColor: theme.background }]} />
                 ) : row.kind === 'past' ? (
                   // Done: the tick is on the line, so the row only has to say when.
@@ -330,8 +279,10 @@ function TrainingLine({ rows, days, details, past, today, canStart, names, onOpe
               </View>
             </View>
             <View style={styles.stepBody}>
-              <View style={[styles.dayCard, { backgroundColor: theme.card }]}>
-                {row.kind === 'past' ? (
+              <View style={[styles.dayCard, { backgroundColor: row.kind === 'active' ? theme.accentSoft : theme.card }]}>
+                {row.kind === 'active' ? (
+                  <ActiveDay names={names} onResume={onResume} />
+                ) : row.kind === 'past' ? (
                   <PastDay
                     workout={row.workout}
                     detail={past.find((w) => w.id === row.workout.id) ?? null}
@@ -365,12 +316,37 @@ function TrainingLine({ rows, days, details, past, today, canStart, names, onOpe
 }
 
 /** "PROSSIMO · MER 4, 21:00", "VEN 6, 21:00", or "DOPO" for a day the calendar has no date for yet. */
-function comingCaption(row: Exclude<LineRow<WorkoutSummary>, { kind: 'past' }>, today: DateKey): string {
+function comingCaption(row: Extract<LineRow<WorkoutSummary>, { kind: 'next' | 'later' }>, today: DateKey): string {
   const away = row.date === null ? null : daysBetween(today, row.date);
   const day = row.date === null ? null : away === 0 ? 'Oggi' : away === 1 ? 'Domani' : formatWeekdayAndDay(row.date);
   const when = [day, row.time].filter(Boolean).join(', ');
   if (row.kind === 'next') return (when ? `Prossimo · ${when}` : 'Prossimo').toUpperCase();
   return (when || 'Dopo').toUpperCase();
+}
+
+/** The workout in progress, in its place on the line: how far along it is, and back to it. */
+function ActiveDay({ names, onResume }: { names: TrainingLineProps['names']; onResume: () => void }) {
+  const theme = useTheme();
+  const status = useWorkoutStatus();
+  if (!status) return null;
+  const color = status.resting ? theme.warning : theme.accent;
+  return (
+    <Pressable onPress={onResume} accessibilityRole="button" accessibilityLabel={`${status.name} in corso, ${status.time}. Riprendi`} style={styles.activeDay}>
+      <View>
+        <AppText variant="caption" weight="600" numeric numberOfLines={1} style={{ color }}>
+          {`${status.resting ? 'RECUPERO' : status.ready ? 'RECUPERO FINITO' : 'IN CORSO'} · ${status.time}`.toUpperCase()}
+        </AppText>
+        <AppText variant="title2" numberOfLines={1}>
+          {status.name}
+        </AppText>
+      </View>
+      <ProgressBar value={status.done} target={status.total} color={theme.accent} height={6} />
+      <AppText variant="subhead" tone="textSecondary" numberOfLines={1}>
+        {[`${status.done} di ${status.total} serie`, status.current ? `ora ${names(status.current.exercise).title}` : null].filter(Boolean).join(' · ')}
+      </AppText>
+      <Button title="Riprendi" onPress={onResume} />
+    </Pressable>
+  );
 }
 
 /** A workout done, with when above what, and once open how it went. */
@@ -561,10 +537,10 @@ function ProgressCard({ history, today, onPress }: { history: readonly WorkoutSu
       style={({ pressed }) => [styles.progressCard, { backgroundColor: pressed ? theme.cardPressed : theme.card }]}>
       <View style={styles.flex}>
         <AppText variant="headline" numberOfLines={1}>
-          {`${countLabel(totals.count, 'allenamento', 'allenamenti')} in ${formatMonthName(monthOf(today)).toLowerCase()}`}
+          {countLabel(totals.count, 'allenamento', 'allenamenti')}
         </AppText>
         <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
-          {`${totals.sets} serie · ${formatLifted(totals.kg)}`}
+          {`${formatMonthName(monthOf(today))} · ${totals.sets} serie · ${formatLifted(totals.kg)}`}
         </AppText>
       </View>
       <View style={styles.miniBars}>
@@ -604,13 +580,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   shrink: { flexShrink: 1 },
   pressed: { opacity: 0.6 },
-  activeSlot: { marginBottom: Spacing.lg },
   hero: { gap: Spacing.xs },
-  heroTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 32 },
-  heroName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginTop: Spacing.xs },
   heroButton: { marginTop: Spacing.md, gap: Spacing.xs },
-  end: { paddingHorizontal: Spacing.md, height: 32, borderRadius: 16, justifyContent: 'center' },
-  glow: { ...StyleSheet.absoluteFill, borderRadius: Radius.lg, borderCurve: 'continuous' },
   live: { width: 8, height: 8, alignItems: 'center', justifyContent: 'center' },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveRing: { position: 'absolute', width: 8, height: 8, borderRadius: 4 },
@@ -627,6 +598,7 @@ const styles = StyleSheet.create({
   dotCurrent: { width: 14, height: 14, borderRadius: 7, borderWidth: 3 },
   dayCard: { borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },
   dayHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 58, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm + 2 },
+  activeDay: { gap: Spacing.md, padding: Spacing.lg },
   dayOpen: { gap: Spacing.md, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
   metrics: { flexDirection: 'row', gap: Spacing.sm },
   metric: { flex: 1, gap: 1 },
@@ -644,25 +616,9 @@ const styles = StyleSheet.create({
   tile: { flex: 1, gap: Spacing.sm, padding: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous', minHeight: 104 },
 });
 
-// The workout in progress fades in and out above the program; what is below slides to its new
-// place instead of jumping, and the open day fades in when another one is picked.
-const HERO_IN = FadeIn.duration(260);
-const HERO_OUT = FadeOut.duration(160);
+// What is below slides to its new place instead of jumping, and an open day fades in.
 const LAYOUT = LinearTransition.duration(280).easing(Easing.out(Easing.cubic));
 const DAY_IN = FadeIn.duration(200);
-
-/**
- * The time since the workout started. It ticks on its own: the clock in the screen redrew the
- * whole page every second while a workout ran.
- */
-function Elapsed({ since }: { since: string }) {
-  const now = useClock(1000);
-  return (
-    <AppText variant="subhead" tone="textSecondary" numeric>
-      {formatDuration((now - new Date(since).getTime()) / 1000)}
-    </AppText>
-  );
-}
 
 /** One beat shared by the card and its dot, so they breathe together: 0 → 1 → 0, about once a second each way. */
 function useBreath(running: boolean): SharedValue<number> {
@@ -674,13 +630,6 @@ function useBreath(running: boolean): SharedValue<number> {
     return () => breath.set(0);
   }, [breath, reduced, running]);
   return breath;
-}
-
-/** A soft green glow over the card of the workout in progress, as if it breathed. */
-function Breathing({ breath }: { breath: SharedValue<number> }) {
-  const theme = useTheme();
-  const style = useAnimatedStyle(() => ({ opacity: breath.get() * 0.16 }));
-  return <Animated.View pointerEvents="none" style={[styles.glow, { backgroundColor: theme.accent }, style]} />;
 }
 
 /** A small green dot with a halo that swells and fades in time with the card. */

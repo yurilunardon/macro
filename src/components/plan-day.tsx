@@ -189,50 +189,42 @@ export function ChecklistSection({
 }) {
   const theme = useTheme();
   return (
-    <View style={styles.section}>
+    <View style={[styles.group, { backgroundColor: theme.card }]}>
       <View style={styles.sectionHead}>
-        <AppText variant="headline">{section.moment.name}</AppText>
-        <AppText tone="textSecondary" numeric>
+        <AppText variant="footnote" weight="600" tone="textSecondary">
+          {section.moment.name}
+        </AppText>
+        <AppText variant="footnote" tone="textSecondary" numeric>
           {section.time}
         </AppText>
       </View>
-      <View style={[styles.group, { backgroundColor: theme.card }]}>
-        {section.entries.map((entry, index) => {
-          const missed = late && !entry.done;
-          const { name, amount, side } = describeEntry(entry, missed);
-          return (
-            <Pressable
-              key={entry.key}
-              onPress={() => onPress(entry)}
-              onLongPress={() => onLongPress(entry)}
-              accessibilityRole="checkbox"
-              accessibilityState={{ checked: entry.done }}
-              accessibilityLabel={[name, amount, side].filter(Boolean).join(', ')}
-              style={({ pressed }) => [
-                styles.entry,
-                index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.separator },
-                pressed && { backgroundColor: theme.cardPressed },
-              ]}>
-              <Icon
-                name={entry.done ? 'checkmark.circle.fill' : 'circle'}
-                size={24}
-                color={entry.done ? theme.accent : missed ? theme.warning : theme.textSecondary}
-              />
-              <AppText style={[styles.name, { color: entry.done ? theme.textSecondary : theme.text }]} numberOfLines={2}>
-                {name}
+      {section.entries.map((entry) => {
+        const missed = late && !entry.done;
+        const { name, amount, side } = describeEntry(entry, missed);
+        return (
+          <Pressable
+            key={entry.key}
+            onPress={() => onPress(entry)}
+            onLongPress={() => onLongPress(entry)}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: entry.done }}
+            accessibilityLabel={[name, amount, side].filter(Boolean).join(', ')}
+            style={({ pressed }) => [styles.entry, { borderTopColor: theme.separator }, pressed && { backgroundColor: theme.cardPressed }]}>
+            <Icon name={entry.done ? 'checkmark.circle.fill' : 'circle'} size={22} color={entry.done ? theme.accent : missed ? theme.warning : theme.textSecondary} />
+            <AppText style={[styles.name, { color: entry.done ? theme.textSecondary : theme.text }]} numberOfLines={2}>
+              {name}
+            </AppText>
+            {amount ? (
+              <AppText tone="textSecondary" numberOfLines={1} style={styles.amount}>
+                {amount}
               </AppText>
-              {amount ? (
-                <AppText tone="textSecondary" numberOfLines={1} style={styles.amount}>
-                  {amount}
-                </AppText>
-              ) : null}
-              <AppText numeric numberOfLines={1} style={[styles.side, { color: missed ? theme.warning : theme.textSecondary }]}>
-                {side}
-              </AppText>
-            </Pressable>
-          );
-        })}
-      </View>
+            ) : null}
+            <AppText numeric numberOfLines={1} style={[styles.side, { color: missed ? theme.warning : theme.textSecondary }]}>
+              {side}
+            </AppText>
+          </Pressable>
+        );
+      })}
     </View>
   );
 }
@@ -266,14 +258,12 @@ const styles = StyleSheet.create({
     padding: Spacing.lg,
     borderRadius: Radius.lg,
     borderCurve: 'continuous',
-    marginBottom: Spacing.md,
   },
   activityText: { flex: 1, gap: 2 },
   start: { height: 44, paddingHorizontal: Spacing.lg, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  section: { marginTop: Spacing.lg },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: 2, marginBottom: Spacing.sm },
+  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
   group: { borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },
-  entry: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 54, paddingHorizontal: Spacing.lg },
+  entry: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 46, paddingHorizontal: Spacing.lg, borderTopWidth: StyleSheet.hairlineWidth },
   // The amount gives way first when the line is short of room, then the name.
   name: { flexShrink: 1 },
   amount: { flexShrink: 100 },

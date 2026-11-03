@@ -1,7 +1,7 @@
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedStyle, useSharedValue, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Spacing } from '@/constants/theme';
@@ -19,18 +19,11 @@ const COVER = 240;
  */
 let foldedBar: number | null = null;
 
-/**
- * What stays in sight at the top as the page scrolls, as the week in Calendar: it scrolls with the
- * page until it reaches the bottom of the bar, then stops there, with the page going under it.
- */
-export function PinnedStrip({ scroll, children }: { scroll: ScrollTop; children: ReactNode }) {
-  const theme = useTheme();
+/** The height of the bar with its large title folded, where what is pinned stops. */
+export function usePinnedBar(): SharedValue<number> {
   const insets = useSafeAreaInsets();
   const reported = useHeaderHeight();
   const bar = useSharedValue(foldedBar ?? insets.top + NAV_BAR);
-  const top = useSharedValue(0);
-  const { offset } = scroll;
-
   // The first value is React Navigation's own estimate, before iOS has reported anything.
   const estimate = useRef(reported);
   useEffect(() => {
@@ -40,6 +33,18 @@ export function PinnedStrip({ scroll, children }: { scroll: ScrollTop; children:
       bar.set(withTiming(reported, { duration: 180 }));
     }
   }, [reported, insets.top, bar]);
+  return bar;
+}
+
+/**
+ * What stays in sight at the top as the page scrolls, as the week in Calendar: it scrolls with the
+ * page until it reaches the bottom of the bar, then stops there, with the page going under it.
+ */
+export function PinnedStrip({ scroll, children }: { scroll: ScrollTop; children: ReactNode }) {
+  const theme = useTheme();
+  const bar = usePinnedBar();
+  const top = useSharedValue(0);
+  const { offset } = scroll;
 
   const pinned = useAnimatedStyle(() => ({ transform: [{ translateY: Math.max(0, offset.get() + bar.get() - top.get()) }] }));
   // Only once pinned: before, it would hide what is above the strip on the page.

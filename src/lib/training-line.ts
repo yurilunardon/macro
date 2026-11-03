@@ -6,14 +6,15 @@ export type UpcomingGymDay = { date: DateKey; time: string | null; dayId: number
 
 export type LineRow<W> =
   | { kind: 'past'; key: string; workout: W }
+  | { kind: 'active'; key: string }
   | { kind: 'next' | 'later'; key: string; dayId: number; date: DateKey | null; time: string | null };
 
 /** The workouts done shown above the next one. */
 export const PAST_SHOWN = 2;
 
 /**
- * The training page's line, in the order of time: the last workouts done, oldest first, then the
- * gym days to come with their dates. As many days to come as the program has, and every day of the
+ * The training page's line, in the order of time: the last workouts done, oldest first, the one in
+ * progress, then the gym days to come with their dates. As many days to come as the program has, and every day of the
  * program is among them, those the calendar has no date for at the end, so that any of them can
  * be started from here at any time.
  */
@@ -22,6 +23,7 @@ export function buildTrainingLine<W extends { id: number }>({
   dayIds,
   nextId,
   upcoming,
+  active = null,
 }: {
   /** The workouts done, newest first. */
   history: readonly W[];
@@ -31,6 +33,8 @@ export function buildTrainingLine<W extends { id: number }>({
   nextId: number;
   /** The gym days to come, in date order. */
   upcoming: readonly UpcomingGymDay[];
+  /** The workout in progress, and the day of the program it is for, if any. */
+  active?: { dayId: number | null } | null;
 }): LineRow<W>[] {
   const past: LineRow<W>[] = history
     .slice(0, PAST_SHOWN)
@@ -44,11 +48,13 @@ export function buildTrainingLine<W extends { id: number }>({
   for (let i = 0; i < dayIds.length; i += 1) {
     const dayId: number = (cursor === null ? nextId : nextInRotation(dayIds, cursor)) ?? nextId;
     cursor = dayId;
-    if (!coming.some((c) => c.dayId === dayId)) coming.push({ dayId, date: null, time: null });
+    // The day being done is already on the line, in its own row.
+    if (dayId !== active?.dayId && !coming.some((c) => c.dayId === dayId)) coming.push({ dayId, date: null, time: null });
   }
 
   return [
     ...past,
+    ...(active ? [{ kind: 'active' as const, key: 'active' }] : []),
     ...coming.map(
       ({ dayId, date, time }, index): LineRow<W> => ({
         kind: index === 0 ? 'next' : 'later',

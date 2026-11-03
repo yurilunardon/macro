@@ -28,11 +28,6 @@ public final class NotchedTabBarProps: ExpoSwiftUI.ViewProps {
   /// While a finger is down on the calendar's button. React Native handles that touch, so the
   /// calendar can grow out of the button.
   @Field var calendarPressed: Bool = false
-  /// While a workout runs, the right tab shows this time and a ring in place of its icon and name.
-  @Field var rightTime: String?
-  /// How full that ring is, from 0 to 1, and its colour.
-  @Field var rightProgress: Double = 0
-  @Field var rightTint: Color = .green
   /// `{ tab: "left" | "right" }` when a tab is picked.
   var onSelect = EventDispatcher()
 }
@@ -376,34 +371,16 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     let selectedIcon = (side == .left ? props.leftSelectedIcon : props.rightSelectedIcon) ?? icon
     // The tab under a sliding finger lights up before the finger lifts.
     let on = (hovered ?? selectedSide) == side
-    let running: String? = side == .right ? props.rightTime : nil
     return Button {
       select(side)
     } label: {
       VStack(spacing: 2) {
-        if let running {
-          ZStack {
-            Circle().stroke(Color.primary.opacity(0.18), lineWidth: 2.5)
-            Circle()
-              .trim(from: 0, to: CGFloat(min(max(props.rightProgress, 0), 1)))
-              .stroke(props.rightTint, style: StrokeStyle(lineWidth: 2.5, lineCap: .round))
-              .rotationEffect(.degrees(-90))
-          }
-          .frame(width: 20, height: 20)
+        Image(systemName: on ? selectedIcon : icon)
+          .font(.system(size: 20, weight: .semibold))
           .frame(height: 24)
-          Text(running)
-            .font(.system(size: 11, weight: .semibold))
-            .monospacedDigit()
-            .foregroundStyle(props.rightTint)
-            .lineLimit(1)
-        } else {
-          Image(systemName: on ? selectedIcon : icon)
-            .font(.system(size: 20, weight: .semibold))
-            .frame(height: 24)
-          Text(label)
-            .font(.system(size: 10, weight: .semibold))
-            .lineLimit(1)
-        }
+        Text(label)
+          .font(.system(size: 10, weight: .semibold))
+          .lineLimit(1)
       }
       .foregroundStyle(on ? props.accent : Color.primary)
       .animation(.easeOut(duration: 0.15), value: on)
@@ -411,7 +388,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
       .contentShape(Rectangle())
     }
     .buttonStyle(.plain)
-    .accessibilityLabel(running.map { "\(label), \($0)" } ?? label)
+    .accessibilityLabel(label)
     .accessibilityAddTraits(selectedSide == side ? [.isSelected, .isButton] : .isButton)
   }
 

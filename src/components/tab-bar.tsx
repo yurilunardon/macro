@@ -1,28 +1,24 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
-import { useRouter } from 'expo-router';
 import type { BottomTabBarProps } from 'expo-router/js-tabs';
-import { useSQLiteContext } from 'expo-sqlite';
 import type { SFSymbol } from 'expo-symbols';
 import { createContext, use, useEffect, useRef, useState, type ReactNode } from 'react';
 import { Platform, Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue, withSpring } from 'react-native-reanimated';
-import Svg, { Circle } from 'react-native-svg';
 
 import { Spacing } from '@/constants/theme';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
-import { useWorkoutStatus, type WorkoutStatus } from '@/hooks/use-workout-status';
 import { weekdayShort } from '@/lib/calendar';
 import { weekdayOf } from '@/lib/dates';
 import { haptics } from '@/services/haptics';
-import { openActiveWorkout } from '@/services/start-workout';
 
 import { NOTCHED_TAB_BAR_BUTTON, NOTCHED_TAB_BAR_HEIGHT, NotchedTabBarView } from '../../modules/notched-tab-bar';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
+import { WorkoutPill } from './workout-pill';
 
 const glass = isLiquidGlassAvailable();
 
@@ -91,13 +87,10 @@ type TabBarProps = BottomTabBarProps & {
  * A tab bar in Liquid Glass with a round button floating over its middle. The capsule holds two
  * tabs and runs on under the button, which sits on its own in a cradle cut into the capsule and
  * is the third tab, the calendar's. Holding and sliding along the capsule moves its lens from one
- * tab to the other, under the button, and picks the tab on release. While a workout runs, the right
- * tab shows its time and a ring, and brings it back when tapped.
+ * tab to the other, under the button, and picks the tab on release. While a workout runs, the other
+ * tabs' first pages show it in a pill at the top; in its own tab it is on the page.
  */
 export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left, right, center, tabs }: TabBarProps) {
-  const db = useSQLiteContext();
-  const router = useRouter();
-  const workout = useWorkoutStatus();
   const width = Math.min(screen - 2 * Spacing.xl, BAR_WIDTH);
 
   const focusedName = state.routes[state.index]?.name;
@@ -107,25 +100,24 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
     const route = state.routes.find((r) => r.name === name);
     if (!route) return;
     const on = state.routes[state.index]?.key === route.key;
-    // Back to the workout, over its tab's page: closing it leaves that page on screen.
-    if (name === right && workout) {
-      haptics.selection();
-      if (!on) navigateToTab(route.key);
-      openActiveWorkout(db, router);
-      return;
-    }
     // A tap on the tab on screen goes back to its first page, as in iOS.
     const event = emitter.emit({ type: 'tabPress', target: route.key, canPreventDefault: true });
     if (on || event.defaultPrevented) return;
     haptics.selection();
     navigateToTab(route.key);
   };
-  const bar: BarProps = { width, focused, tabs, left, right, workout, press, openCalendar: () => press(center) };
+  const bar: BarProps = { width, focused, tabs, left, right, press, openCalendar: () => press(center) };
+  // Not on the pages further in: it would sit on their titles.
+  const focusedRoute = state.routes[state.index] as { state?: { index?: number } } | undefined;
+  const onFirstPage = (focusedRoute?.state?.index ?? 0) === 0;
 
   return (
-    <View pointerEvents="box-none" style={[styles.root, { bottom: barBottom(safeBottom) }]}>
-      {NotchedTabBarView ? <SwiftUIBar {...bar} /> : <ReactBar {...bar} />}
-    </View>
+    <>
+      {focused !== 'right' && onFirstPage ? <WorkoutPill /> : null}
+      <View pointerEvents="box-none" style={[styles.root, { bottom: barBottom(safeBottom) }]}>
+        {NotchedTabBarView ? <SwiftUIBar {...bar} /> : <ReactBar {...bar} />}
+      </View>
+    </>
   );
 }
 
@@ -135,7 +127,6 @@ type BarProps = {
   tabs: Record<string, Tab>;
   left: string;
   right: string;
-  workout: WorkoutStatus | null;
   press: (name: string) => void;
   openCalendar: () => void;
 };
@@ -173,7 +164,7 @@ function CalendarButton({
  * shape. The calendar's button is drawn there too, under a transparent React Native one that
  * takes its touches.
  */
-function SwiftUIBar({ width, focused, tabs, left, right, workout, press, openCalendar }: BarProps) {
+function SwiftUIBar({ width, focused, tabs, left, right, press, openCalendar }: BarProps) {
   const theme = useTheme();
   const today = useToday();
   const last = useRef({ tab: '', at: 0 });
@@ -197,9 +188,6 @@ function SwiftUIBar({ width, focused, tabs, left, right, workout, press, openCal
         day={String(Number(today.slice(8)))}
         accent={theme.accent}
         calendarPressed={pressed}
-        rightTime={workout?.time}
-        rightProgress={workout?.progress ?? 0}
-        rightTint={workout?.resting ? theme.warning : theme.accent}
         onSelect={({ nativeEvent: { tab } }) => {
           // A tap that is also a short slide can report the same pick twice.
           const now = Date.now();
@@ -221,7 +209,7 @@ function SwiftUIBar({ width, focused, tabs, left, right, workout, press, openCal
 }
 
 /** The same bar in React Native, where the native one is missing (the web): without the cradle. */
-function ReactBar({ width, focused, tabs, left, right, workout, press, openCalendar }: BarProps) {
+function ReactBar({ width, focused, tabs, left, right, press, openCalendar }: BarProps) {
   const theme = useTheme();
   const scheme = useColorScheme();
   const slot = slotWidth(width);
@@ -296,8 +284,6 @@ function ReactBar({ width, focused, tabs, left, right, workout, press, openCalen
     if (!item) return null;
     const on = focused === side;
     const tint = on ? theme.accent : theme.text;
-    const running = side === 'right' ? workout : null;
-    const runningTint = running?.resting ? theme.warning : theme.accent;
     return (
       <Pressable
         key={side}
@@ -308,21 +294,10 @@ function ReactBar({ width, focused, tabs, left, right, workout, press, openCalen
         accessibilityState={{ selected: on }}
         accessibilityLabel={item.label}
         style={[styles.tab, { left: rest[side], width: slot }]}>
-        {running ? (
-          <>
-            <WorkoutRing progress={running.progress} color={runningTint} track={theme.track} />
-            <AppText variant="caption" weight="600" numeric numberOfLines={1} style={[styles.label, { color: runningTint }]}>
-              {running.time}
-            </AppText>
-          </>
-        ) : (
-          <>
-            <Icon name={on ? (item.selectedIcon ?? item.icon) : item.icon} size={22} color={tint} weight="semibold" />
-            <AppText variant="caption" weight="600" numberOfLines={1} style={[styles.label, { color: tint }]}>
-              {item.label}
-            </AppText>
-          </>
-        )}
+        <Icon name={on ? (item.selectedIcon ?? item.icon) : item.icon} size={22} color={tint} weight="semibold" />
+        <AppText variant="caption" weight="600" numberOfLines={1} style={[styles.label, { color: tint }]}>
+          {item.label}
+        </AppText>
       </Pressable>
     );
   };
@@ -371,35 +346,6 @@ function ReactBar({ width, focused, tabs, left, right, workout, press, openCalen
         )}
       </View>
     </View>
-  );
-}
-
-const WORKOUT_RING = 20;
-
-/** The workout's progress, in the tab, filled clockwise from the top. */
-function WorkoutRing({ progress, color, track }: { progress: number; color: string; track: string }) {
-  const stroke = 2.5;
-  const center = WORKOUT_RING / 2;
-  const radius = (WORKOUT_RING - stroke) / 2;
-  const length = 2 * Math.PI * radius;
-  const filled = Math.max(0, Math.min(1, progress));
-  return (
-    <Svg width={WORKOUT_RING} height={WORKOUT_RING}>
-      <Circle cx={center} cy={center} r={radius} stroke={track} strokeWidth={stroke} fill="none" />
-      {filled > 0 ? (
-        <Circle
-          cx={center}
-          cy={center}
-          r={radius}
-          stroke={color}
-          strokeWidth={stroke}
-          fill="none"
-          strokeLinecap="round"
-          strokeDasharray={`${length * filled} ${length}`}
-          transform={`rotate(-90 ${center} ${center})`}
-        />
-      ) : null}
-    </Svg>
   );
 }
 

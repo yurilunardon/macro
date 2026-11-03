@@ -12,6 +12,7 @@ import { ScreenScroll } from '@/components/screen';
 import { WeekStrip, type DayProgress } from '@/components/week-strip';
 import { Spacing } from '@/constants/theme';
 import { getDayPlans } from '@/db/days';
+import { getActiveWorkout } from '@/db/workouts';
 import { getEntriesForDate } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { useAppExpiry } from '@/hooks/use-app-expiry';
@@ -66,6 +67,9 @@ export default function NutritionScreen() {
   const pager = useDayPager(today, asked, scrollToTop);
   const { date } = pager;
   const calories = useCalorieProgress(date);
+  // The pill of the workout in progress sits where the folded title would.
+  const theme = useTheme();
+  const { data: running } = useLiveQuery('active-workout', getActiveWorkout, ['training']);
 
   // Opened on a day from the calendar: slide to it as if it were picked above, then forget it, so
   // the same day can be asked for again.
@@ -78,6 +82,7 @@ export default function NutritionScreen() {
 
   return (
     <ScreenScroll scroll={scroll}>
+      <Stack.Screen options={{ headerTitleStyle: { color: running ? 'transparent' : theme.text }, headerLargeTitleStyle: { color: theme.text } }} />
       {/* As in Calendar: always in the bar. */}
       <Stack.Toolbar placement="left">
         <Stack.Toolbar.Button accessibilityLabel="Torna a oggi" onPress={pager.showToday}>

@@ -12,8 +12,10 @@ import { useDayPlan } from '@/hooks/use-day-plan';
 import { useFrozen } from '@/hooks/use-frozen';
 import { useTheme } from '@/hooks/use-theme';
 import type { AgendaItem, StoredStatus } from '@/lib/calendar';
+import { hourRows, placeInRow, type HourBlock } from '@/lib/day-hours';
 import { formatDaySubtitle, formatDayTitle, type DateKey } from '@/lib/dates';
-import { addMinutes, clockOf, type DayEntry } from '@/lib/plan';
+import { addMinutes, clockOf, type DayEntry, type DaySection } from '@/lib/plan';
+import { minutesOfClock } from '@/lib/week-layout';
 import { haptics } from '@/services/haptics';
 import { logWeight } from '@/services/log-weight';
 import { openAgendaItem } from '@/services/open-agenda-item';
@@ -28,7 +30,8 @@ const FADE_IN = FadeIn.duration(180);
 
 /**
  * One day of the calendar, a page of the pager as in the food diary: its title and how much of it
- * is done, its activities, and a checklist of what to take and do, moment by moment.
+ * is done, then the day by the hour, as in Calendar, with its activities and what to take and do at
+ * each moment, to tick there. An empty hour takes little room; the red line says where the day is.
  */
 export const CalendarDay = memo(function CalendarDay({ date, today, interactive, onReady }: { date: DateKey; today: DateKey } & DayPageProps) {
   const db = useSQLiteContext();
@@ -113,52 +116,61 @@ export const CalendarDay = memo(function CalendarDay({ date, today, interactive,
     );
   }
 
+  const activityCard = (item: AgendaItem) => {
+    const name = activityName(item, plan.types, gymTypeId, dayNames);
+    const type = item.kind === 'workout' ? (gymTypeId === null ? undefined : plan.types.get(gymTypeId)) : plan.types.get(item.occurrence.typeId);
+    const plannedGym = item.kind === 'activity' && item.occurrence.typeId === gymTypeId && item.status === 'planned';
+    return (
+      <ActivityCard
+        key={item.key}
+        item={item}
+        name={name}
+        type={type}
+        date={date}
+        today={today}
+        interactive={interactive}
+        onStart={plannedGym && date === today ? () => void startAndOpenWorkout(db, router, item.dayId, name) : undefined}
+        onOpen={() => openAgendaItem(router, item)}
+        menu={[
+          {
+            actions: [
+              { label: 'Modifica', icon: 'pencil', onPress: () => openAgendaItem(router, item) },
+              ...(item.kind === 'activity'
+                ? [
+                    item.status === 'skipped'
+                      ? { label: 'Rimetti in programma', icon: 'arrow.uturn.backward' as const, onPress: () => setStatus(item, 'planned') }
+                      : { label: 'Salta', icon: 'forward.end' as const, onPress: () => setStatus(item, 'skipped') },
+                  ]
+                : []),
+            ],
+          },
+        ]}
+      />
+    );
+  };
+
+  // What falls at a time goes on the hours; an activity without one stays above them.
+  const timeOf = (item: AgendaItem) => (item.kind === 'workout' ? clockOf(item.workout.startedAt) : item.occurrence.time);
+  const blocks: HourBlock<{ item: AgendaItem } | { section: DaySection }>[] = [
+    // A moment first when it falls with an activity: what is taken at its start comes before it.
+    ...sections.map((section) => ({ key: section.moment.id, start: minutesOfClock(section.time), end: minutesOfClock(section.time), value: { section } })),
+    ...plan.items.flatMap((item) => {
+      const time = timeOf(item);
+      if (time === null) return [];
+      const start = minutesOfClock(time);
+      const ended = item.kind === 'workout' ? item.workout.endedAt : null;
+      const minutes = item.kind === 'workout' ? 0 : (item.occurrence.minutes ?? plan.types.get(item.occurrence.typeId)?.minutes ?? 60);
+      return [{ key: item.key, start, end: ended ? minutesOfClock(clockOf(ended)) : start + minutes, value: { item } }];
+    }),
+  ];
+  const nowMinute = date === today ? minutesOfClock(now) : null;
+  const rows = hourRows(blocks);
+
   return (
     <View>
       {heading}
-      <Animated.View entering={FADE_IN}>
-        {plan.items.map((item) => {
-          const name = activityName(item, plan.types, gymTypeId, dayNames);
-          const type = item.kind === 'workout' ? (gymTypeId === null ? undefined : plan.types.get(gymTypeId)) : plan.types.get(item.occurrence.typeId);
-          const plannedGym = item.kind === 'activity' && item.occurrence.typeId === gymTypeId && item.status === 'planned';
-          return (
-            <ActivityCard
-              key={item.key}
-              item={item}
-              name={name}
-              type={type}
-              date={date}
-              today={today}
-              interactive={interactive}
-              onStart={plannedGym && date === today ? () => void startAndOpenWorkout(db, router, item.dayId, name) : undefined}
-              onOpen={() => openAgendaItem(router, item)}
-              menu={[
-                {
-                  actions: [
-                    { label: 'Modifica', icon: 'pencil', onPress: () => openAgendaItem(router, item) },
-                    ...(item.kind === 'activity'
-                      ? [
-                          item.status === 'skipped'
-                            ? { label: 'Rimetti in programma', icon: 'arrow.uturn.backward' as const, onPress: () => setStatus(item, 'planned') }
-                            : { label: 'Salta', icon: 'forward.end' as const, onPress: () => setStatus(item, 'skipped') },
-                        ]
-                      : []),
-                  ],
-                },
-              ]}
-            />
-          );
-        })}
-
-        {sections.map((section) => (
-          <ChecklistSection
-            key={section.moment.id}
-            section={section}
-            late={date < today || (date === today && now > addMinutes(section.time, 60))}
-            onPress={tick}
-            onLongPress={open}
-          />
-        ))}
+      <Animated.View entering={FADE_IN} style={styles.day}>
+        {plan.items.filter((item) => timeOf(item) === null).map(activityCard)}
 
         {plan.items.length === 0 && plan.sections.length === 0 ? (
           <View style={[styles.empty, { backgroundColor: theme.card }]}>
@@ -171,14 +183,70 @@ export const CalendarDay = memo(function CalendarDay({ date, today, interactive,
             <Button title="Apri il piano" onPress={() => router.push('/calendar/plan')} />
           </View>
         ) : null}
+
+        <View>
+          {rows.map((row, index) => {
+            const nowAt = nowMinute === null ? null : placeInRow(row, nowMinute);
+            // The time of the red line takes the place of the hour's when the two would touch.
+            const before = index > 0 && nowMinute !== null ? placeInRow(rows[index - 1], nowMinute) : null;
+            const hidden = (nowAt !== null && nowAt < 0.4) || (before !== null && before > 0.6);
+            return (
+              <View key={row.hour} style={styles.hour}>
+                <View style={styles.gutter}>
+                  {hidden ? null : (
+                    <AppText variant="caption" tone="textSecondary" numeric style={styles.hourLabel}>
+                      {`${String(row.hour).padStart(2, '0')}:00`}
+                    </AppText>
+                  )}
+                </View>
+                <View style={[styles.hourBody, { borderTopColor: theme.separator }]}>
+                  {row.blocks.map((block) =>
+                    'section' in block.value ? (
+                      <ChecklistSection
+                        key={block.key}
+                        section={block.value.section}
+                        late={date < today || (date === today && now > addMinutes(block.value.section.time, 60))}
+                        onPress={tick}
+                        onLongPress={open}
+                      />
+                    ) : (
+                      activityCard(block.value.item)
+                    ),
+                  )}
+                </View>
+                {nowAt !== null ? (
+                  <View pointerEvents="none" style={[styles.now, { top: `${nowAt * 100}%` }]}>
+                    <AppText variant="caption" weight="700" numeric style={[styles.nowLabel, { color: theme.danger }]}>
+                      {now}
+                    </AppText>
+                    <View style={[styles.nowDot, { backgroundColor: theme.danger }]} />
+                    <View style={[styles.nowLine, { backgroundColor: theme.danger }]} />
+                  </View>
+                ) : null}
+              </View>
+            );
+          })}
+        </View>
       </Animated.View>
     </View>
   );
 });
 
+const GUTTER = 44;
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   loading: { minHeight: 700 },
-  heading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingTop: Spacing.md, paddingBottom: Spacing.lg, minHeight: 64 },
-  empty: { gap: Spacing.sm, padding: Spacing.xl, borderRadius: Radius.lg, borderCurve: 'continuous', marginTop: Spacing.lg },
+  heading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingTop: Spacing.sm, paddingBottom: Spacing.md, minHeight: 64 },
+  day: { gap: Spacing.md },
+  empty: { gap: Spacing.sm, padding: Spacing.xl, borderRadius: Radius.lg, borderCurve: 'continuous' },
+  // An empty hour takes this much: enough to read the day's shape, not a screen of nothing.
+  hour: { flexDirection: 'row', minHeight: 30 },
+  gutter: { width: GUTTER },
+  hourLabel: { marginTop: -7 },
+  hourBody: { flex: 1, borderTopWidth: StyleSheet.hairlineWidth, paddingVertical: Spacing.xs, gap: Spacing.xs },
+  now: { position: 'absolute', left: 0, right: 0, height: 14, marginTop: -7, flexDirection: 'row', alignItems: 'center' },
+  nowLabel: { width: GUTTER - 4 },
+  nowDot: { width: 8, height: 8, borderRadius: 4 },
+  nowLine: { flex: 1, height: 1.5 },
 });

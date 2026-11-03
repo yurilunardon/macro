@@ -3,18 +3,27 @@ import type { SFSymbol } from 'expo-symbols';
 
 import { CalendarDay } from '@/components/calendar-day';
 import { DayPager, useDayPager } from '@/components/day-pager';
-import { PinnedStrip } from '@/components/pinned-strip';
+import { MonthGrid } from '@/components/month-grid';
 import { activityName } from '@/components/plan-day';
 import { ScreenScroll } from '@/components/screen';
-import { WeekStrip, type DaySymbol } from '@/components/week-strip';
+import type { DaySymbol } from '@/components/week-strip';
 import { useAgenda } from '@/hooks/use-agenda';
 import { useScrollTop } from '@/hooks/use-scroll-top';
 import { useToday } from '@/hooks/use-today';
-import { addDays, weekOf, type DateKey } from '@/lib/dates';
+import { addMonths, monthGrid, monthOf, monthRange, type DateKey } from '@/lib/dates';
+
+/** The same day of another month, or its last day when that month is shorter; today in today's month. */
+function dayInMonth(date: DateKey, direction: number, today: DateKey): DateKey {
+  const month = addMonths(monthOf(date), direction);
+  if (month === monthOf(today)) return today;
+  const last = monthRange(month).to;
+  const day = `${month}-${date.slice(8)}`;
+  return day > last ? last : day;
+}
 
 /**
- * The calendar, the tab behind the round button between the other two: one day at a time, as
- * pages under the week, like the food diary.
+ * The calendar, the tab behind the round button between the other two: the month, and under it one
+ * day at a time, by the hour, as pages to swipe like the food diary's.
  */
 export default function CalendarScreen() {
   const router = useRouter();
@@ -23,13 +32,14 @@ export default function CalendarScreen() {
   const pager = useDayPager(today, null, scroll.scrollToTop);
   const { date } = pager;
 
-  // Each day's main activity under it in the week: its symbol, and its name for VoiceOver.
-  const week = weekOf(date);
-  const { data: calendar, agenda, types } = useAgenda(week[0], week[6], today);
+  // Each day's main activity under it in the month: its symbol, and its name for VoiceOver.
+  const month = monthOf(date);
+  const days = monthGrid(month);
+  const { data: calendar, agenda, types } = useAgenda(days[0], days[days.length - 1], today);
   const gymTypeId = calendar?.gymTypeId ?? null;
   const dayNames = calendar?.dayNames ?? new Map<number, string>();
   const symbols = new Map<DateKey, DaySymbol>();
-  for (const day of week) {
+  for (const day of days) {
     const first = (agenda.get(day) ?? []).find((i) => i.kind === 'workout' || i.status !== 'skipped');
     if (!first) continue;
     const typeId = first.kind === 'workout' ? gymTypeId : first.occurrence.typeId;
@@ -70,16 +80,16 @@ export default function CalendarScreen() {
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
 
-      <PinnedStrip scroll={scroll}>
-        <WeekStrip
-          selected={date}
-          today={today}
-          symbols={symbols}
-          pulse={pager.pulse}
-          onSelect={pager.goTo}
-          onChangeWeek={(direction) => pager.goTo(addDays(date, direction * 7))}
-        />
-      </PinnedStrip>
+      <MonthGrid
+        month={month}
+        selected={date}
+        today={today}
+        symbols={symbols}
+        scroll={scroll}
+        pulse={pager.pulse}
+        onSelect={pager.goTo}
+        onChangeMonth={(direction) => pager.goTo(dayInMonth(date, direction, today))}
+      />
 
       <DayPager pager={pager} today={today} renderDay={(day, page) => <CalendarDay date={day} today={today} {...page} />} />
     </ScreenScroll>

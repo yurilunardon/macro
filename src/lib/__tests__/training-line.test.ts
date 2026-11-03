@@ -9,7 +9,7 @@ const LEGS = 3;
 const DAYS = [PUSH, PULL, LEGS];
 
 const kinds = (rows: ReturnType<typeof buildTrainingLine>) => rows.map((r) => r.kind);
-const coming = (rows: ReturnType<typeof buildTrainingLine>) => rows.flatMap((r) => (r.kind === 'past' ? [] : [r.dayId]));
+const coming = (rows: ReturnType<typeof buildTrainingLine>) => rows.flatMap((r) => (r.kind === 'past' || r.kind === 'active' ? [] : [r.dayId]));
 
 describe('buildTrainingLine', () => {
   it('goes in the order of time: done, next, later', () => {
@@ -33,7 +33,7 @@ describe('buildTrainingLine', () => {
     const rows = buildTrainingLine({ history: [], dayIds: DAYS, nextId: PULL, upcoming: [] });
     expect(coming(rows)).toEqual([PULL, LEGS, PUSH]);
     expect(kinds(rows)).toEqual(['next', 'later', 'later']);
-    expect(rows.every((r) => r.kind === 'past' || r.date === null)).toBe(true);
+    expect(rows.every((r) => r.kind === 'past' || r.kind === 'active' || r.date === null)).toBe(true);
   });
 
   it('keeps every day of the program in reach when the calendar repeats one', () => {
@@ -55,6 +55,30 @@ describe('buildTrainingLine', () => {
   it('leaves out gym days for a day that is not in the program in use', () => {
     const rows = buildTrainingLine({ history: [], dayIds: [PUSH], nextId: PUSH, upcoming: [{ date: '2026-11-04', time: null, dayId: 99 }] });
     expect(coming(rows)).toEqual([PUSH]);
+  });
+});
+
+describe('buildTrainingLine with a workout in progress', () => {
+  it('puts it between what is done and what comes', () => {
+    const rows = buildTrainingLine({
+      history: [{ id: 1 }],
+      dayIds: DAYS,
+      nextId: PUSH,
+      upcoming: [{ date: '2026-11-06', time: '21:00', dayId: PULL }],
+      active: { dayId: PUSH },
+    });
+    expect(kinds(rows)).toEqual(['past', 'active', 'next', 'later']);
+  });
+
+  it('does not list its day again among those to come', () => {
+    const rows = buildTrainingLine({ history: [], dayIds: DAYS, nextId: PUSH, upcoming: [], active: { dayId: PUSH } });
+    expect(coming(rows)).toEqual([PULL, LEGS]);
+  });
+
+  it('takes a free workout too', () => {
+    const rows = buildTrainingLine({ history: [], dayIds: DAYS, nextId: PUSH, upcoming: [], active: { dayId: null } });
+    expect(kinds(rows)[0]).toBe('active');
+    expect(coming(rows)).toEqual(DAYS);
   });
 });
 

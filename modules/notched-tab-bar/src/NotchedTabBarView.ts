@@ -22,11 +22,6 @@ export type NotchedTabBarProps = ViewProps & {
    * button laid over the drawn one, so the calendar can grow out of it.
    */
   calendarPressed: boolean;
-  /** While a workout runs, the right tab shows this time and a ring in place of its icon and name. */
-  rightTime?: string;
-  /** How full that ring is, from 0 to 1, and its colour. */
-  rightProgress?: number;
-  rightTint?: ColorValue;
   onSelect: (event: NativeSyntheticEvent<{ tab: NotchedTabBarTab }>) => void;
 };
 
