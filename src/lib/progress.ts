@@ -1,4 +1,5 @@
-import { addDays, addMonths, formatMonthName, fromDateKey, monthOf, monthRange, weekOf, type DateKey } from './dates';
+import { addDays, addMonths, daysBetween, formatMonthName, fromDateKey, monthOf, monthRange, weekOf, type DateKey } from './dates';
+import { formatNumber } from './format';
 
 export type Period = 'week' | 'month' | 'year';
 
@@ -71,6 +72,15 @@ export function compareCounts(now: number, before: number, range: Pick<PeriodRan
   if (now === before) return { text: `Come ${range.previousName}`, trend: 'same' };
   const diff = Math.abs(now - before);
   return now > before ? { text: `${diff} in più ${range.previousOf}`, trend: 'up' } : { text: `${diff} in meno ${range.previousOf}`, trend: 'down' };
+}
+
+/** How often so far: for a week the days out of seven, for longer the average per week up to today. */
+export function howOften(period: Period, count: number, from: DateKey, to: DateKey, today: DateKey): string {
+  if (period === 'week') return `${count} giorni su 7`;
+  const end = today < to ? today : to;
+  const days = daysBetween(from, end) + 1;
+  const perWeek = count / Math.max(1, days / 7);
+  return `In media ${formatNumber(perWeek, 1)} a settimana`;
 }
 
 export type VolumeBucket = { key: string; label: string; title: string; kg: number };

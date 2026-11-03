@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compareCounts, monthWeeks, periodRange, totalsOf, volumeBuckets, workoutsBetween, workoutsPerMonth } from '../progress';
+import { compareCounts, howOften, monthWeeks, periodRange, totalsOf, volumeBuckets, workoutsBetween, workoutsPerMonth } from '../progress';
 
 const workout = (date: string, tonnage = 1000, workSets = 10) => ({
   date,
@@ -29,6 +29,21 @@ describe('totalsOf', () => {
   it('adds up the workouts of a period', () => {
     const inside = workoutsBetween([workout('2026-11-02'), workout('2026-11-04', 500, 5), workout('2026-10-30')], '2026-11-01', '2026-11-30');
     expect(totalsOf(inside)).toEqual({ count: 2, seconds: 7200, sets: 15, kg: 1500 });
+  });
+});
+
+describe('howOften', () => {
+  it('counts the days of a week', () => {
+    expect(howOften('week', 3, '2026-11-02', '2026-11-08', '2026-11-04')).toBe('3 giorni su 7');
+  });
+
+  it('averages over the weeks so far, not the whole period', () => {
+    expect(howOften('month', 3, '2026-11-01', '2026-11-30', '2026-11-07')).toBe('In media 3 a settimana');
+    expect(howOften('month', 12, '2026-10-01', '2026-10-31', '2026-11-03')).toBe('In media 2,7 a settimana');
+  });
+
+  it('does not inflate the first days of a period', () => {
+    expect(howOften('month', 1, '2026-11-01', '2026-11-30', '2026-11-01')).toBe('In media 1 a settimana');
   });
 });
 

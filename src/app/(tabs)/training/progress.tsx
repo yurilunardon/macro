@@ -1,9 +1,8 @@
-import { useState } from 'react';
+import { useState, type ReactNode } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { FadeIn } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
-import { Card } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
 import { Segmented } from '@/components/segmented';
@@ -15,7 +14,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { monthOf, weekOf, type DateKey } from '@/lib/dates';
 import { formatNumber } from '@/lib/format';
-import { compareCounts, dayNumber, monthWeeks, periodRange, totalsOf, volumeBuckets, workoutsBetween, workoutsPerMonth, type Period, type ProgressWorkout, type VolumeBucket } from '@/lib/progress';
+import { compareCounts, dayNumber, howOften, monthWeeks, periodRange, totalsOf, volumeBuckets, workoutsBetween, workoutsPerMonth, type Period, type ProgressWorkout, type VolumeBucket } from '@/lib/progress';
 import { formatLifted, formatWorkoutLengthShort } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 
@@ -29,7 +28,8 @@ const FADE = FadeIn.duration(220);
 
 /**
  * How the training is going, for the week, the month or the year: how many workouts as the big
- * number, on which days, how much was lifted over time and the records beaten.
+ * number, then three chapters on the page itself, each saying in a line what its numbers mean:
+ * how regular it was, how much was lifted, and the records beaten.
  */
 export default function ProgressScreen() {
   const theme = useTheme();
@@ -44,11 +44,7 @@ export default function ProgressScreen() {
   const inside = workoutsBetween(workouts, range.from, range.to);
   const totals = totalsOf(inside);
   const compare = compareCounts(totals.count, workoutsBetween(workouts, range.previousFrom, range.previousTo).length, range);
-  const stats = [
-    { label: 'in palestra', value: totals.count > 0 ? formatWorkoutLengthShort(totals.seconds) : '0 min' },
-    { label: 'serie', value: String(totals.sets) },
-    { label: 'sollevati', value: formatLifted(totals.kg) },
-  ];
+  const load = [`${formatLifted(totals.kg)} sollevati`, totals.count > 0 ? `${formatWorkoutLengthShort(totals.seconds)} in palestra` : null, `${totals.sets} serie`].filter(Boolean).join(' · ');
 
   return (
     <ScreenScroll>
@@ -73,33 +69,16 @@ export default function ProgressScreen() {
           ) : null}
         </View>
 
-        <Card style={styles.stats}>
-          {stats.map((s) => (
-            <View key={s.label} style={styles.stat}>
-              <AppText variant="headline" numeric numberOfLines={1}>
-                {s.value}
-              </AppText>
-              <AppText variant="caption" tone="textSecondary">
-                {s.label}
-              </AppText>
-            </View>
-          ))}
-        </Card>
-
-        <Card style={styles.card}>
-          <AppText variant="footnote" weight="600" tone="textSecondary">
-            {period === 'year' ? 'I mesi in palestra' : 'I giorni in palestra'}
-          </AppText>
+        <Chapter title="Costanza" line={howOften(period, totals.count, range.from, range.to, today)}>
           {period === 'year' ? <MonthTiles workouts={inside} from={range.from} /> : <DayGrid period={period} workouts={inside} today={today} />}
-        </Card>
+        </Chapter>
 
-        <VolumeChart buckets={volumeBuckets(period, inside, range)} total={totals.kg} />
+        <Chapter title="Carico" line={load}>
+          <VolumeChart buckets={volumeBuckets(period, inside, range)} />
+        </Chapter>
 
         {records && records.length > 0 ? (
-          <Card style={styles.card}>
-            <AppText variant="footnote" weight="600" tone="textSecondary">
-              Record
-            </AppText>
+          <Chapter title="Record" line={records.length === 1 ? '1 esercizio più forte di sempre' : `${records.length} esercizi più forti di sempre`}>
             {records.map((r) => (
               <View key={r.exercise.id} style={styles.record}>
                 <AppText numberOfLines={1} style={styles.flex}>
@@ -110,10 +89,25 @@ export default function ProgressScreen() {
                 </AppText>
               </View>
             ))}
-          </Card>
+          </Chapter>
         ) : null}
       </Animated.View>
     </ScreenScroll>
+  );
+}
+
+/** A part of the page: its title, a line saying what its numbers mean, and the numbers. */
+function Chapter({ title, line, children }: { title: string; line: string; children: ReactNode }) {
+  return (
+    <View style={styles.chapter}>
+      <View>
+        <AppText variant="title3">{title}</AppText>
+        <AppText variant="subhead" tone="textSecondary" numeric>
+          {line}
+        </AppText>
+      </View>
+      {children}
+    </View>
   );
 }
 
@@ -134,7 +128,7 @@ function DayGrid({ period, workouts, today }: { period: 'week' | 'month'; workou
                 key={day}
                 accessible
                 accessibilityLabel={`${dayNumber(day)}: ${done.has(day) ? 'allenamento' : 'nessun allenamento'}`}
-                style={[styles.dayCell, styles.day, { backgroundColor: done.has(day) ? theme.accent : theme.fill }, day === today && !done.has(day) && { borderColor: theme.accent, borderWidth: 1.5 }]}>
+                style={[styles.dayCell, styles.day, { backgroundColor: done.has(day) ? theme.accent : theme.card }, day === today && !done.has(day) && { borderColor: theme.accent, borderWidth: 1.5 }]}>
                 <AppText variant="caption" weight="600" numeric style={{ color: done.has(day) ? theme.onAccent : day > today ? theme.textTertiary : theme.textSecondary }}>
                   {dayNumber(day)}
                 </AppText>
@@ -158,7 +152,7 @@ function MonthTiles({ workouts, from }: { workouts: readonly ProgressWorkout[]; 
         const strength = m.count / most;
         const strong = strength > 0.6;
         return (
-          <View key={m.key} accessible accessibilityLabel={`${m.title}: ${m.count}`} style={[styles.month, { backgroundColor: theme.fill }]}>
+          <View key={m.key} accessible accessibilityLabel={`${m.title}: ${m.count}`} style={[styles.month, { backgroundColor: theme.card }]}>
             {m.count > 0 ? <View style={[StyleSheet.absoluteFill, { backgroundColor: theme.accent, opacity: 0.25 + strength * 0.75 }]} /> : null}
             <AppText variant="caption" weight="600" style={{ color: strong ? theme.onAccent : theme.textSecondary }}>
               {m.title.slice(0, 3)}
@@ -174,20 +168,22 @@ function MonthTiles({ workouts, from }: { workouts: readonly ProgressWorkout[]; 
 }
 
 /** One bar per stretch of the period; a tap on a bar shows what it holds in the heading. */
-function VolumeChart({ buckets, total }: { buckets: readonly VolumeBucket[]; total: number }) {
+function VolumeChart({ buckets }: { buckets: readonly VolumeBucket[] }) {
   const theme = useTheme();
   const [picked, setPicked] = useState<string | null>(null);
   const most = Math.max(1, ...buckets.map((b) => b.kg));
   const shown = buckets.find((b) => b.key === picked) ?? null;
   return (
-    <Card style={styles.card}>
+    <View style={styles.chart}>
       <View style={styles.chartHead}>
         <AppText variant="footnote" weight="600" tone="textSecondary">
-          {shown ? shown.title : 'Volume'}
+          {shown ? shown.title : 'Tocca una barra'}
         </AppText>
-        <AppText variant="footnote" weight="600" numeric>
-          {formatLifted(shown ? shown.kg : total)}
-        </AppText>
+        {shown ? (
+          <AppText variant="footnote" weight="600" numeric>
+            {formatLifted(shown.kg)}
+          </AppText>
+        ) : null}
       </View>
       <View style={styles.bars}>
         {buckets.map((b) => (
@@ -216,19 +212,18 @@ function VolumeChart({ buckets, total }: { buckets: readonly VolumeBucket[]; tot
           </Pressable>
         ))}
       </View>
-    </Card>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  page: { gap: Spacing.md, marginTop: Spacing.md },
+  page: { gap: Spacing.xxl, marginTop: Spacing.lg },
+  chapter: { gap: Spacing.md },
+  chart: { gap: Spacing.sm },
   hero: { paddingHorizontal: Spacing.xs, paddingTop: Spacing.sm, gap: 2 },
   bigNumber: { fontSize: 60, lineHeight: 66, fontWeight: '800', letterSpacing: -1 },
   compare: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  stats: { flexDirection: 'row', gap: Spacing.md },
-  stat: { flex: 1, gap: 1 },
-  card: { gap: Spacing.sm },
   weeks: { gap: Spacing.xs + 1 },
   week: { flexDirection: 'row', gap: Spacing.xs + 1 },
   dayCell: { flex: 1, aspectRatio: 1 },

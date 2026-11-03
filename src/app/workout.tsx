@@ -36,7 +36,7 @@ import Sortable from 'react-native-sortables';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, ListGroup, SectionTitle } from '@/components/card';
+import { ActionRow, ListGroup } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { ProgressBar } from '@/components/progress';
@@ -61,7 +61,6 @@ import {
   reorderWorkoutExercises,
   setWorkoutExerciseRest,
   updateSet,
-  updateWorkoutNotes,
   type SetFields,
   type Workout,
   type WorkoutExercise,
@@ -299,7 +298,15 @@ export default function WorkoutScreen() {
         <Stack.Toolbar placement="right">
           {editing ? <Stack.Toolbar.Button {...editButton({ editing, onChange: setEditing })} /> : null}
           {editing ? null : (
-          <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
+            <Stack.Toolbar.Button
+              // Filled in once there is a note.
+              icon={workout?.notes ? 'note.text' : 'square.and.pencil'}
+              accessibilityLabel={workout?.notes ? 'Nota dell’allenamento' : 'Aggiungi una nota'}
+              onPress={() => workout && router.push({ pathname: '/workout-note', params: { id: workout.id, text: workout.notes ?? '' } })}
+            />
+          )}
+          {editing ? null : (
+          <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
             <Stack.Toolbar.MenuAction
               icon="pencil"
               onPress={() => {
@@ -391,11 +398,6 @@ export default function WorkoutScreen() {
             onPress={addExercise}
           />
         </View>
-        {workout ? (
-          <View style={editing && styles.dimmed} pointerEvents={editing ? 'none' : 'auto'}>
-            <WorkoutNote key={workout.id} value={workout.notes} onSave={(text) => void updateWorkoutNotes(db, workout.id, text)} />
-          </View>
-        ) : null}
         <View style={styles.bottomSpace} />
         </View>
       </ScreenScroll>
@@ -403,43 +405,6 @@ export default function WorkoutScreen() {
       <RestBar />
       <KeyboardBar />
     </>
-  );
-}
-
-/** The workout's note, written right there at the end of the page; it saves itself as it is typed. */
-function WorkoutNote({ value, onSave }: { value: string | null; onSave: (text: string) => void }) {
-  const theme = useTheme();
-  const [text, setText] = useState(value ?? '');
-  const saved = useRef(value ?? '');
-  const save = (next: string) => {
-    if (next.trim() === saved.current.trim()) return;
-    saved.current = next;
-    onSave(next);
-  };
-  useEffect(() => {
-    const timer = setTimeout(() => save(text), 500);
-    return () => clearTimeout(timer);
-    // Only the text matters; `save` is new on every render.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [text]);
-  return (
-    <View style={styles.note}>
-      <SectionTitle>Nota</SectionTitle>
-      <ListGroup>
-        <TextInput
-          value={text}
-          onChangeText={setText}
-          onFocus={() => nudge.set(null)}
-          onEndEditing={() => save(text)}
-          multiline
-          placeholder="Come è andata, sensazioni, dolori…"
-          placeholderTextColor={theme.textTertiary}
-          inputAccessoryViewID={KEYBOARD_BAR}
-          accessibilityLabel="Nota dell’allenamento"
-          style={[styles.noteInput, { color: theme.text }]}
-        />
-      </ListGroup>
-    </View>
   );
 }
 
@@ -1315,13 +1280,11 @@ function RestButton({
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
-  // Narrow enough to leave room for ⌄ on the left and "Modifica" and ⋯ on the right: a wider
-  // title makes iOS fold "Modifica" away into an overflow menu.
-  title: { alignItems: 'center', maxWidth: 140 },
+  // Narrow enough to leave room for ⌄ on the left and the note, ⋯ and "Termina" on the right: a
+  // wider title makes iOS fold them away into an overflow menu.
+  title: { alignItems: 'center', maxWidth: 110 },
   titleTime: { fontSize: 22, lineHeight: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
   topSpace: { height: Spacing.xl },
-  note: { marginTop: Spacing.xl },
-  noteInput: { minHeight: 88, fontSize: 17, lineHeight: 22, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.md, textAlignVertical: 'top' },
   exercise: {},
   sweepClip: { ...StyleSheet.absoluteFill, borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },
   sweep: { ...StyleSheet.absoluteFill, opacity: 0, transformOrigin: 'left center' },
