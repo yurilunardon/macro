@@ -14,6 +14,7 @@ import { getDayPlan, type DayPlan } from '@/db/days';
 import { getEntriesForDate, type Entry } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
 import { getLimits } from '@/db/settings';
+import { useSettled } from '@/hooks/use-settled';
 import { useTheme } from '@/hooks/use-theme';
 import { nutrientBreakdown, type BreakdownKey } from '@/lib/breakdown';
 import { formatLongDate, isDateKey, todayKey } from '@/lib/dates';
@@ -67,6 +68,8 @@ function NutrientPages({ date, initial, entries, plan, limits }: { date: string;
   const theme = useTheme();
   const { width } = useWindowDimensions();
   const [tab, setTab] = useState<Tab>(initial);
+  // The page it opens on rises with the sheet; the ones beside it are built as it lands.
+  const settled = useSettled();
   const pager = useRef<ComponentRef<typeof ScrollView>>(null);
   const indexOf = (key: Tab) => OPTIONS.findIndex((o) => o.key === key);
 
@@ -143,7 +146,11 @@ function NutrientPages({ date, initial, entries, plan, limits }: { date: string;
               if (key === shown.current) setHeight(event.nativeEvent.layout.height);
             }}
             style={[styles.page, { width }]}>
-            {key === 'other' ? <OtherTab entries={entries} limits={limits} kcal={plan.targets.kcal} /> : <MacroTab nutrient={key} entries={entries} target={nutrientTarget(key, plan.targets)} />}
+            {!settled && key !== initial ? null : key === 'other' ? (
+              <OtherTab entries={entries} limits={limits} kcal={plan.targets.kcal} />
+            ) : (
+              <MacroTab nutrient={key} entries={entries} target={nutrientTarget(key, plan.targets)} />
+            )}
           </View>
         ))}
       </ScrollView>

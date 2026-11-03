@@ -111,7 +111,7 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
     if (name === right && workout) {
       haptics.selection();
       if (!on) navigateToTab(route.key);
-      void openActiveWorkout(db, router);
+      openActiveWorkout(db, router);
       return;
     }
     // A tap on the tab on screen goes back to its first page, as in iOS.

@@ -65,6 +65,11 @@ function readOnce<T>(token: string, read: () => Promise<T>): Promise<T> {
 /** A screen's query, named once so the tap that opens the screen can run it ahead. */
 export type LiveQuery<T> = { key: string; query: (db: SQLiteDatabase) => Promise<T>; topics: readonly Topic[] };
 
+/** Forgets what a screen showed last, when it no longer holds, so the screen does not show it again. */
+export function forgetLiveQuery(key: string): void {
+  cache.delete(key);
+}
+
 /** Runs a screen's query ahead, e.g. on the tap that opens it, so it appears with its data. */
 export async function prefetchLiveQuery<T>(
   db: SQLiteDatabase,

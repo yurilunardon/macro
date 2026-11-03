@@ -157,6 +157,38 @@ export function formatWorkoutLengthShort(totalSeconds: number): string {
   return `${Math.floor(minutes / 60)} h ${String(minutes % 60).padStart(2, '0')}`;
 }
 
+export type ExerciseChange = {
+  trend: 'up' | 'down' | 'same' | 'new';
+  /** "+5 kg", "+3 rip", "=", "Nuovo". */
+  label: string;
+  /** The best set last time, when it differs: "65×8". */
+  was: string | null;
+};
+
+/** The set that counts: the heaviest, the one with most reps at that load, or the longest. */
+function topSet<T extends Pick<LoggedSet, 'weight' | 'reps' | 'seconds'>>(sets: readonly T[]): T | null {
+  return sets.reduce<T | null>((best, set) => {
+    if (best === null) return set;
+    const load = (set.weight ?? 0) - (best.weight ?? 0);
+    if (load !== 0) return load > 0 ? set : best;
+    return (set.reps ?? 0) + (set.seconds ?? 0) > (best.reps ?? 0) + (best.seconds ?? 0) ? set : best;
+  }, null);
+}
+
+/** How an exercise compares with last time: more load first, then more reps or seconds at the same load. */
+export function exerciseChange(sets: readonly LoggedSet[], previous: readonly LoggedSet[], kind: ExerciseKind): ExerciseChange {
+  const now = topSet(sets);
+  const before = topSet(previous.filter((set) => set.done && set.type !== 'warmup'));
+  if (!now || !before) return { trend: 'new', label: 'Nuovo', was: null };
+  const was = formatSetShort(before, kind);
+  const signed = (value: number) => `${value > 0 ? '+' : '−'}${formatNumber(Math.abs(value), 2)}`;
+  const load = (now.weight ?? 0) - (before.weight ?? 0);
+  if (kind !== 'time' && load !== 0) return { trend: load > 0 ? 'up' : 'down', label: `${signed(load)} kg`, was };
+  const count = kind === 'time' ? (now.seconds ?? 0) - (before.seconds ?? 0) : (now.reps ?? 0) - (before.reps ?? 0);
+  if (count === 0) return { trend: 'same', label: '=', was: null };
+  return { trend: count > 0 ? 'up' : 'down', label: `${signed(count)} ${kind === 'time' ? 's' : 'rip'}`, was };
+}
+
 /** Sum of kg × reps over the work sets: the usual "volume" of a session. */
 export function tonnage(sets: readonly LoggedSet[]): number {
   return sets.filter(isWorkSet).reduce((sum, s) => sum + (s.weight ?? 0) * (s.reps ?? 0), 0);

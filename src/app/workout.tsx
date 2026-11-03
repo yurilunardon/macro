@@ -1,9 +1,7 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Stack, useNavigation, useRouter } from 'expo-router';
-import type { NativeStackNavigationProp } from 'expo-router/native-stack';
-import type { ParamListBase } from 'expo-router/react-navigation';
+import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { memo, useEffect, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react';
+import { memo, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react';
 import Animated, {
   Easing,
   FadeIn,
@@ -25,7 +23,6 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import {
-  ActivityIndicator,
   InputAccessoryView,
   Keyboard,
   Platform,
@@ -33,15 +30,13 @@ import {
   StyleSheet,
   TextInput,
   View,
-  type StyleProp,
-  type ViewStyle,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Sortable from 'react-native-sortables';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, ListGroup } from '@/components/card';
+import { ActionRow, ListGroup, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { ProgressBar } from '@/components/progress';
@@ -75,6 +70,7 @@ import {
 import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useScrollTop } from '@/hooks/use-scroll-top';
+import { useSettled } from '@/hooks/use-settled';
 import { useTheme } from '@/hooks/use-theme';
 import { loadIncrement, muscleLabel } from '@/lib/exercises';
 import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
@@ -90,6 +86,7 @@ import {
 import { haptics } from '@/services/haptics';
 import { endWorkout } from '@/services/end-workout';
 import { restTimer, useRestTimer } from '@/services/rest-timer';
+import { useWorkoutStarting } from '@/services/start-workout';
 import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 const glass = isLiquidGlassAvailable();
@@ -117,13 +114,16 @@ function nextLabel(workout: Workout, setId: number, title: (e: WorkoutExercise) 
   return 'Ultima serie completata';
 }
 
-/** The workout in progress. Swiping the sheet down keeps it running; it comes back from the bar above the tabs. */
+/** The exercises open while the sheet rises: about what fits on screen. The rest arrive as it lands. */
+const FIRST_OPEN_EXERCISES = 2;
+
+/** The workout in progress. Swiping the sheet down keeps it running; it comes back from the tab bar. */
 export default function WorkoutScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
   const { names } = useExerciseNames();
-  // "Modifica", as apps on the Home Screen: the exercises fold to their names, wobble, and can be
+  // "Modifica", as apps on the Home Screen: the exercises wobble, staying as they are, and can be
   // dragged or removed. Only the exercises change; sets are deleted with a swipe at any time.
   const [editing, setEditing] = useState(false);
   const scroll = useScrollTop();
@@ -136,20 +136,12 @@ export default function WorkoutScreen() {
   const [closing, setClosing] = useState(false);
   // While the sheet slides up, the native menus and pickers of every set and exercise are drawn
   // as plain views: built all at once, their SwiftUI views made the slide stutter. They take
-  // over once the sheet is up.
-  const navigation = useNavigation<NativeStackNavigationProp<ParamListBase>>();
-  const [settled, setSettled] = useState(false);
-  useEffect(() => {
-    const done = () => setSettled(true);
-    const fallback = setTimeout(done, 700);
-    const unsubscribe = navigation.addListener('transitionEnd', (event) => {
-      if (!event.data.closing) done();
-    });
-    return () => {
-      clearTimeout(fallback);
-      unsubscribe();
-    };
-  }, [navigation]);
+  // over once the sheet is up, when the exercises further down are built too.
+  const settled = useSettled(700);
+  // Just started: the sheet rises while the workout is being written, with its name already there.
+  const starting = useWorkoutStarting();
+  const { title: startingTitle } = useLocalSearchParams<{ title?: string }>();
+  const [openedAt] = useState(() => new Date().toISOString());
   const [shown, setShown] = useState<Workout | null>(null);
   if (data?.workout && data.workout !== shown) setShown(data.workout);
   // What a ticked set starts: the rest, with what comes next. Kept outside, so every set's
@@ -161,15 +153,22 @@ export default function WorkoutScreen() {
       : null;
   });
 
-  if (!data) {
-    return (
-      <View style={[styles.center, { backgroundColor: theme.background }]}>
-        <ActivityIndicator />
-      </View>
-    );
-  }
-  const workout = data.workout ?? (closing ? shown : null);
-  if (!workout) {
+  // An exercise added lands in view, open: it is the one about to be done.
+  const count = data?.workout?.exercises.length ?? 0;
+  const lastCount = useRef(count);
+  const adding = useRef(false);
+  useEffect(() => {
+    const grew = count > lastCount.current;
+    lastCount.current = count;
+    if (!grew || !adding.current) return;
+    adding.current = false;
+    // Once the picker has gone and the list has made room for it.
+    const timer = setTimeout(() => scroll.ref.current?.scrollToEnd({ animated: true }), 350);
+    return () => clearTimeout(timer);
+  }, [count, scroll.ref]);
+
+  const workout = data?.workout ?? (closing ? shown : null);
+  if (!workout && !starting && data) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
         <Stack.Screen options={{ title: 'Allenamento' }} />
@@ -179,10 +178,20 @@ export default function WorkoutScreen() {
     );
   }
 
+  const allExercises = workout?.exercises ?? [];
   const exercises =
-    localOrder && localOrder.length === workout.exercises.length
-      ? localOrder.map((id) => workout.exercises.find((ex) => ex.id === id)).filter((ex) => ex !== undefined)
-      : workout.exercises;
+    localOrder && localOrder.length === allExercises.length
+      ? localOrder.map((id) => allExercises.find((ex) => ex.id === id)).filter((ex) => ex !== undefined)
+      : allExercises;
+  // While the sheet rises only what is on screen is built: everything down to the second open
+  // exercise. Each open one costs a row of inputs per set, and the sheet only leaves after this.
+  let openSoFar = 0;
+  const firstExercises = settled
+    ? exercises
+    : exercises.slice(
+        0,
+        exercises.findIndex((ex) => !foldedIds.has(ex.id) && ++openSoFar === FIRST_OPEN_EXERCISES) + 1 || exercises.length,
+      );
   const title = (e: WorkoutExercise) => names(e.exercise).title;
   // The set to do now is picked out, so the eye finds it at once after a rest.
   const progress = workoutProgress(exercises);
@@ -223,6 +232,8 @@ export default function WorkoutScreen() {
   };
 
   const finish = async () => {
+    if (!workout) return;
+    Keyboard.dismiss();
     setClosing(true);
     const result = await endWorkout(db, workout.id);
     if (!result) {
@@ -235,6 +246,7 @@ export default function WorkoutScreen() {
   };
 
   const discard = async () => {
+    if (!workout) return;
     const ok = await confirmDestructive({
       title: 'Annullare l’allenamento?',
       message: 'Le serie registrate verranno eliminate.',
@@ -247,15 +259,11 @@ export default function WorkoutScreen() {
     router.back();
   };
 
-  const editNotes = () =>
-    editText({
-      title: 'Note dell’allenamento',
-      message: 'Come è andata, sensazioni, dolori…',
-      value: workout.notes,
-      onSave: (text) => void updateWorkoutNotes(db, workout.id, text),
-    });
-
-  const addExercise = () => router.push({ pathname: '/exercise-picker', params: { target: 'workout', id: workout.id } });
+  const addExercise = () => {
+    if (!workout) return;
+    adding.current = true;
+    router.push({ pathname: '/exercise-picker', params: { target: 'workout', id: workout.id } });
+  };
 
   // The scroll view is the first view of the screen, as iOS expects for the bar above it.
   return (
@@ -266,9 +274,13 @@ export default function WorkoutScreen() {
         {/* The time, big in the bar at the top, with the name of the workout above it. */}
         <Stack.Screen
           options={{
-            title: workout.name,
+            title: workout?.name ?? startingTitle ?? 'Allenamento',
             headerTitle: () => (
-              <WorkoutTitle name={workout.name} startedAt={workout.startedAt} onPress={editing ? () => setEditing(false) : undefined} />
+              <WorkoutTitle
+                name={workout?.name ?? startingTitle ?? 'Allenamento'}
+                startedAt={workout?.startedAt ?? openedAt}
+                onPress={editing ? () => setEditing(false) : undefined}
+              />
             ),
           }}
         />
@@ -294,9 +306,6 @@ export default function WorkoutScreen() {
             <Stack.Toolbar.MenuAction icon="plus" onPress={addExercise}>
               Aggiungi esercizio
             </Stack.Toolbar.MenuAction>
-            <Stack.Toolbar.MenuAction icon="note.text" onPress={editNotes}>
-              {workout.notes ? 'Modifica nota' : 'Aggiungi nota'}
-            </Stack.Toolbar.MenuAction>
             <Stack.Toolbar.MenuAction icon="xmark.circle" destructive onPress={() => void discard()}>
               Annulla allenamento
             </Stack.Toolbar.MenuAction>
@@ -309,19 +318,18 @@ export default function WorkoutScreen() {
           )}
         </Stack.Toolbar>
 
-        {workout.notes ? (
-          <NoteRow text={workout.notes} icon="note.text" onPress={editNotes} style={styles.notes} />
-        ) : null}
+        {/* Keeps the first exercise's buttons out of the reach of the bar's own, which take touches a good way below it. */}
+        <View style={styles.topSpace} />
 
         {/* Rows already there when the screen opens appear with it; new sets slide in. */}
         <LayoutAnimationConfig skipEntering>
           {/*
-            Hold an exercise's name, or tap "Modifica": all of them fold and wobble, as apps on the
+            Hold an exercise's name, or tap "Modifica": they wobble where they are, as apps on the
             Home Screen. Then one can be dragged: it follows the finger, the others make room and
             the page scrolls at its edges. ✓, or a tap outside them, ends the editing.
           */}
           <Sortable.Grid
-            data={exercises}
+            data={firstExercises}
             keyExtractor={(ex) => String(ex.id)}
             columns={1}
             rowGap={Spacing.lg}
@@ -341,8 +349,7 @@ export default function WorkoutScreen() {
             itemExiting={EXERCISE_OUT}
             dimensionsAnimationType="worklet"
             hapticsEnabled
-            // Dragging only once folded: a tall exercise under the finger was hard to place, and
-            // out of edit mode a hold never fights the swipes on the sets.
+            // Out of edit mode a hold never fights the swipes on the sets.
             sortEnabled={editing}
             onDragEnd={({ data: ordered }) => {
               if (ordered === exercises) return;
@@ -360,7 +367,7 @@ export default function WorkoutScreen() {
                   names={names(ex.exercise)}
                   settled={settled}
                   editing={editing}
-                  collapsed={editing || foldedIds.has(ex.id)}
+                  collapsed={foldedIds.has(ex.id)}
                   onEdit={() => setEditing(true)}
                   onFold={(value) => fold([[ex.id, value]])}
                   onCompleted={() => onCompleted(ex.id)}
@@ -379,6 +386,11 @@ export default function WorkoutScreen() {
             onPress={addExercise}
           />
         </View>
+        {workout ? (
+          <View style={editing && styles.dimmed} pointerEvents={editing ? 'none' : 'auto'}>
+            <WorkoutNote key={workout.id} value={workout.notes} onSave={(text) => void updateWorkoutNotes(db, workout.id, text)} />
+          </View>
+        ) : null}
         <View style={styles.bottomSpace} />
         </View>
       </ScreenScroll>
@@ -389,12 +401,49 @@ export default function WorkoutScreen() {
   );
 }
 
-/** A note on the workout or an exercise: a tap changes or deletes it. */
-function NoteRow({ text, icon, onPress, style }: { text: string; icon: 'note.text' | 'pin.fill'; onPress: () => void; style: StyleProp<ViewStyle> }) {
+/** The workout's note, written right there at the end of the page; it saves itself as it is typed. */
+function WorkoutNote({ value, onSave }: { value: string | null; onSave: (text: string) => void }) {
+  const theme = useTheme();
+  const [text, setText] = useState(value ?? '');
+  const saved = useRef(value ?? '');
+  const save = (next: string) => {
+    if (next.trim() === saved.current.trim()) return;
+    saved.current = next;
+    onSave(next);
+  };
+  useEffect(() => {
+    const timer = setTimeout(() => save(text), 500);
+    return () => clearTimeout(timer);
+    // Only the text matters; `save` is new on every render.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [text]);
   return (
-    <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Modifica o elimina la nota" style={style}>
-      <Icon name={icon} size={icon === 'pin.fill' ? 12 : 15} tone={icon === 'pin.fill' ? 'warning' : 'textSecondary'} />
-      <AppText variant="footnote" tone={icon === 'pin.fill' ? 'text' : 'textSecondary'} style={styles.flex}>
+    <View style={styles.note}>
+      <SectionTitle>Nota</SectionTitle>
+      <ListGroup>
+        <TextInput
+          value={text}
+          onChangeText={setText}
+          onFocus={() => nudge.set(null)}
+          onEndEditing={() => save(text)}
+          multiline
+          placeholder="Come è andata, sensazioni, dolori…"
+          placeholderTextColor={theme.textTertiary}
+          inputAccessoryViewID={KEYBOARD_BAR}
+          accessibilityLabel="Nota dell’allenamento"
+          style={[styles.noteInput, { color: theme.text }]}
+        />
+      </ListGroup>
+    </View>
+  );
+}
+
+/** An exercise's fixed note: a tap changes or deletes it. */
+function NoteRow({ text, onPress }: { text: string; onPress: () => void }) {
+  return (
+    <Pressable onPress={onPress} accessibilityRole="button" accessibilityHint="Modifica o elimina la nota" style={styles.noteRow}>
+      <Icon name="pin.fill" size={12} tone="warning" />
+      <AppText variant="footnote" tone="text" style={styles.flex}>
         {text}
       </AppText>
     </Pressable>
@@ -405,7 +454,7 @@ type ExerciseBlockProps = {
   item: WorkoutExercise;
   currentSetId: number | null;
   names: { title: string; subtitle: string | null };
-  /** Edit mode: folded, and only to drag or remove. */
+  /** Edit mode: only to drag or remove. */
   editing: boolean;
   /** The sheet is up: native menus and pickers can be built. */
   settled: boolean;
@@ -432,7 +481,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
   const router = useRouter();
   const { exercise } = item;
   const complete = item.sets.length > 0 && item.sets.every((set) => set.done);
-  // The last set ticked folds the exercise away, a moment later so the tick is seen first;
+  // The last set ticked: a green light runs across the exercise and fades, then it folds away;
   // reopening one of its sets opens it again.
   const [wasComplete, setWasComplete] = useState(complete);
   const [change, setChange] = useState<'completed' | 'reopened' | null>(null);
@@ -440,15 +489,25 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
     setWasComplete(complete);
     setChange(complete ? 'completed' : 'reopened');
   }
+  const sweep = useSharedValue(0);
+  const glow = useSharedValue(0);
+  const sweepStyle = useAnimatedStyle(() => ({ opacity: glow.get(), transform: [{ scaleX: sweep.get() }] }));
   useEffect(() => {
     if (change === null) return;
+    if (change === 'completed') {
+      haptics.success();
+      sweep.set(0);
+      sweep.set(withTiming(1, { duration: SWEEP_MS, easing: Easing.bezier(0.33, 0, 0.2, 1) }));
+      glow.set(0.2);
+      glow.set(withDelay(SWEEP_MS, withTiming(0, { duration: GLOW_OUT_MS, easing: Easing.out(Easing.quad) })));
+    }
     const timer = setTimeout(
       () => {
         if (change === 'completed') onCompleted();
         else onFold(false);
         setChange(null);
       },
-      change === 'completed' ? 650 : 0,
+      change === 'completed' ? SWEEP_MS + 200 : 0,
     );
     return () => clearTimeout(timer);
     // Only the change matters; the callbacks are new on every render.
@@ -506,7 +565,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
             style={styles.exerciseTitle}>
             {complete ? (
               <Animated.View entering={DONE_IN}>
-                <Icon name="checkmark.circle.fill" size={22} tone="accent" />
+                <Icon name="checkmark.circle.fill" size={24} tone="accent" />
               </Animated.View>
             ) : null}
             <View style={styles.flex}>
@@ -528,7 +587,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
               haptics.selection();
               onFold(!collapsed);
             }}
-            hitSlop={4}
+            hitSlop={{ top: 8, bottom: 8, left: 4, right: 2 }}
             accessibilityRole="button"
             accessibilityState={{ expanded: !collapsed }}
             accessibilityLabel={collapsed ? 'Mostra le serie' : 'Nascondi le serie'}
@@ -565,10 +624,8 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
           />
         </View>
         {collapsed ? null : (
-        <Animated.View entering={SETS_IN} exiting={SETS_OUT}>
-        {exercise.note ? (
-          <NoteRow text={exercise.note} icon="pin.fill" onPress={editNote} style={styles.noteRow} />
-        ) : null}
+        <Animated.View entering={SETS_IN} exiting={SETS_OUT} pointerEvents={editing ? 'none' : 'auto'}>
+        {exercise.note ? <NoteRow text={exercise.note} onPress={editNote} /> : null}
         {advice ? (
           // One line: what to do today. Why (last time's counts against the goal) on a tap.
           <View style={styles.adviceRow}>
@@ -670,6 +727,9 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
         </Animated.View>
         )}
       </ListGroup>
+      <View pointerEvents="none" style={styles.sweepClip}>
+        <Animated.View style={[styles.sweep, { backgroundColor: theme.accent }, sweepStyle]} />
+      </View>
     </View>
   );
 }
@@ -788,7 +848,8 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
     suggested === null
       ? previous
       : previous
-        ? { ...previous, weight: suggested }
+        ? // A new load makes last time's reps meaningless: they are left to fill in.
+          { ...previous, weight: suggested, reps: null }
         : { type: 'normal', weight: suggested, reps: null, seconds: null, rir: null, done: false };
   const onUpdate = (fields: SetFields) => void updateSet(db, set.id, fields);
   const onComplete = async (fields: SetFields) => {
@@ -1164,7 +1225,14 @@ function mix(from: string, to: string, t: number): string {
 
 const REST_IN = FadeInDown.springify().damping(18).stiffness(180);
 const REST_OUT = FadeOutDown.duration(320);
-const DONE_IN = FadeIn.duration(250);
+/** The tick appears with the light, growing into place without going past it. */
+const DONE_IN = new Keyframe({
+  0: { opacity: 0, transform: [{ scale: 0.5 }] },
+  100: { opacity: 1, transform: [{ scale: 1 }], easing: Easing.bezier(0.23, 1, 0.32, 1) },
+}).duration(340);
+/** The green light across a finished exercise, and its fading. */
+const SWEEP_MS = 520;
+const GLOW_OUT_MS = 420;
 const CURRENT_IN = FadeIn.duration(260);
 const FLAG_IN = FadeIn.duration(220);
 const DETAIL_IN = FadeIn.duration(180);
@@ -1253,10 +1321,14 @@ const styles = StyleSheet.create({
   // title makes iOS fold "Modifica" away into an overflow menu.
   title: { alignItems: 'center', maxWidth: 140 },
   titleTime: { fontSize: 22, lineHeight: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  notes: { flexDirection: 'row', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
+  topSpace: { height: Spacing.xl },
+  note: { marginTop: Spacing.xl },
+  noteInput: { minHeight: 88, fontSize: 17, lineHeight: 22, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.md, textAlignVertical: 'top' },
   exercise: {},
+  sweepClip: { ...StyleSheet.absoluteFill, borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },
+  sweep: { ...StyleSheet.absoluteFill, opacity: 0, transformOrigin: 'left center' },
   exerciseFooter: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
-  adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.sm },
+  adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.sm },
   adviceText: { flex: 1, gap: 2 },
   adviceTitle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2 },
   shrink: { flexShrink: 1 },

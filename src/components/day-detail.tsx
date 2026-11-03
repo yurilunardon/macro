@@ -96,7 +96,7 @@ export function DayDetail({ date, today, items, calendar, types, busy, header = 
             onPress={() => openAgendaItem(router, item)}
             onStart={
               item.kind === 'activity' && item.status === 'planned' && item.occurrence.typeId === gymTypeId && date === today
-                ? () => void startAndOpenWorkout(db, router, item.dayId)
+                ? () => void startAndOpenWorkout(db, router, item.dayId, (item.dayId === null ? null : calendar?.dayNames.get(item.dayId)) ?? item.occurrence.note ?? 'Palestra')
                 : undefined
             }
           />

@@ -1,5 +1,5 @@
 import { useNavigation, useRoute } from 'expo-router';
-import type { NavigationProp, ParamListBase } from 'expo-router/react-navigation';
+import { useHeaderHeight, type NavigationProp, type ParamListBase } from 'expo-router/react-navigation';
 import { useEffect, useRef, useState } from 'react';
 import Animated, { scrollTo, useAnimatedRef, useAnimatedScrollHandler, useSharedValue, type AnimatedRef, type SharedValue } from 'react-native-reanimated';
 import { scheduleOnUI } from 'react-native-worklets';
@@ -14,19 +14,27 @@ export type ScrollTop = {
 };
 
 /**
- * Back to the top of a page with a large title. The top is the first offset iOS reports, with the
- * large title open: it sets it itself, under the bar, so 0 would be too far.
+ * Back to the top of a page with a large title, the title open. Under a bar that floats over the
+ * page, the top is as far above 0 as that bar is tall with its title open: the most iOS has
+ * reported for it. The first offset alone may come only with the first drag, a little down the page.
  */
 export function useScrollTop(): ScrollTop {
   const ref = useAnimatedRef<Animated.ScrollView>();
   const offset = useSharedValue(0);
   const top = useSharedValue<number | null>(null);
+  const reported = useHeaderHeight();
+  const bar = useSharedValue(0);
+  useEffect(() => {
+    if (reported > bar.get()) bar.set(reported);
+  }, [reported, bar]);
   const onScroll = useAnimatedScrollHandler((event) => {
     if (top.get() === null) top.set(event.contentOffset.y);
     offset.set(event.contentOffset.y);
   });
   const [scrollToTop] = useState(() => (): Promise<void> => {
-    const to = top.get() ?? 0;
+    const first = top.get();
+    // A page that starts at 0 or below has its bar above it, not over it.
+    const to = first !== null && first >= 0 ? first : Math.min(first ?? 0, -bar.get());
     const far = offset.get() - to;
     if (far < 8) return Promise.resolve();
     scheduleOnUI(() => {
@@ -40,8 +48,8 @@ export function useScrollTop(): ScrollTop {
 }
 
 /**
- * A tap on the tab of the page on screen takes it back to the top, as in every iOS app. Only
- * the first page of the tab: on the pages above it the tap goes back to that one instead.
+ * A tap on the tab on screen takes its first page back to the top, as in every iOS app, even from
+ * a page further in, which the tap also closes. A tap coming from another tab only switches to it.
  */
 export function useScrollTopOnTabPress(scrollToTop: () => void): void {
   const navigation = useNavigation<NavigationProp<ParamListBase>>();
@@ -53,7 +61,7 @@ export function useScrollTopOnTabPress(scrollToTop: () => void): void {
   useEffect(() => {
     const onTabPress = () => {
       const stack = navigation.getState();
-      if (navigation.isFocused() && stack?.routes[0]?.key === route.key) latest.current();
+      if (navigation.getParent()?.isFocused() && stack?.routes[0]?.key === route.key) latest.current();
     };
     // Only the tab navigator sends it; it reaches the page through its stack, whichever level.
     const unsubscribe: (() => void)[] = [];

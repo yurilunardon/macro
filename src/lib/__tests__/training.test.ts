@@ -4,6 +4,7 @@ import { defaultRestSeconds, exerciseNames, exerciseSearchText, loadIncrement } 
 import {
   bestOneRepMax,
   dayIcon,
+  exerciseChange,
   estimateOneRepMax,
   formatDuration,
   formatLifted,
@@ -236,5 +237,34 @@ describe('short formats', () => {
   it('writes what was lifted in kilos, then tons', () => {
     expect(formatLifted(850)).toBe('850 kg');
     expect(formatLifted(6100)).toBe('6,1 t');
+  });
+});
+
+describe('exerciseChange', () => {
+  const set = (weight: number | null, reps: number | null, seconds: number | null = null) => ({ type: 'normal' as const, weight, reps, seconds, rir: null, done: true });
+
+  it('says first what changed in the load', () => {
+    expect(exerciseChange([set(70, 8), set(70, 7)], [set(65, 10)], 'weight')).toEqual({ trend: 'up', label: '+5 kg', was: '65×10' });
+    expect(exerciseChange([set(25, 12)], [set(27.5, 12)], 'weight')).toEqual({ trend: 'down', label: '−2,5 kg', was: '27,5×12' });
+  });
+
+  it('then in the reps, at the same load', () => {
+    expect(exerciseChange([set(10, 15)], [set(10, 12)], 'weight')).toEqual({ trend: 'up', label: '+3 rip', was: '10×12' });
+    expect(exerciseChange([set(null, 8)], [set(null, 10)], 'bodyweight')).toEqual({ trend: 'down', label: '−2 rip', was: '×10' });
+  });
+
+  it('counts seconds for a timed exercise', () => {
+    expect(exerciseChange([set(null, null, 60)], [set(null, null, 45)], 'time')).toEqual({ trend: 'up', label: '+15 s', was: '45 s' });
+  });
+
+  it('says when nothing changed, or when there is nothing to compare with', () => {
+    expect(exerciseChange([set(70, 8)], [set(70, 8)], 'weight')).toEqual({ trend: 'same', label: '=', was: null });
+    expect(exerciseChange([set(70, 8)], [], 'weight')).toEqual({ trend: 'new', label: 'Nuovo', was: null });
+  });
+
+  it('leaves warm-ups and sets not done out of last time', () => {
+    const warmup = { ...set(100, 1), type: 'warmup' as const };
+    const notDone = { ...set(100, 1), done: false };
+    expect(exerciseChange([set(70, 8)], [warmup, notDone, set(70, 8)], 'weight').trend).toBe('same');
   });
 });

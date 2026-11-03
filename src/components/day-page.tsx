@@ -6,7 +6,8 @@ import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-nativ
 
 import { getDayPlan, getTrainingSettings, setDayType } from '@/db/days';
 import { copyEntry, copyMeal, deleteEntry, deleteMealEntries, getEntriesForDate, moveEntry, type Entry } from '@/db/entries';
-import { useLiveQuery } from '@/db/live';
+import { prefetch, useLiveQuery } from '@/db/live';
+import { recentFoodsScreen } from '@/db/screens';
 import { saveMealFromDiary } from '@/db/saved-meals';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
@@ -412,7 +413,10 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                     <Link href={{ pathname: '/add', params: { meal: meal.key, date } }} asChild>
                       <Link.Trigger withAppleZoom>
                         {/* A plain style: Link's Slot drops a style given as a function. */}
-                        <Pressable accessibilityRole="button" accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}>
+                        <Pressable
+                          onPressIn={() => void prefetch(db, recentFoodsScreen)}
+                          accessibilityRole="button"
+                          accessibilityLabel={`Aggiungi a ${meal.label.toLowerCase()}`}>
                           {({ pressed }) => addRow(pressed)}
                         </Pressable>
                       </Link.Trigger>

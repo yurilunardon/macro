@@ -25,6 +25,7 @@ import { useLiveQuery } from '@/db/live';
 import { getRecipes } from '@/db/recipes';
 import { addSavedMealToDiary, getSavedMeals, type SavedMealSummary } from '@/db/saved-meals';
 import { useAddFlowParams, useCloseAddFlow } from '@/hooks/use-add-flow';
+import { useSettled } from '@/hooks/use-settled';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDayTitle } from '@/lib/dates';
 import { formatKcal } from '@/lib/format';
@@ -41,6 +42,9 @@ const LISTS: readonly { key: ListKey; label: string }[] = [
   { key: 'basic', label: 'Base' },
   { key: 'custom', label: 'Miei' },
 ];
+
+/** Rows drawn while the sheet rises, about what fits on screen; the rest as it lands. */
+const FIRST_ROWS = 8;
 
 const EMPTY_MESSAGES: Record<'recent' | 'favorites', string> = {
   recent: 'Qui compariranno gli alimenti che registri.',
@@ -65,6 +69,7 @@ export default function AddScreen() {
   const [online, setOnline] = useState<OnlineState>({ status: 'idle' });
   const abortRef = useRef<AbortController | null>(null);
   const trimmed = query.trim();
+  const settled = useSettled();
 
   const lists = useLiveQuery(`add-lists:${list}`, (database) =>
     list === 'recent' ? getRecentFoods(database) : list === 'favorites' ? getFavoriteFoods(database) : Promise.resolve([]),
@@ -178,7 +183,7 @@ export default function AddScreen() {
             ) : null
           ) : lists.data && lists.data.length > 0 ? (
             <ListGroup>
-              {lists.data.map((food) => (
+              {(settled ? lists.data : lists.data.slice(0, FIRST_ROWS)).map((food) => (
                 <FoodRow key={food.id} food={food} onPress={() => openFood(food)} />
               ))}
             </ListGroup>

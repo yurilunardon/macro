@@ -91,7 +91,7 @@ export default function TrainingScreen() {
   const hasGymDays = (soon.data?.plans ?? []).some((p) => p.typeId === gymTypeId);
   const breath = useBreath(Boolean(data?.active));
 
-  const start = (dayId: number | null) => startAndOpenWorkout(db, router, dayId);
+  const start = (dayId: number | null, name: string) => startAndOpenWorkout(db, router, dayId, name);
 
   const endActive = async () => {
     if (!data?.active) return;
@@ -114,7 +114,7 @@ export default function TrainingScreen() {
     <ScreenScroll>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon="plus" accessibilityLabel="Nuovo">
-          <Stack.Toolbar.MenuAction icon="figure.strengthtraining.traditional" onPress={() => void start(null)}>
+          <Stack.Toolbar.MenuAction icon="figure.strengthtraining.traditional" onPress={() => void start(null, 'Allenamento libero')}>
             Allenamento libero
           </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon="list.bullet.rectangle" onPress={() => router.push('/training/new')}>
@@ -212,7 +212,7 @@ export default function TrainingScreen() {
             canStart={!data?.active}
             names={names}
             onOpenDay={openDay}
-            onStart={(dayId) => void start(dayId)}
+            onStart={(dayId, name) => void start(dayId, name)}
             onOpenWorkout={(id) => router.push({ pathname: '/training/session', params: { id } })}
           />
           {/* Without gym days in the calendar there is no "today": one tap sets them up. */}
@@ -236,14 +236,17 @@ export default function TrainingScreen() {
           </AppText>
           <View style={styles.heroButton}>
             <Button title="Nuova scheda" onPress={() => router.push('/training/new')} />
-            <Button title="Allenamento libero" variant="plain" compact onPress={() => void start(null)} />
+            <Button title="Allenamento libero" variant="plain" compact onPress={() => void start(null, 'Allenamento libero')} />
           </View>
         </Card>
       ) : null}
 
       {/* 2 · How it is going: the numbers are on their own page. */}
       {data ? (
-        <Animated.View layout={LAYOUT} style={styles.progressSlot}>
+        <Animated.View layout={LAYOUT}>
+          <AppText variant="title3" style={styles.sectionTitle}>
+            Progressi
+          </AppText>
           <ProgressCard history={history} today={today} onPress={() => router.push('/training/progress')} />
         </Animated.View>
       ) : null}
@@ -279,7 +282,7 @@ type TrainingLineProps = {
   canStart: boolean;
   names: ReturnType<typeof useExerciseNames>['names'];
   onOpenDay: (dayId: number) => void;
-  onStart: (dayId: number) => void;
+  onStart: (dayId: number, name: string) => void;
   onOpenWorkout: (id: number) => void;
 };
 
@@ -349,7 +352,7 @@ function TrainingLine({ rows, days, details, past, today, canStart, names, onOpe
                     names={names}
                     onToggle={() => toggle(row)}
                     onEdit={() => onOpenDay(day.id)}
-                    onStart={() => onStart(day.id)}
+                    onStart={() => onStart(day.id, day.name)}
                   />
                 ) : null}
               </View>
@@ -547,18 +550,21 @@ function ProgressCard({ history, today, onPress }: { history: readonly WorkoutSu
   const theme = useTheme();
   const range = periodRange('month', today);
   const inside = workoutsBetween(history, range.from, range.to);
+  const totals = totalsOf(inside);
   const buckets = volumeBuckets('month', inside, range);
   const most = Math.max(1, ...buckets.map((b) => b.kg));
   return (
     <Pressable
       onPress={onPress}
       accessibilityRole="button"
-      accessibilityLabel="Progressi"
+      accessibilityLabel={`Progressi: ${countLabel(totals.count, 'allenamento', 'allenamenti')} in ${formatMonthName(monthOf(today)).toLowerCase()}`}
       style={({ pressed }) => [styles.progressCard, { backgroundColor: pressed ? theme.cardPressed : theme.card }]}>
       <View style={styles.flex}>
-        <AppText variant="headline">Progressi</AppText>
-        <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-          {`${countLabel(totalsOf(inside).count, 'allenamento', 'allenamenti')} in ${formatMonthName(monthOf(today)).toLowerCase()}`}
+        <AppText variant="headline" numberOfLines={1}>
+          {`${countLabel(totals.count, 'allenamento', 'allenamenti')} in ${formatMonthName(monthOf(today)).toLowerCase()}`}
+        </AppText>
+        <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
+          {`${totals.sets} serie · ${formatLifted(totals.kg)}`}
         </AppText>
       </View>
       <View style={styles.miniBars}>
@@ -631,7 +637,6 @@ const styles = StyleSheet.create({
   exercise: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   setup: { marginTop: Spacing.md },
   sectionTitle: { marginTop: Spacing.xl, marginBottom: Spacing.sm, paddingHorizontal: Spacing.xs },
-  progressSlot: { marginTop: Spacing.sm },
   progressCard: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 72, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, borderRadius: Radius.lg, borderCurve: 'continuous' },
   miniBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 36 },
   miniBar: { width: 8, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
