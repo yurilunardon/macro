@@ -1,4 +1,4 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useIsFocused, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -53,8 +53,11 @@ export default function TrainingScreen() {
   const router = useRouter();
   const today = useToday();
   const { names } = useExerciseNames();
-  // While the workout's sheet rises, this page stays as it was; it changes once covered.
+  // Under the workout's sheet this page stays as it was, part of it still showing behind the sheet;
+  // it changes when the sheet goes away.
   const starting = useWorkoutStarting();
+  const focused = useIsFocused();
+  const still = starting || !focused;
   const { data: live } = useLiveQuery(
     'training-home',
     async (database) => {
@@ -72,7 +75,7 @@ export default function TrainingScreen() {
     },
     ['training', 'settings'],
   );
-  const data = useFrozen(live, starting);
+  const data = useFrozen(live, still);
   // The gym days to come in the calendar, so this page says the same: which day, and when.
   const soon = useAgenda(today, addDays(today, 13), today);
   const gymTypeId = soon.data?.gymTypeId ?? null;
@@ -90,7 +93,7 @@ export default function TrainingScreen() {
   const programs = data?.programs ?? [];
   const history = data?.history ?? [];
   const next = data?.next ?? null;
-  const rows = useFrozen(next ? buildTrainingLine({ history, dayIds: next.program.days.map((d) => d.id), nextId: next.day.id, upcoming, active: data?.active }) : [], starting);
+  const rows = useFrozen(next ? buildTrainingLine({ history, dayIds: next.program.days.map((d) => d.id), nextId: next.day.id, upcoming, active: data?.active }) : [], still);
   const openDay = (dayId: number) => {
     void prefetch(db, dayScreen(dayId));
     router.push({ pathname: '/training/day', params: { id: dayId } });

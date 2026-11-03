@@ -6,7 +6,8 @@ import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { WorkoutRecap } from '@/components/workout-recap';
+import { FinishTick } from '@/components/finish-tick';
+import { RECAP_AFTER_MS, WorkoutRecap } from '@/components/workout-recap';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
 import { getPreviousOfSameDay, getRecords, getWorkout } from '@/db/workouts';
@@ -50,7 +51,8 @@ export default function WorkoutSummaryScreen() {
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + Spacing.lg, paddingBottom: insets.bottom + 96 }]} showsVerticalScrollIndicator={false}>
         <WorkoutRecap workout={workout} records={records} previous={previous} arriving />
       </ScrollView>
-      <Animated.View entering={FadeIn.delay(200).duration(280)} style={[styles.footer, { paddingBottom: insets.bottom + Spacing.sm, backgroundColor: theme.background }]}>
+      <FinishTick />
+      <Animated.View entering={FadeIn.delay(RECAP_AFTER_MS).duration(280)} style={[styles.footer, { paddingBottom: insets.bottom + Spacing.sm, backgroundColor: theme.background }]}>
         <Button title="Fine" onPress={close} />
       </Animated.View>
     </View>

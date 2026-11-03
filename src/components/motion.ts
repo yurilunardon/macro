@@ -1,5 +1,8 @@
 import { Easing, type SharedValue, withSequence, withSpring, withTiming } from 'react-native-reanimated';
 
+/** The numbers of a day changing when a food is added or removed: a slow, even movement. */
+export const SMOOTH_MS = 900;
+
 /** Strong ease-out for things entering, leaving or settling. */
 export const EASE_OUT = Easing.bezier(0.23, 1, 0.32, 1);
 

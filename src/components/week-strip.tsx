@@ -11,7 +11,7 @@ import { RING_STOPS, RING_TONES } from '@/lib/calories';
 import { formatLongDate, formatWeekdayInitial, weekOf, type DateKey } from '@/lib/dates';
 
 import { AppText } from './app-text';
-import { beat, EASE_OUT, project } from './motion';
+import { beat, EASE_OUT, project, SMOOTH_MS } from './motion';
 
 const CIRCLE = 36;
 const BAR_WIDTH = 26;
@@ -132,7 +132,7 @@ function DayBar({ progress, slowMs }: { progress: number; slowMs?: number }) {
   const tones = RING_TONES.map((tone) => theme[tone]);
   const shown = useSharedValue(progress);
   useEffect(() => {
-    shown.set(withTiming(progress, slowMs ? { duration: slowMs, easing: Easing.inOut(Easing.cubic) } : { duration: 700, easing: Easing.bezier(0.23, 1, 0.32, 1) }));
+    shown.set(withTiming(progress, { duration: slowMs ?? SMOOTH_MS, easing: Easing.inOut(Easing.cubic) }));
   }, [shown, progress, slowMs]);
   const fill = useAnimatedStyle(() => {
     const p = shown.get();

@@ -26,6 +26,7 @@ import { Card, ListGroup } from './card';
 import type { DayPageProps as PagerProps } from './day-pager';
 import { Icon } from './icon';
 import { MenuButton } from './menu-button';
+import { SMOOTH_MS } from './motion';
 import { MacroBars } from './nutrient-grid';
 import { CalorieRing } from './progress';
 import { confirmDestructive } from './prompt';
@@ -109,6 +110,8 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
   // From the first food taken away the ring and bars head for empty all at once, slowly.
   const draining = gone !== null;
   const shownTotals = draining ? sumNutrients([]) : totals;
+  // The day on screen moves slowly and evenly, its number counting along; only the ones kept ready beside it do not need to.
+  const slowMs = draining ? CLEAR_MS : interactive ? SMOOTH_MS : undefined;
   const targets = data?.plan.targets;
   // From today things are copied to tomorrow (to plan ahead), from any other day to today.
   const copyTarget = date === today ? { date: addDays(today, 1), label: 'domani' } : { date: today, label: 'oggi' };
@@ -274,12 +277,12 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
 
         {/* Straight on the page, as the rings in Fitness: what is left of the day comes first. */}
         <View style={styles.summary}>
-          <CalorieRing eaten={shownTotals.kcal} target={targets?.kcal ?? 0} slowMs={draining ? CLEAR_MS : undefined} />
+          <CalorieRing eaten={shownTotals.kcal} target={targets?.kcal ?? 0} slowMs={slowMs} />
           {targets ? (
             <MacroBars
               totals={shownTotals}
               targets={targets}
-              slowMs={draining ? CLEAR_MS : undefined}
+              slowMs={slowMs}
               onPress={(key) => router.push({ pathname: '/nutrients', params: { date, key } })}
             />
           ) : null}

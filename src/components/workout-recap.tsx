@@ -15,9 +15,10 @@ import { Icon } from './icon';
 
 type Records = Awaited<ReturnType<typeof getRecords>>;
 
-/** One after the other, the first ones first, without any bounce. */
+/** One after the other, the first ones first, without any bounce, once the tick has gone. */
 const STAGGER = 45;
-const rowIn = (index: number) => FadeInDown.delay(index * STAGGER).duration(280);
+export const RECAP_AFTER_MS = 1050;
+const rowIn = (index: number) => FadeInDown.delay(RECAP_AFTER_MS + index * STAGGER).duration(280);
 
 /** Where the dot sits on each step of the line. */
 const DOT_Y = 28;
@@ -52,7 +53,7 @@ export function WorkoutRecap({ workout, records, previous, arriving = false }: W
 
   return (
     <View style={styles.recap}>
-      <Animated.View entering={arriving ? FadeIn.duration(280) : undefined} style={styles.head}>
+      <Animated.View entering={arriving ? FadeIn.delay(RECAP_AFTER_MS).duration(280) : undefined} style={styles.head}>
         <AppText variant="display" numberOfLines={2}>
           {workout.name}
         </AppText>

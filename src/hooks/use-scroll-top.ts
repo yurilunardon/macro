@@ -9,32 +9,31 @@ export type ScrollTop = {
   onScroll: ReturnType<typeof useAnimatedScrollHandler>;
   /** How far the page is scrolled, as iOS reports it: negative under a bar. */
   offset: SharedValue<number>;
+  /** How far below the top of the screen the page starts when it is all the way up. */
+  openTop: SharedValue<number>;
   /** Scrolls back up to the top of the page; resolved once it is about there. */
   scrollToTop: () => Promise<void>;
 };
 
 /**
- * Back to the top of a page with a large title, the title open. Under a bar that floats over the
- * page, the top is as far above 0 as that bar is tall with its title open: the most iOS has
- * reported for it. The first offset alone may come only with the first drag, a little down the page.
+ * Back to the very top of a page, with a large title open. Under a bar floating over the page, the
+ * top is as far above 0 as the page's start is below the top of the screen when it opens: the
+ * screen's ScreenScroll measures that (see `openTop`). The bar's height is there should that fail.
  */
 export function useScrollTop(): ScrollTop {
   const ref = useAnimatedRef<Animated.ScrollView>();
   const offset = useSharedValue(0);
-  const top = useSharedValue<number | null>(null);
+  const openTop = useSharedValue(0);
   const reported = useHeaderHeight();
   const bar = useSharedValue(0);
   useEffect(() => {
     if (reported > bar.get()) bar.set(reported);
   }, [reported, bar]);
   const onScroll = useAnimatedScrollHandler((event) => {
-    if (top.get() === null) top.set(event.contentOffset.y);
     offset.set(event.contentOffset.y);
   });
   const [scrollToTop] = useState(() => (): Promise<void> => {
-    const first = top.get();
-    // A page that starts at 0 or below has its bar above it, not over it.
-    const to = first !== null && first >= 0 ? first : Math.min(first ?? 0, -bar.get());
+    const to = -Math.max(openTop.get(), bar.get());
     const far = offset.get() - to;
     if (far < 8) return Promise.resolve();
     scheduleOnUI(() => {
@@ -44,7 +43,7 @@ export function useScrollTop(): ScrollTop {
     // Resolved once the scroll has about come to rest.
     return new Promise((resolve) => setTimeout(resolve, Math.min(300 + far / 4, 650)));
   });
-  return { ref, onScroll, offset, scrollToTop };
+  return { ref, onScroll, offset, openTop, scrollToTop };
 }
 
 /**

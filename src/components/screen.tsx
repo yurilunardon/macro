@@ -1,5 +1,5 @@
-import type { ReactNode } from 'react';
-import { Platform, StyleSheet, type ScrollViewProps } from 'react-native';
+import { useEffect, useRef, type ComponentRef, type ReactNode } from 'react';
+import { Platform, StyleSheet, View, type ScrollViewProps } from 'react-native';
 import Animated from 'react-native-reanimated';
 
 import { MaxContentWidth, Spacing } from '@/constants/theme';
@@ -26,7 +26,8 @@ export function ScreenScroll({
   const theme = useTheme();
   const tabBar = useTabBarInset();
   const own = useScrollTop();
-  const { ref, onScroll, scrollToTop } = scroll ?? own;
+  const active = scroll ?? own;
+  const { ref, onScroll, scrollToTop } = active;
   useScrollTopOnTabPress(scrollToTop);
   return (
     <Animated.ScrollView
@@ -42,8 +43,39 @@ export function ScreenScroll({
       contentContainerStyle={[styles.content, webPadding(tabBar)]}
       onScrollBeginDrag={closeOpenSwipeRow}
       {...props}>
+      <TopMark scroll={active} />
       {children}
     </Animated.ScrollView>
+  );
+}
+
+/**
+ * Where the page starts on screen, measured as it opens, all the way up with its large title open:
+ * how far it has to go to get back there. Measured again shortly after, once iOS has placed the bar.
+ */
+function TopMark({ scroll }: { scroll: ScrollTop }) {
+  const mark = useRef<ComponentRef<typeof View>>(null);
+  const inPage = useRef(0);
+  const measure = () =>
+    mark.current?.measureInWindow((_x, y) => {
+      const top = y - inPage.current;
+      if (top > scroll.openTop.get()) scroll.openTop.set(top);
+    });
+  useEffect(() => {
+    const timers = [100, 400].map((ms) => setTimeout(measure, ms));
+    return () => timers.forEach(clearTimeout);
+    // Only as the page opens: later it may be scrolled.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
+  return (
+    <View
+      ref={mark}
+      collapsable={false}
+      pointerEvents="none"
+      onLayout={(event) => {
+        inPage.current = event.nativeEvent.layout.y;
+      }}
+    />
   );
 }
 

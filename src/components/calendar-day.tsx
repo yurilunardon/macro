@@ -1,4 +1,4 @@
-import { useRouter } from 'expo-router';
+import { useIsFocused, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { memo, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -38,8 +38,10 @@ export const CalendarDay = memo(function CalendarDay({ date, today, interactive,
   const router = useRouter();
   const theme = useTheme();
   const now = clockOf(new Date(useClock(60_000)).toISOString());
-  // Under the workout's rising sheet the page stays as it was; it changes once covered.
-  const plan = useFrozen(useDayPlan(date, today), useWorkoutStarting());
+  // Under the workout's sheet the page stays as it was; it changes when the sheet goes away.
+  const starting = useWorkoutStarting();
+  const focused = useIsFocused();
+  const plan = useFrozen(useDayPlan(date, today), starting || !focused);
   const gymTypeId = plan.calendar?.gymTypeId ?? null;
   const dayNames = plan.calendar?.dayNames ?? new Map<number, string>();
 

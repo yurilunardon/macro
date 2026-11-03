@@ -142,6 +142,9 @@ export default function WorkoutScreen() {
   const starting = useWorkoutStarting();
   const { title: startingTitle } = useLocalSearchParams<{ title?: string }>();
   const [openedAt] = useState(() => new Date().toISOString());
+  // A workout just started rises with its name only: its rows, all new at once, made the sheet
+  // stutter on the way up. They come in together as it lands.
+  const [justStarted] = useState(starting);
   const [shown, setShown] = useState<Workout | null>(null);
   if (data?.workout && data.workout !== shown) setShown(data.workout);
   // What a ticked set starts: the rest, with what comes next. Kept outside, so every set's
@@ -188,10 +191,12 @@ export default function WorkoutScreen() {
   let openSoFar = 0;
   const firstExercises = settled
     ? exercises
-    : exercises.slice(
+    : justStarted
+      ? []
+      : exercises.slice(
         0,
-        exercises.findIndex((ex) => !foldedIds.has(ex.id) && ++openSoFar === FIRST_OPEN_EXERCISES) + 1 || exercises.length,
-      );
+          exercises.findIndex((ex) => !foldedIds.has(ex.id) && ++openSoFar === FIRST_OPEN_EXERCISES) + 1 || exercises.length,
+        );
   const title = (e: WorkoutExercise) => names(e.exercise).title;
   // The set to do now is picked out, so the eye finds it at once after a rest.
   const progress = workoutProgress(exercises);
@@ -524,7 +529,6 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
   // them under the bottom means less. Taking the suggested weight fills the sets still to do.
   const advice = complete ? null : progression(item.previous, plan, exercise.kind, loadIncrement(exercise.equipment));
   const [weight, setWeight] = useState<number | null>(() => taken.get(item.id) ?? null);
-  const [adviceOpen, setAdviceOpen] = useState(false);
   const takeWeight = (value: number) => {
     haptics.light();
     taken.set(item.id, value);
@@ -627,17 +631,9 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
         <Animated.View entering={SETS_IN} exiting={SETS_OUT} pointerEvents={editing ? 'none' : 'auto'}>
         {exercise.note ? <NoteRow text={exercise.note} onPress={editNote} /> : null}
         {advice ? (
-          // One line: what to do today. Why (last time's counts against the goal) on a tap.
+          // What to do today and why, both in sight.
           <View style={styles.adviceRow}>
-            <Pressable
-              onPress={() => {
-                haptics.selection();
-                setAdviceOpen(!adviceOpen);
-              }}
-              accessibilityRole="button"
-              accessibilityState={{ expanded: adviceOpen }}
-              accessibilityHint="Mostra il perché"
-              style={styles.adviceText}>
+            <View style={styles.adviceText}>
               <View style={styles.adviceTitle}>
                 <Icon
                   name={advice.direction === 'up' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'}
@@ -648,14 +644,10 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
                   {adviceTitle(advice, exercise.kind)}
                 </AppText>
               </View>
-              {adviceOpen ? (
-                <Animated.View entering={DETAIL_IN}>
-                  <AppText variant="footnote" tone="textSecondary" numeric>
-                    {`L’ultima volta ${advice.counts.join(', ')} ${timed ? 's' : 'rip'}${plan ? `, obiettivo ${range}` : ''}`}
-                  </AppText>
-                </Animated.View>
-              ) : null}
-            </Pressable>
+              <AppText variant="footnote" tone="textSecondary" numeric>
+                {adviceReason(advice, timed, range)}
+              </AppText>
+            </View>
             {advice.weight !== null && weight !== advice.weight && item.sets.some((set) => !set.done) ? (
               <Pressable
                 onPress={() => advice.weight !== null && takeWeight(advice.weight)}
@@ -1075,10 +1067,17 @@ function WorkoutTitle({ name, startedAt, onPress }: { name: string; startedAt: s
   );
 }
 
-/** "Sali a 82,5 kg", "Aggiungi carico", "Rendilo più facile": what last time asks of today. */
+/** Why: what was done last time, against the goal. */
+function adviceReason(advice: Progression, timed: boolean, range: string | null): string {
+  const done = `L’ultima volta ${advice.counts.join(', ')} ${timed ? 's' : 'rip'}`;
+  if (!range) return done;
+  return `${done}: ${advice.direction === 'up' ? 'tutte al massimo di' : 'troppe sotto'} ${range}`;
+}
+
+/** "Oggi prova 82,5 kg", "Aggiungi carico", "Rendilo più facile": what last time asks of today. */
 function adviceTitle(advice: Progression, kind: WorkoutExercise['exercise']['kind']): string {
   const up = advice.direction === 'up';
-  if (advice.weight !== null) return `${up ? 'Sali' : 'Scendi'} a ${formatNumber(advice.weight, 2)} kg`;
+  if (advice.weight !== null) return `Oggi prova ${formatNumber(advice.weight, 2)} kg`;
   if (kind === 'time') return up ? 'Rendilo più difficile' : 'Rendilo più facile';
   if (kind === 'bodyweight') return up ? 'Aggiungi carico' : 'Togli carico o ripetizioni';
   return up ? 'Aumenta il carico' : 'Riduci il carico';
@@ -1235,7 +1234,6 @@ const SWEEP_MS = 520;
 const GLOW_OUT_MS = 420;
 const CURRENT_IN = FadeIn.duration(260);
 const FLAG_IN = FadeIn.duration(220);
-const DETAIL_IN = FadeIn.duration(180);
 // Folding and unfolding: the sets fade across most of the card's resize, so the two read as one.
 const SETS_IN = FadeIn.duration(220).delay(80);
 const SETS_OUT = FadeOut.duration(200);
