@@ -1,4 +1,4 @@
-import { useEffect, useState } from 'react';
+import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
   css,
@@ -81,22 +81,39 @@ export function CalorieRing({ eaten, target, size = 176, slowMs }: CalorieRingPr
   const tones = RING_TONES.map((tone) => theme[tone]);
 
   const progress = useSharedValue(0);
+  const counting = useSharedValue(false);
+  const [counted, setCounted] = useState<number | null>(null);
+  // Only the day's numbers changing moves it: a day becoming the one on screen changes nothing.
+  const reached = useRef<number | null>(null);
   useEffect(() => {
-    progress.set(
-      withTiming(r, slowMs ? { duration: slowMs, easing: Easing.inOut(Easing.cubic) } : { duration: 700, easing: Easing.bezier(0.23, 1, 0.32, 1) }),
-    );
-  }, [progress, r, slowMs]);
+    if (reached.current === r) return;
+    const changed = reached.current !== null;
+    reached.current = r;
+    if (changed && slowMs) {
+      counting.set(true);
+      progress.set(
+        withTiming(r, { duration: slowMs, easing: Easing.inOut(Easing.cubic) }, (finished) => {
+          'worklet';
+          if (finished) counting.set(false);
+        }),
+      );
+    } else {
+      counting.set(false);
+      progress.set(withTiming(r, { duration: 700, easing: Easing.bezier(0.23, 1, 0.32, 1) }));
+    }
+  }, [progress, counting, r, slowMs]);
 
   // While it changes slowly the number follows the ring, instead of jumping to the end at once.
-  const [counted, setCounted] = useState<number | null>(null);
   useAnimatedReaction(
-    () => (slowMs ? Math.round(progress.get() * target) : null),
+    () => (counting.get() ? Math.round(progress.get() * target) : null),
     (now, before) => {
       if (now !== before) scheduleOnRN(setCounted, now);
     },
-    [slowMs, target],
+    [target],
   );
-  const { kcal: left, over } = remainingKcal(counted ?? eaten, target);
+  // Always from the whole calories eaten: rounding what is left instead gave a number one away from
+  // the one counted.
+  const { kcal: left, over } = remainingKcal(counted ?? Math.round(eaten), target);
 
   const ringProps = useAnimatedProps(() => {
     const p = progress.get();
@@ -139,6 +156,28 @@ export function CalorieRing({ eaten, target, size = 176, slowMs }: CalorieRingPr
       </View>
     </View>
   );
+}
+
+/**
+ * A number that counts to its new value over `ms` instead of jumping. Without `ms` it just shows it,
+ * as on the days kept ready beside the one on screen.
+ */
+export function useCountedNumber(value: number, ms?: number): number {
+  const shown = useSharedValue(value);
+  const [counted, setCounted] = useState(Math.round(value));
+  const reached = useRef(value);
+  useEffect(() => {
+    if (reached.current === value) return;
+    reached.current = value;
+    shown.set(ms ? withTiming(value, { duration: ms, easing: Easing.inOut(Easing.cubic) }) : value);
+  }, [shown, value, ms]);
+  useAnimatedReaction(
+    () => Math.round(shown.get()),
+    (now, before) => {
+      if (before !== null && now !== before) scheduleOnRN(setCounted, now);
+    },
+  );
+  return counted;
 }
 
 // The bars grow to their new length instead of jumping, e.g. after adding food.

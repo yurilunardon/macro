@@ -117,12 +117,13 @@ export function WorkoutRecap({ workout, records, previous, arriving = false }: W
         ) : null}
       </View>
 
+      {/* With the rest, after the tick: with nothing to wait for, it showed under it. */}
       {workout.notes ? (
-        <View style={[styles.notes, { backgroundColor: theme.card }]}>
+        <Animated.View entering={arriving ? rowIn(workout.exercises.length + 4) : undefined} style={[styles.notes, { backgroundColor: theme.card }]}>
           <AppText variant="subhead" tone="textSecondary">
             {workout.notes}
           </AppText>
-        </View>
+        </Animated.View>
       ) : null}
     </View>
   );

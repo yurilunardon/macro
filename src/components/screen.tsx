@@ -35,6 +35,8 @@ export function ScreenScroll({
       onScroll={onScroll}
       scrollEventThrottle={16}
       contentInsetAdjustmentBehavior="automatic"
+      // The top of a page under the bar is above 0, and without this iOS stops a scroll sent there at 0.
+      scrollToOverflowEnabled
       {...bottomInset(tabBar)}
       automaticallyAdjustKeyboardInsets
       keyboardShouldPersistTaps="handled"

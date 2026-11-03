@@ -9,12 +9,17 @@ import {
   type NativeSyntheticEvent,
 } from 'react-native';
 
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
+
 import { Spacing } from '@/constants/theme';
+import type { ScrollTop } from '@/hooks/use-scroll-top';
 import { addDays, daysBetween, type DateKey } from '@/lib/dates';
 import { haptics } from '@/services/haptics';
 
 /** Days kept in the pager on either side of the day the screen was opened on: two years. */
 const RANGE = 730;
+/** About as long as iOS takes to scroll somewhere by itself. */
+const FIT_AFTER_SCROLL_MS = 350;
 
 /** What a page needs from the pager. */
 export type DayPageProps = {
@@ -33,8 +38,9 @@ export type DayPageProps = {
  * beside the current one, slid to like any neighbour, and then the list is renumbered around it
  * so that page stays where it is.
  */
-export function useDayPager(today: DateKey, asked: DateKey | null = null, scrollToTop?: () => Promise<void>) {
+export function useDayPager(today: DateKey, asked: DateKey | null = null, scroll?: ScrollTop) {
   const { width } = useWindowDimensions();
+  const insets = useSafeAreaInsets();
   const [base, setBase] = useState(asked ?? today);
   const [incoming, setIncoming] = useState<{ index: number; date: DateKey } | null>(null);
   const days = useMemo(() => {
@@ -64,11 +70,46 @@ export function useDayPager(today: DateKey, asked: DateKey | null = null, scroll
 
   // The pager is as tall as the day on screen, not as the longest day kept ready beside it.
   const heights = useRef(new Map<DateKey, number>());
-  const [height, setHeight] = useState<number | undefined>(undefined);
+  const [height, setHeightState] = useState<number | undefined>(undefined);
+  const heightNow = useRef<number | undefined>(undefined);
+  const setHeight = (next: number) => {
+    heightNow.current = next;
+    setHeightState(next);
+  };
   const dayAtShown = useRef(date);
   const onPageLayout = (day: DateKey, h: number) => {
     heights.current.set(day, h);
-    if (day === dayAtShown.current) setHeight(h);
+    if (day === dayAtShown.current || (moving.current?.date === day && h > (heightNow.current ?? 0))) setHeight(h);
+  };
+
+  // A day shorter than where the page is has nothing to show there, and the page left past its end
+  // would jump when next touched: that place is not on this day, so it starts from its beginning.
+  const pastItsEnd = (h: number) =>
+    scroll !== undefined &&
+    scroll.offset.get() > scroll.dayStart() + 1 &&
+    (heightNow.current ?? h) - h > scroll.roomBelow.get() + insets.bottom + 1;
+
+  /** A day about to come in: a taller one has its room already, so it is never cut as it slides. */
+  const makeRoom = (day: DateKey) => {
+    const h = heights.current.get(day);
+    if (h === undefined) return;
+    if (h > (heightNow.current ?? 0)) setHeight(h);
+    else if (pastItsEnd(h)) scroll?.scrollToDayStart();
+  };
+
+  /** The day on screen, at rest: the pager fits it, after the page has come up if it has to. */
+  const fitTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(fitTimer.current), []);
+  const fit = (day: DateKey) => {
+    const h = heights.current.get(day);
+    if (h === undefined) return;
+    clearTimeout(fitTimer.current);
+    if (!pastItsEnd(h)) {
+      setHeight(h);
+      return;
+    }
+    scroll?.scrollToDayStart();
+    fitTimer.current = setTimeout(() => setHeight(heights.current.get(day) ?? h), FIT_AFTER_SCROLL_MS);
   };
 
   // A slide started by a tap: where it goes, and a day tapped meanwhile, taken next.
@@ -81,6 +122,7 @@ export function useDayPager(today: DateKey, asked: DateKey | null = null, scroll
   const slide = (target: { index: number; date: DateKey }) => {
     waiting.current = null;
     moving.current = target;
+    makeRoom(target.date);
     list.current?.scrollToIndex({ index: target.index, animated: true });
     // Should the end of the animation not be reported, finish anyway.
     clearTimeout(finishTimer.current);
@@ -102,8 +144,7 @@ export function useDayPager(today: DateKey, asked: DateKey | null = null, scroll
       setBase(next);
       setIncoming(null);
     }
-    const h = heights.current.get(target.date);
-    if (h !== undefined) setHeight(h);
+    fit(target.date);
     settle(target.date);
     const next = queued.current;
     queued.current = null;
@@ -156,7 +197,7 @@ export function useDayPager(today: DateKey, asked: DateKey | null = null, scroll
     }
     haptics.selection();
     setPulse((n) => n + 1);
-    void scrollToTop?.();
+    void scroll?.scrollToTop();
   };
 
   // At midnight, or back after days away, today moves on: follow it if it was on screen.
@@ -180,7 +221,7 @@ export function useDayPager(today: DateKey, asked: DateKey | null = null, scroll
     haptics.selection();
     // While moving it only grows, so the page leaving is never cut; it fits the new day once still.
     const h = heights.current.get(days[index]);
-    if (h !== undefined) setHeight((current) => Math.max(current ?? 0, h));
+    if (h !== undefined && h > (heightNow.current ?? 0)) setHeight(h);
   };
 
   const onRest = () => {
@@ -189,8 +230,7 @@ export function useDayPager(today: DateKey, asked: DateKey | null = null, scroll
       return;
     }
     const day = dayAtShown.current;
-    const h = heights.current.get(day);
-    if (h !== undefined) setHeight(h);
+    fit(day);
     settle(day);
   };
 

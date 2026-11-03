@@ -12,8 +12,14 @@ import { haptics } from './haptics';
  * the toast. Lists hide what is waiting with `usePendingDeletes()`.
  */
 const UNDO_MS = 4500;
+/**
+ * How long what was deleted stays hidden after the write: the lists are still reading the data
+ * again, and showing it now would bring it back for a moment, pushing the rows under it down and
+ * up again.
+ */
+const REREAD_MS = 1500;
 
-type Pending = { commit: () => Promise<void>; timer: ReturnType<typeof setTimeout> };
+type Pending = { commit: () => Promise<void>; timer: ReturnType<typeof setTimeout>; written?: boolean };
 
 const pending = new Map<string, Pending>();
 let snapshot: ReadonlySet<string> = new Set();
@@ -26,14 +32,16 @@ function emit(): void {
 
 async function commit(key: string): Promise<void> {
   const item = pending.get(key);
-  if (!item) return;
+  if (!item || item.written) return;
+  item.written = true;
   clearTimeout(item.timer);
   try {
     await item.commit();
   } finally {
-    // Leave the item hidden until the write is done, so it never flashes back.
-    pending.delete(key);
-    emit();
+    setTimeout(() => {
+      pending.delete(key);
+      emit();
+    }, REREAD_MS);
   }
 }
 
@@ -65,7 +73,7 @@ export function deleteWithUndo({ key, title, icon = 'trash', run }: DeleteOption
     label: 'Annulla',
     onPress: () => {
       const item = pending.get(key);
-      if (!item) return;
+      if (!item || item.written) return;
       clearTimeout(item.timer);
       pending.delete(key);
       emit();

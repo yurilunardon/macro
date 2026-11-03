@@ -137,13 +137,10 @@ export default function WorkoutScreen() {
   // as plain views: built all at once, their SwiftUI views made the slide stutter. They take
   // over once the sheet is up, when the exercises further down are built too.
   const settled = useSettled(700);
-  // Just started: the sheet rises while the workout is being written, with its name already there.
+  // Just started, the workout may still be being written if that took long: its name is already there.
   const starting = useWorkoutStarting();
   const { title: startingTitle } = useLocalSearchParams<{ title?: string }>();
   const [openedAt] = useState(() => new Date().toISOString());
-  // A workout just started rises with its name only: its rows, all new at once, made the sheet
-  // stutter on the way up. They come in together as it lands.
-  const [justStarted] = useState(starting);
   const [shown, setShown] = useState<Workout | null>(null);
   if (data?.workout && data.workout !== shown) setShown(data.workout);
   // What a ticked set starts: the rest, with what comes next. Kept outside, so every set's
@@ -190,12 +187,10 @@ export default function WorkoutScreen() {
   let openSoFar = 0;
   const firstExercises = settled
     ? exercises
-    : justStarted
-      ? []
-      : exercises.slice(
+    : exercises.slice(
         0,
-          exercises.findIndex((ex) => !foldedIds.has(ex.id) && ++openSoFar === FIRST_OPEN_EXERCISES) + 1 || exercises.length,
-        );
+        exercises.findIndex((ex) => !foldedIds.has(ex.id) && ++openSoFar === FIRST_OPEN_EXERCISES) + 1 || exercises.length,
+      );
   const title = (e: WorkoutExercise) => names(e.exercise).title;
   // The set to do now is picked out, so the eye finds it at once after a rest.
   const progress = workoutProgress(exercises);
@@ -272,7 +267,8 @@ export default function WorkoutScreen() {
   // The scroll view is the first view of the screen, as iOS expects for the bar above it.
   return (
     <>
-      <ScreenScroll scroll={scroll}>
+      {/* Dragging an exercise scrolls the page, and counts on iOS to stop it at its ends. */}
+      <ScreenScroll scroll={scroll} scrollToOverflowEnabled={false}>
         {/* While editing, a tap anywhere outside the exercises ends it, as on the Home Screen. */}
         <View onStartShouldSetResponder={() => editing} onResponderRelease={() => setEditing(false)}>
         {/* The time, big in the bar at the top, with the name of the workout above it. */}
@@ -390,14 +386,17 @@ export default function WorkoutScreen() {
           />
         </LayoutAnimationConfig>
 
-        <View style={[styles.footer, editing && styles.dimmed]} pointerEvents={editing ? 'none' : 'auto'}>
-          <Button
-            title="Aggiungi esercizio"
-            variant="tinted"
-            icon={<Icon name="plus" size={16} tone="accent" weight="semibold" />}
-            onPress={addExercise}
-          />
-        </View>
+        {/* After the last exercise, once they are all there: on its own or between them it would jump. */}
+        {workout && firstExercises.length === exercises.length ? (
+          <View style={[styles.footer, editing && styles.dimmed]} pointerEvents={editing ? 'none' : 'auto'}>
+            <Button
+              title="Aggiungi esercizio"
+              variant="tinted"
+              icon={<Icon name="plus" size={16} tone="accent" weight="semibold" />}
+              onPress={addExercise}
+            />
+          </View>
+        ) : null}
         <View style={styles.bottomSpace} />
         </View>
       </ScreenScroll>
@@ -492,7 +491,8 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
 
   // Last time against the planned range: all sets at the top means more load today, most of
   // them under the bottom means less. Taking the suggested weight fills the sets still to do.
-  const advice = complete ? null : progression(item.previous, plan, exercise.kind, loadIncrement(exercise.equipment));
+  // It stays until the exercise has folded: gone at the tick, everything under it jumped up.
+  const advice = complete && change !== 'completed' ? null : progression(item.previous, plan, exercise.kind, loadIncrement(exercise.equipment));
   const [weight, setWeight] = useState<number | null>(() => taken.get(item.id) ?? null);
   const takeWeight = (value: number) => {
     haptics.light();

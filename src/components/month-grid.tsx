@@ -1,7 +1,7 @@
 import { useEffect } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
-import Animated, { useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
+import Animated, { useAnimatedReaction, useAnimatedStyle, useSharedValue, withSpring, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
 import { Spacing } from '@/constants/theme';
@@ -48,13 +48,19 @@ export function MonthGrid({ month, selected, today, symbols, scroll, pulse, onSe
 
   // Where the selected week is on the page: the grid, its rows in it, the row in them.
   const bar = usePinnedBar();
-  const { offset } = scroll;
+  const { offset, pinnedAt } = scroll;
   const gridTop = useSharedValue(0);
+  const gridHeight = useSharedValue(0);
   const rowsTop = useSharedValue(0);
   const pinnedRow = useSharedValue(pinnedWeek);
   useEffect(() => {
     pinnedRow.set(pinnedWeek);
   }, [pinnedRow, pinnedWeek]);
+  // The day starts right under the week that stays at the top, the rest of the month gone above.
+  useAnimatedReaction(
+    () => gridTop.get() + gridHeight.get() + Spacing.sm - bar.get() - ROW,
+    (at) => pinnedAt.set(at),
+  );
   const pinned = useAnimatedStyle(() => ({
     transform: [{ translateY: Math.max(0, offset.get() + bar.get() - (gridTop.get() + rowsTop.get() + pinnedRow.get() * ROW)) }],
   }));
@@ -133,7 +139,12 @@ export function MonthGrid({ month, selected, today, symbols, scroll, pulse, onSe
   };
 
   return (
-    <View style={styles.grid} onLayout={(event) => gridTop.set(event.nativeEvent.layout.y)}>
+    <View
+      style={styles.grid}
+      onLayout={(event) => {
+        gridTop.set(event.nativeEvent.layout.y);
+        gridHeight.set(event.nativeEvent.layout.height);
+      }}>
       <View style={styles.header}>
         <AppText variant="title2" style={styles.flex} accessibilityRole="header">
           {formatMonth(month)}

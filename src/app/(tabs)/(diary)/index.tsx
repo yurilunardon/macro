@@ -64,7 +64,7 @@ export default function NutritionScreen() {
   const scroll = useScrollTop();
   const { scrollToTop } = scroll;
   // The pages around the one on screen are kept ready; see DayPage for why they cost little.
-  const pager = useDayPager(today, asked, scrollToTop);
+  const pager = useDayPager(today, asked, scroll);
   const { date } = pager;
   const calories = useCalorieProgress(date);
   // The pill of the workout in progress sits where the folded title would.

@@ -148,36 +148,41 @@ export async function getActiveWorkout(
  */
 export async function startWorkout(
   db: SQLiteDatabase,
-  { dayId = null, name = null, now = new Date() }: { dayId?: number | null; name?: string | null; now?: Date } = {},
+  { dayId = null, name = null, now = new Date(), quiet = false }: { dayId?: number | null; name?: string | null; now?: Date; quiet?: boolean } = {},
 ): Promise<number> {
   const active = await getActiveWorkout(db);
   if (active) return active.id;
   const day = dayId !== null ? await getDay(db, dayId) : null;
   const startedAt = now.toISOString();
-  const workout = await db.runAsync(
-    'INSERT INTO workouts (day_id, name, date, started_at) VALUES (?, ?, ?, ?)',
-    day?.id ?? null,
-    day?.name ?? name ?? 'Allenamento libero',
-    todayKey(now),
-    startedAt,
-  );
-  const workoutId = workout.lastInsertRowId;
-  for (const [position, planned] of (day?.exercises ?? []).entries()) {
-    const inserted = await db.runAsync(
-      `INSERT INTO workout_exercises (workout_id, exercise_id, position, rep_min, rep_max, rest_seconds, note)
-       VALUES (?, ?, ?, ?, ?, ?, ?)`,
-      workoutId,
-      planned.exercise.id,
-      position,
-      planned.repMin,
-      planned.repMax,
-      planned.restSeconds,
-      planned.note,
+  const planned = day?.exercises ?? [];
+  const previous = await Promise.all(planned.map((p) => getLastSets(db, p.exercise.id, startedAt)));
+  let workoutId = 0;
+  // All in one write: row by row, each reached the disk on its own and it took a good part of a second.
+  await db.withExclusiveTransactionAsync(async (tx) => {
+    const workout = await tx.runAsync(
+      'INSERT INTO workouts (day_id, name, date, started_at) VALUES (?, ?, ?, ?)',
+      day?.id ?? null,
+      day?.name ?? name ?? 'Allenamento libero',
+      todayKey(now),
+      startedAt,
     );
-    const previous = await getLastSets(db, planned.exercise.id, startedAt);
-    await insertSets(db, inserted.lastInsertRowId, planned.sets, targetsOf(suggestionFor(planned.exercise, planned, previous)));
-  }
-  notifyChange('training', 'settings');
+    workoutId = workout.lastInsertRowId;
+    for (const [position, p] of planned.entries()) {
+      const inserted = await tx.runAsync(
+        `INSERT INTO workout_exercises (workout_id, exercise_id, position, rep_min, rep_max, rest_seconds, note)
+         VALUES (?, ?, ?, ?, ?, ?, ?)`,
+        workoutId,
+        p.exercise.id,
+        position,
+        p.repMin,
+        p.repMax,
+        p.restSeconds,
+        p.note,
+      );
+      await insertSets(tx, inserted.lastInsertRowId, p.sets, targetsOf(suggestionFor(p.exercise, p, previous[position])));
+    }
+  });
+  if (!quiet) notifyChange('training', 'settings');
   return workoutId;
 }
 

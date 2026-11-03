@@ -11,19 +11,31 @@ export type ScrollTop = {
   offset: SharedValue<number>;
   /** How far below the top of the screen the page starts when it is all the way up. */
   openTop: SharedValue<number>;
+  /** How much further the page can go down from where it is. */
+  roomBelow: SharedValue<number>;
+  /** Where what stays at the top stops, so the day under it starts right below; null if nothing does. */
+  pinnedAt: SharedValue<number | null>;
   /** Scrolls back up to the top of the page; resolved once it is about there. */
   scrollToTop: () => Promise<void>;
+  /** Where the day under what stays at the top starts in sight. */
+  dayStart: () => number;
+  /** Scrolls up to where the day starts in sight. */
+  scrollToDayStart: () => void;
 };
 
 /**
  * Back to the very top of a page, with a large title open. Under a bar floating over the page, the
  * top is as far above 0 as the page's start is below the top of the screen when it opens: the
- * screen's ScreenScroll measures that (see `openTop`). The bar's height is there should that fail.
+ * screen's ScreenScroll measures that (see `openTop`), and lets the page be sent above 0, which
+ * iOS would otherwise refuse (see `scrollToOverflowEnabled` there). The bar's height is there
+ * should the measure fail.
  */
 export function useScrollTop(): ScrollTop {
   const ref = useAnimatedRef<Animated.ScrollView>();
   const offset = useSharedValue(0);
   const openTop = useSharedValue(0);
+  const roomBelow = useSharedValue(0);
+  const pinnedAt = useSharedValue<number | null>(null);
   const reported = useHeaderHeight();
   const bar = useSharedValue(0);
   useEffect(() => {
@@ -31,9 +43,10 @@ export function useScrollTop(): ScrollTop {
   }, [reported, bar]);
   const onScroll = useAnimatedScrollHandler((event) => {
     offset.set(event.contentOffset.y);
+    roomBelow.set(event.contentSize.height + (event.contentInset?.bottom ?? 0) - event.layoutMeasurement.height - event.contentOffset.y);
   });
   const [scrollToTop] = useState(() => (): Promise<void> => {
-    const to = -Math.max(openTop.get(), bar.get());
+    const to = -(openTop.get() || bar.get());
     const far = offset.get() - to;
     if (far < 8) return Promise.resolve();
     scheduleOnUI(() => {
@@ -43,7 +56,15 @@ export function useScrollTop(): ScrollTop {
     // Resolved once the scroll has about come to rest.
     return new Promise((resolve) => setTimeout(resolve, Math.min(300 + far / 4, 650)));
   });
-  return { ref, onScroll, offset, openTop, scrollToTop };
+  const [dayStart] = useState(() => (): number => pinnedAt.get() ?? -(openTop.get() || bar.get()));
+  const [scrollToDayStart] = useState(() => (): void => {
+    const to = dayStart();
+    scheduleOnUI(() => {
+      'worklet';
+      scrollTo(ref, 0, to, true);
+    });
+  });
+  return { ref, onScroll, offset, openTop, roomBelow, pinnedAt, scrollToTop, dayStart, scrollToDayStart };
 }
 
 /**

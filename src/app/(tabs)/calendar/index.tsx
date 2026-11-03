@@ -29,7 +29,7 @@ export default function CalendarScreen() {
   const router = useRouter();
   const today = useToday();
   const scroll = useScrollTop();
-  const pager = useDayPager(today, null, scroll.scrollToTop);
+  const pager = useDayPager(today, null, scroll);
   const { date } = pager;
 
   // Each day's main activity under it in the month: its symbol, and its name for VoiceOver.

@@ -28,7 +28,7 @@ import { Icon } from './icon';
 import { MenuButton } from './menu-button';
 import { SMOOTH_MS } from './motion';
 import { MacroBars } from './nutrient-grid';
-import { CalorieRing } from './progress';
+import { CalorieRing, useCountedNumber } from './progress';
 import { confirmDestructive } from './prompt';
 import { SwipeToDelete } from './swipe-to-delete';
 import { toast } from './toast';
@@ -37,6 +37,9 @@ const FADE_IN = FadeIn.duration(180);
 // A short eased resize, no spring: the meals below must not bounce up and down.
 const MEAL_LAYOUT = LinearTransition.duration(220).easing(Easing.out(Easing.cubic));
 const ENTRY_OUT = FadeOut.duration(150);
+// What sits on the right of a meal's name when it fills or empties, fading where it is.
+const MEAL_TOTAL_IN = FadeIn.duration(220).delay(120);
+const MEAL_TOTAL_OUT = FadeOut.duration(180);
 // While the day is emptied, the rows below wait for the one leaving to be gone before moving up:
 // together they would slide over it as it fades.
 const DRAIN_LAYOUT = LinearTransition.duration(240).delay(120).easing(Easing.inOut(Easing.cubic));
@@ -316,13 +319,15 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                   <AppText variant="title3" style={styles.flex} numberOfLines={1}>
                     {meal.label}
                   </AppText>
+                  {/* It counts along with the ring; with the meal's last food it fades where it is. */}
                   {count > 0 ? (
-                    <AppText variant="subhead" weight="600" tone="textSecondary" numeric>
-                      {`${formatKcal(mealKcal)} kcal`}
-                    </AppText>
+                    <Animated.View entering={interactive ? MEAL_TOTAL_IN : undefined} exiting={interactive ? MEAL_TOTAL_OUT : undefined}>
+                      <MealKcal value={mealKcal} ms={slowMs} />
+                    </Animated.View>
                   ) : null}
                   {/* An empty meal that was there yesterday: one tap fills it the same way. */}
                   {canCopy ? (
+                    <Animated.View entering={interactive ? MEAL_TOTAL_IN : undefined} exiting={interactive ? MEAL_TOTAL_OUT : undefined}>
                     <Pressable
                       disabled={!interactive}
                       onPress={() => void copyFromYesterday(meal.key)}
@@ -334,8 +339,10 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                         Copia da ieri
                       </AppText>
                     </Pressable>
+                    </Animated.View>
                   ) : null}
                   {count > 0 ? (
+                    <Animated.View entering={interactive ? MEAL_TOTAL_IN : undefined} exiting={interactive ? MEAL_TOTAL_OUT : undefined}>
                     <MenuButton
                       inert={!interactive}
                       icon="ellipsis.circle"
@@ -358,6 +365,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                         <Icon name="ellipsis.circle" size={22} tone="textSecondary" />
                       </View>
                     </MenuButton>
+                    </Animated.View>
                   ) : null}
                 </View>
                 {mealEntries.map((entry) => {
@@ -447,6 +455,16 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
     </View>
   );
 });
+
+/** A meal's calories, moving with the day's ring when a food comes or goes. */
+function MealKcal({ value, ms }: { value: number; ms?: number }) {
+  const counted = useCountedNumber(value, ms);
+  return (
+    <AppText variant="subhead" weight="600" tone="textSecondary" numeric>
+      {`${formatKcal(counted)} kcal`}
+    </AppText>
+  );
+}
 
 /** "435 kcal" on one line, the number leading. */
 function Kcal({ value }: { value: number }) {
