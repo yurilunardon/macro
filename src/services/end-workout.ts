@@ -7,6 +7,9 @@ import { countLabel } from '@/lib/format';
 import { haptics } from './haptics';
 import { restTimer } from './rest-timer';
 
+/** How the workout's screen ends it, for the sheet that offers to from over it. */
+export const endFromSheet: { run: (() => void) | null } = { run: null };
+
 /**
  * Ends a workout, from its screen or from the card of the workout in progress. Asks first when
  * something would be lost (sets not ticked) or, with `confirm`, always. A workout with nothing

@@ -1,6 +1,9 @@
-import type { ReactNode } from 'react';
+import { useEffect, useState, type ReactNode } from 'react';
 import { StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, FadeInDown } from 'react-native-reanimated';
+import Animated, { Easing, FadeIn, FadeInDown, useAnimatedReaction, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
+import { scheduleOnRN } from 'react-native-worklets';
+
+import type { SFSymbol } from 'expo-symbols';
 
 import { Radius, Spacing } from '@/constants/theme';
 import type { getRecords, Workout, WorkoutExercise } from '@/db/workouts';
@@ -8,7 +11,7 @@ import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { formatLongDate } from '@/lib/dates';
 import { clockOf } from '@/lib/plan';
-import { exerciseChange, formatLifted, formatSetShort, formatWorkoutLengthShort, isWorkSet, tonnage, type ExerciseChange } from '@/lib/training';
+import { compareWorkouts, exerciseChange, formatLifted, formatSetShort, formatWorkoutLengthShort, isWorkSet, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
@@ -20,35 +23,49 @@ const STAGGER = 45;
 export const RECAP_AFTER_MS = 1050;
 const rowIn = (index: number) => FadeInDown.delay(RECAP_AFTER_MS + index * STAGGER).duration(280);
 
+/** How long the numbers take to grow, each starting a little after the one above. */
+const COUNT_MS = 1100;
+const COUNT_STAGGER = 120;
+
 /** Where the dot sits on each step of the line. */
 const DOT_Y = 28;
 
 type WorkoutRecapProps = {
   workout: Workout;
   records: Records;
-  /** The last workout of the same day of the program, to compare with. */
-  previous: Workout | null;
-  /** At the end of a workout, its rows come in one after the other. */
+  /** The last workout of the same day of the program: its numbers are beside these when reopened. */
+  previous?: Workout | null;
+  /** At the end of a workout, its rows come in one after the other and its numbers grow. */
   arriving?: boolean;
 };
 
 /**
- * What a workout was, the same at its end and reopened later: how it compares with the last one
- * and its numbers on top, then a line from when it started to when it ended, as the line in the
- * training tab, with each exercise, all its sets and what changed since last time.
+ * What a workout was: its numbers, then a line from when it started to when it ended, as the line
+ * in the training tab, with each exercise, all its sets and whether it grew, and last the note, in
+ * the user's own words. At its end the numbers grow into place, on their own; reopened later they
+ * have last time's beside them.
  */
-export function WorkoutRecap({ workout, records, previous, arriving = false }: WorkoutRecapProps) {
+export function WorkoutRecap({ workout, records, previous = null, arriving = false }: WorkoutRecapProps) {
   const theme = useTheme();
   const { names } = useExerciseNames();
-  const lifted = (w: Workout) => tonnage(w.exercises.flatMap((e) => e.sets));
-  const sets = workout.exercises.flatMap((e) => e.sets).filter(isWorkSet);
-  const seconds = workout.endedAt ? (new Date(workout.endedAt).getTime() - new Date(workout.startedAt).getTime()) / 1000 : 0;
-  const metrics = [
-    { label: 'durata', value: formatWorkoutLengthShort(seconds) },
-    { label: 'serie', value: String(sets.length) },
-    { label: 'sollevati', value: formatLifted(lifted(workout)) },
+  const numbersOf = (w: Workout): WorkoutNumbers => ({
+    seconds: w.endedAt ? (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000 : 0,
+    sets: w.exercises.flatMap((e) => e.sets).filter(isWorkSet).length,
+    lifted: tonnage(w.exercises.flatMap((e) => e.sets)),
+  });
+  const numbers = numbersOf(workout);
+  const compared = previous && !arriving ? compareWorkouts(numbers, numbersOf(previous)) : null;
+  const rows = [
+    { label: 'Durata', value: numbers.seconds, format: formatWorkoutLengthShort, compare: compared?.duration, tone: 'textSecondary' as const },
+    { label: 'Serie', value: numbers.sets, format: String, compare: compared?.sets, tone: 'textSecondary' as const },
+    {
+      label: 'Sollevati',
+      value: numbers.lifted,
+      format: formatLifted,
+      compare: compared?.lifted,
+      tone: compared?.liftedTrend === 'up' ? ('accent' as const) : compared?.liftedTrend === 'down' ? ('warning' as const) : ('textSecondary' as const),
+    },
   ];
-  const verdict = previous ? verdictOf(lifted(workout), lifted(previous)) : null;
   const recordOf = (exercise: WorkoutExercise) => records.some((r) => r.exercise.id === exercise.exercise.id);
 
   return (
@@ -60,27 +77,35 @@ export function WorkoutRecap({ workout, records, previous, arriving = false }: W
         <AppText variant="subhead" tone="textSecondary">
           {formatLongDate(workout.date)}
         </AppText>
-        {verdict ? (
-          <View style={styles.verdict}>
-            {verdict.trend !== 'same' ? <Icon name={verdict.trend === 'up' ? 'arrow.up.right' : 'arrow.down.right'} size={14} weight="semibold" tone={verdict.trend === 'up' ? 'accent' : 'warning'} /> : null}
-            <AppText variant="subhead" weight="600" tone={verdict.trend === 'up' ? 'accent' : verdict.trend === 'down' ? 'warning' : 'textSecondary'}>
-              {verdict.text}
-            </AppText>
-          </View>
-        ) : null}
       </Animated.View>
 
-      <Animated.View entering={arriving ? rowIn(1) : undefined} style={[styles.metrics, { backgroundColor: theme.card }]}>
-        {metrics.map((m) => (
-          <View key={m.label} style={styles.metric}>
-            <AppText variant="title3" numeric numberOfLines={1}>
-              {m.value}
-            </AppText>
-            <AppText variant="caption" tone="textSecondary">
-              {m.label}
-            </AppText>
+      <Animated.View entering={arriving ? rowIn(1) : undefined}>
+        {rows.map((row, index) => (
+          <View key={row.label} style={[styles.number, index > 0 && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.separator }]}>
+            <View style={styles.flex}>
+              <AppText variant="subhead" tone="textSecondary">
+                {row.label}
+              </AppText>
+              {row.compare ? (
+                <AppText variant="footnote" weight="600" tone={row.tone}>
+                  {row.compare}
+                </AppText>
+              ) : null}
+            </View>
+            {arriving ? (
+              <CountUp to={row.value} format={row.format} delay={RECAP_AFTER_MS + index * COUNT_STAGGER} />
+            ) : (
+              <AppText variant="title2" numeric numberOfLines={1}>
+                {row.format(row.value)}
+              </AppText>
+            )}
           </View>
         ))}
+        {compared && previous ? (
+          <AppText variant="footnote" tone="textSecondary" style={styles.comparedWith}>
+            {`Rispetto a ${formatLongDate(previous.date).toLowerCase()}`}
+          </AppText>
+        ) : null}
       </Animated.View>
 
       <View>
@@ -95,15 +120,13 @@ export function WorkoutRecap({ workout, records, previous, arriving = false }: W
           return (
             <Step key={exercise.id} done={work.length > 0} index={index + 3} arriving={arriving}>
               <View style={[styles.exercise, { backgroundColor: theme.card }]}>
-                <View style={styles.flex}>
-                  <AppText numberOfLines={2} tone={work.length > 0 ? 'text' : 'textSecondary'}>
-                    {names(exercise.exercise).title}
-                  </AppText>
-                  <AppText variant="footnote" tone="textSecondary" numeric>
-                    {work.length > 0 ? work.map((set) => formatSetShort(set, exercise.exercise.kind)).join(' · ') : 'Saltato'}
-                  </AppText>
-                </View>
-                {work.length > 0 ? <Change change={change} record={recordOf(exercise)} /> : null}
+                <AppText numberOfLines={2} tone={work.length > 0 ? 'text' : 'textSecondary'}>
+                  {names(exercise.exercise).title}
+                </AppText>
+                <AppText variant="footnote" tone="textSecondary" numeric>
+                  {work.length > 0 ? work.map((set) => formatSetShort(set, exercise.exercise.kind)).join(' · ') : 'Saltato'}
+                </AppText>
+                {work.length > 0 ? <Change change={change} record={recordOf(exercise)} withWas={!arriving} /> : null}
               </View>
             </Step>
           );
@@ -117,41 +140,62 @@ export function WorkoutRecap({ workout, records, previous, arriving = false }: W
         ) : null}
       </View>
 
-      {/* With the rest, after the tick: with nothing to wait for, it showed under it. */}
+      {/* The last word, the user's: with the rest, after the tick. */}
       {workout.notes ? (
-        <Animated.View entering={arriving ? rowIn(workout.exercises.length + 4) : undefined} style={[styles.notes, { backgroundColor: theme.card }]}>
-          <AppText variant="subhead" tone="textSecondary">
-            {workout.notes}
+        <Animated.View entering={arriving ? rowIn(workout.exercises.length + 4) : undefined} style={styles.note}>
+          <AppText accessible={false} style={[styles.noteMark, { color: theme.textTertiary }]}>
+            “
           </AppText>
+          <AppText style={styles.noteText}>{workout.notes}</AppText>
         </Animated.View>
       ) : null}
     </View>
   );
 }
 
-function verdictOf(now: number, before: number): { text: string; trend: 'up' | 'down' | 'same' } | null {
-  if (before <= 0) return null;
-  const diff = Math.round(now - before);
-  if (Math.abs(diff) < 1) return { text: 'Come l’ultima volta', trend: 'same' };
-  return diff > 0
-    ? { text: `Meglio dell’ultima volta · ${formatLifted(diff)} in più`, trend: 'up' }
-    : { text: `${formatLifted(-diff)} in meno dell’ultima volta`, trend: 'down' };
+/** A number growing from nothing to its value, slowing down as it gets there. */
+function CountUp({ to, format, delay }: { to: number; format: (value: number) => string; delay: number }) {
+  const reduced = useReducedMotion();
+  const value = useSharedValue(reduced ? to : 0);
+  const [shown, setShown] = useState(reduced ? to : 0);
+  useEffect(() => {
+    if (!reduced) value.set(withDelay(delay, withTiming(to, { duration: COUNT_MS, easing: Easing.out(Easing.cubic) })));
+  }, [value, to, delay, reduced]);
+  useAnimatedReaction(
+    () => Math.round(value.get()),
+    (now, before) => {
+      if (before !== null && now !== before) scheduleOnRN(setShown, now);
+    },
+  );
+  return (
+    <AppText variant="title2" numeric numberOfLines={1}>
+      {format(shown)}
+    </AppText>
+  );
 }
 
-/** What changed since last time, with what it was, and a trophy on a record. */
-function Change({ change, record }: { change: ExerciseChange; record: boolean }) {
+/** In words, whether the exercise grew, stayed the same or set a record, and by how much. */
+function Change({ change, record, withWas }: { change: ExerciseChange; record: boolean; withWas: boolean }) {
   const theme = useTheme();
-  const color = change.trend === 'up' ? theme.accent : change.trend === 'down' ? theme.warning : theme.textSecondary;
+  const look: { icon: SFSymbol; word: string; color: string } =
+    change.trend === 'new'
+      ? { icon: 'sparkles', word: 'Prima volta', color: theme.textSecondary }
+      : record
+        ? { icon: 'trophy.fill', word: 'Record', color: theme.ringCloser }
+        : change.trend === 'up'
+          ? { icon: 'arrow.up.right', word: 'Cresciuto', color: theme.accent }
+          : change.trend === 'down'
+            ? { icon: 'arrow.down.right', word: 'Calato', color: theme.warning }
+            : { icon: 'equal', word: 'Uguale', color: theme.textSecondary };
+  const amount = change.trend === 'up' || change.trend === 'down' ? change.label : null;
   return (
     <View style={styles.change}>
-      <View style={styles.changeTop}>
-        {record ? <Icon name="trophy.fill" size={13} color={theme.ringCloser} /> : null}
-        <AppText variant="subhead" weight="700" numeric style={{ color }}>
-          {change.label}
-        </AppText>
-      </View>
-      {change.was ? (
-        <AppText variant="caption" tone="textSecondary" numeric numberOfLines={1}>
+      <Icon name={look.icon} size={13} weight="semibold" color={look.color} />
+      <AppText variant="footnote" weight="600" numeric style={{ color: look.color }}>
+        {amount ? `${look.word} · ${amount}` : look.word}
+      </AppText>
+      {withWas && change.was ? (
+        <AppText variant="footnote" tone="textSecondary" numeric>
           {`era ${change.was}`}
         </AppText>
       ) : null}
@@ -202,9 +246,8 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   recap: { gap: Spacing.lg },
   head: { gap: 2 },
-  verdict: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, marginTop: Spacing.xs },
-  metrics: { flexDirection: 'row', gap: Spacing.sm, padding: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous' },
-  metric: { flex: 1, gap: 1 },
+  number: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 52, paddingVertical: Spacing.sm },
+  comparedWith: { paddingTop: Spacing.xs },
   step: { flexDirection: 'row', gap: Spacing.sm },
   rail: { width: 20, alignItems: 'center' },
   line: { position: 'absolute', width: 2, left: 9 },
@@ -212,8 +255,10 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   tick: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, minWidth: 0, paddingBottom: Spacing.sm },
-  exercise: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 56, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, borderRadius: Radius.md, borderCurve: 'continuous' },
-  change: { alignItems: 'flex-end', gap: 1 },
-  changeTop: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
-  notes: { padding: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous' },
+  exercise: { gap: 2, minHeight: 56, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, borderRadius: Radius.md, borderCurve: 'continuous' },
+  change: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.xs, marginTop: 2 },
+  // Set apart from the app's own words: the book's voice, with the opening quote hanging on its left.
+  note: { paddingLeft: 28 },
+  noteMark: { position: 'absolute', left: 0, top: -6, fontFamily: 'ui-serif', fontSize: 48, lineHeight: 56 },
+  noteText: { fontFamily: 'ui-serif', fontStyle: 'italic', fontSize: 18, lineHeight: 24 },
 });

@@ -4,6 +4,8 @@ import { defaultRestSeconds, exerciseNames, exerciseSearchText, loadIncrement } 
 import {
   bestOneRepMax,
   dayIcon,
+  allSetsDone,
+  compareWorkouts,
   exerciseChange,
   estimateOneRepMax,
   formatDuration,
@@ -237,6 +239,51 @@ describe('short formats', () => {
   it('writes what was lifted in kilos, then tons', () => {
     expect(formatLifted(850)).toBe('850 kg');
     expect(formatLifted(6100)).toBe('6,1 t');
+  });
+});
+
+describe('compareWorkouts', () => {
+  const numbers = { seconds: 3600, sets: 12, lifted: 3400 };
+
+  it('says each number against last time', () => {
+    expect(compareWorkouts(numbers, { seconds: 3900, sets: 10, lifted: 3220 })).toEqual({
+      duration: '5 min in meno',
+      sets: '2 in più',
+      lifted: '180 kg in più',
+      liftedTrend: 'up',
+    });
+  });
+
+  it('goes to tons for a big change, and says when less was lifted', () => {
+    expect(compareWorkouts(numbers, { ...numbers, lifted: 5000 })).toMatchObject({ lifted: '1,6 t in meno', liftedTrend: 'down' });
+  });
+
+  it('calls equal what rounds to the same', () => {
+    expect(compareWorkouts(numbers, { seconds: 3610, sets: 12, lifted: 3400.2 })).toEqual({
+      duration: 'come l’ultima volta',
+      sets: 'come l’ultima volta',
+      lifted: 'come l’ultima volta',
+      liftedTrend: 'same',
+    });
+  });
+});
+
+describe('allSetsDone', () => {
+  const set = (id: number, done: boolean) => ({ id, done });
+
+  it('wants every set of every exercise ticked', () => {
+    expect(allSetsDone([{ sets: [set(1, true)] }, { sets: [set(2, true), set(3, true)] }])).toBe(true);
+    expect(allSetsDone([{ sets: [set(1, true)] }, { sets: [set(2, false)] }])).toBe(false);
+  });
+
+  it('leaves out what is being deleted', () => {
+    expect(allSetsDone([{ sets: [set(1, true), set(2, false)] }], (id) => id === 2)).toBe(true);
+  });
+
+  it('is not done with nothing to do', () => {
+    expect(allSetsDone([])).toBe(false);
+    expect(allSetsDone([{ sets: [] }])).toBe(false);
+    expect(allSetsDone([{ sets: [set(1, false)] }], () => true)).toBe(false);
   });
 });
 

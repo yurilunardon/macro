@@ -189,6 +189,31 @@ export function exerciseChange(sets: readonly LoggedSet[], previous: readonly Lo
   return { trend: count > 0 ? 'up' : 'down', label: `${signed(count)} ${kind === 'time' ? 's' : 'rip'}`, was };
 }
 
+/** What a workout's numbers were, to compare it with another. */
+export type WorkoutNumbers = { seconds: number; sets: number; lifted: number };
+
+export type WorkoutComparison = { duration: string; sets: string; lifted: string; liftedTrend: 'up' | 'down' | 'same' };
+
+/** Each number of a workout against last time's, in words: "5 min in meno", "come l’ultima volta". */
+export function compareWorkouts(now: WorkoutNumbers, before: WorkoutNumbers): WorkoutComparison {
+  const same = 'come l’ultima volta';
+  const words = (difference: number, write: (amount: number) => string) =>
+    difference === 0 ? same : `${write(Math.abs(difference))} in ${difference > 0 ? 'più' : 'meno'}`;
+  const lifted = Math.round(now.lifted - before.lifted);
+  return {
+    duration: words(Math.round((now.seconds - before.seconds) / 60), (minutes) => `${minutes} min`),
+    sets: words(now.sets - before.sets, String),
+    lifted: words(lifted, formatLifted),
+    liftedTrend: lifted > 0 ? 'up' : lifted < 0 ? 'down' : 'same',
+  };
+}
+
+/** Whether nothing is left to do in a workout, leaving out the sets `hidden` says are being deleted. */
+export function allSetsDone(exercises: readonly { sets: readonly { id: number; done: boolean }[] }[], hidden: (setId: number) => boolean = () => false): boolean {
+  const sets = exercises.flatMap((e) => e.sets).filter((set) => !hidden(set.id));
+  return sets.length > 0 && sets.every((set) => set.done);
+}
+
 /** Sum of kg × reps over the work sets: the usual "volume" of a session. */
 export function tonnage(sets: readonly LoggedSet[]): number {
   return sets.filter(isWorkSet).reduce((sum, s) => sum + (s.weight ?? 0) * (s.reps ?? 0), 0);

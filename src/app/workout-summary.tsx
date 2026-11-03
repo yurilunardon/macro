@@ -10,7 +10,7 @@ import { FinishTick } from '@/components/finish-tick';
 import { RECAP_AFTER_MS, WorkoutRecap } from '@/components/workout-recap';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
-import { getPreviousOfSameDay, getRecords, getWorkout } from '@/db/workouts';
+import { getRecords, getWorkout } from '@/db/workouts';
 import { useTheme } from '@/hooks/use-theme';
 import { haptics } from '@/services/haptics';
 
@@ -23,8 +23,8 @@ export default function WorkoutSummaryScreen() {
   const id = Number(params.id);
   // Read once: the screen is a moment, it does not follow later edits.
   const { data } = useLiveQuery(`summary:${id}`, async (database) => {
-    const [workout, records, previous] = await Promise.all([getWorkout(database, id), getRecords(database, id), getPreviousOfSameDay(database, id)]);
-    return { workout, records, previous };
+    const [workout, records] = await Promise.all([getWorkout(database, id), getRecords(database, id)]);
+    return { workout, records };
   }, []);
 
   const hasWorkout = Boolean(data?.workout);
@@ -36,7 +36,7 @@ export default function WorkoutSummaryScreen() {
   const close = () => router.dismissAll();
 
   if (!data) return <View style={[styles.flex, { backgroundColor: theme.background }]} />;
-  const { workout, records, previous } = data;
+  const { workout, records } = data;
   if (!workout) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
@@ -49,7 +49,7 @@ export default function WorkoutSummaryScreen() {
   return (
     <View style={[styles.flex, { backgroundColor: theme.background }]}>
       <ScrollView contentContainerStyle={[styles.content, { paddingTop: insets.top + Spacing.lg, paddingBottom: insets.bottom + 96 }]} showsVerticalScrollIndicator={false}>
-        <WorkoutRecap workout={workout} records={records} previous={previous} arriving />
+        <WorkoutRecap workout={workout} records={records} arriving />
       </ScrollView>
       <FinishTick />
       <Animated.View entering={FadeIn.delay(RECAP_AFTER_MS).duration(280)} style={[styles.footer, { paddingBottom: insets.bottom + Spacing.sm, backgroundColor: theme.background }]}>

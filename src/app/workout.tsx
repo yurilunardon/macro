@@ -1,8 +1,9 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
+import { Stack, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { memo, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react';
 import Animated, {
+  css,
   Easing,
   FadeIn,
   FadeInDown,
@@ -74,6 +75,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { loadIncrement, muscleLabel } from '@/lib/exercises';
 import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
 import {
+  allSetsDone,
   bestOneRepMax,
   formatDuration,
   formatSet,
@@ -83,10 +85,10 @@ import {
   type Progression,
 } from '@/lib/training';
 import { haptics } from '@/services/haptics';
-import { endWorkout } from '@/services/end-workout';
+import { endFromSheet, endWorkout } from '@/services/end-workout';
 import { restTimer, useRestTimer } from '@/services/rest-timer';
 import { useWorkoutStarting } from '@/services/start-workout';
-import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
+import { deleteWithUndo, isPendingDelete, usePendingDeletes } from '@/services/undo';
 
 const glass = isLiquidGlassAvailable();
 
@@ -115,11 +117,17 @@ function nextLabel(workout: Workout, setId: number, title: (e: WorkoutExercise) 
 
 /** The exercises open while the sheet rises: about what fits on screen. The rest arrive as it lands. */
 const FIRST_OPEN_EXERCISES = 2;
+/** The last set ticked, the exercise's bar fills, then it folds. */
+const FOLD_AFTER_MS = 500;
+/** Once it has folded, the offer to end a workout with nothing left to do. */
+const OFFER_END_AFTER_MS = 950;
+const isSetHidden = (setId: number) => isPendingDelete(`set:${setId}`);
 
 /** The workout in progress. Swiping the sheet down keeps it running; it comes back from the tab bar. */
 export default function WorkoutScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const navigation = useNavigation();
   const theme = useTheme();
   const { names } = useExerciseNames();
   // "Modifica", as apps on the Home Screen: the exercises wobble, staying as they are, and can be
@@ -145,10 +153,28 @@ export default function WorkoutScreen() {
   if (data?.workout && data.workout !== shown) setShown(data.workout);
   // What a ticked set starts: the rest, with what comes next. Kept outside, so every set's
   // handler stays the same function and a tick redraws the set ticked, not every row.
+  const offerTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
+  useEffect(() => () => clearTimeout(offerTimer.current), []);
+  const current = useRef(data?.workout);
   useEffect(() => {
-    const current = data?.workout;
-    latest.onSetDone = current
-      ? (setId, rest) => restTimer.start(rest, nextLabel(current, setId, (e) => names(e.exercise).title), { sound: data.sound })
+    current.current = data?.workout;
+    const workoutNow = data?.workout;
+    latest.onSetDone = workoutNow
+      ? (setId, rest) => {
+          // With a day of the program, nothing left means it is over: no rest, the offer to end it.
+          // A free workout goes on as long as exercises are added.
+          const others = workoutNow.exercises.map((ex) => ({ sets: ex.sets.filter((set) => set.id !== setId) }));
+          if (workoutNow.dayId === null || !(others.every((ex) => ex.sets.every((set) => set.done || isSetHidden(set.id))))) {
+            restTimer.start(rest, nextLabel(workoutNow, setId, (e) => names(e.exercise).title), { sound: data?.sound });
+            return;
+          }
+          restTimer.stop();
+          clearTimeout(offerTimer.current);
+          offerTimer.current = setTimeout(() => {
+            // Still so, and still here: a set may have been opened again, or the sheet closed.
+            if (current.current && allSetsDone(current.current.exercises, isSetHidden) && navigation.isFocused()) router.push('/workout-done');
+          }, OFFER_END_AFTER_MS);
+        }
       : null;
   });
 
@@ -165,6 +191,28 @@ export default function WorkoutScreen() {
     const timer = setTimeout(() => scroll.ref.current?.scrollToEnd({ animated: true }), 350);
     return () => clearTimeout(timer);
   }, [count, scroll.ref]);
+
+  const finish = async () => {
+    const active = data?.workout;
+    if (!active) return;
+    Keyboard.dismiss();
+    setClosing(true);
+    const result = await endWorkout(db, active.id);
+    if (!result) {
+      setClosing(false);
+      return;
+    }
+    // The summary covers this sheet straight away; closing it closes both.
+    if (result === 'finished') router.push({ pathname: '/workout-summary', params: { id: active.id } });
+    else router.back();
+  };
+  // The sheet offering to end it, when nothing is left, does it from here.
+  useEffect(() => {
+    endFromSheet.run = () => void finish();
+    return () => {
+      endFromSheet.run = null;
+    };
+  });
 
   const workout = data?.workout ?? (closing ? shown : null);
   if (!workout && !starting && data) {
@@ -228,20 +276,6 @@ export default function WorkoutScreen() {
     if (!ok) return;
     haptics.light();
     await removeWorkoutExercise(db, ex.id);
-  };
-
-  const finish = async () => {
-    if (!workout) return;
-    Keyboard.dismiss();
-    setClosing(true);
-    const result = await endWorkout(db, workout.id);
-    if (!result) {
-      setClosing(false);
-      return;
-    }
-    // The summary covers this sheet straight away; closing it closes both.
-    if (result === 'finished') router.push({ pathname: '/workout-summary', params: { id: workout.id } });
-    else router.back();
   };
 
   const discard = async () => {
@@ -450,33 +484,25 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
   const router = useRouter();
   const { exercise } = item;
   const complete = item.sets.length > 0 && item.sets.every((set) => set.done);
-  // The last set ticked: a green light runs across the exercise and fades, then it folds away;
-  // reopening one of its sets opens it again.
+  // The last set ticked: its bar fills, then the exercise folds away; reopening one of its sets
+  // opens it again. Until it folds it stays as it is, or everything under what changed would jump.
   const [wasComplete, setWasComplete] = useState(complete);
   const [change, setChange] = useState<'completed' | 'reopened' | null>(null);
   if (complete !== wasComplete) {
     setWasComplete(complete);
     setChange(complete ? 'completed' : 'reopened');
   }
-  const sweep = useSharedValue(0);
-  const glow = useSharedValue(0);
-  const sweepStyle = useAnimatedStyle(() => ({ opacity: glow.get(), transform: [{ scaleX: sweep.get() }] }));
+  const shownComplete = complete && change !== 'completed';
   useEffect(() => {
     if (change === null) return;
-    if (change === 'completed') {
-      haptics.success();
-      sweep.set(0);
-      sweep.set(withTiming(1, { duration: SWEEP_MS, easing: Easing.bezier(0.33, 0, 0.2, 1) }));
-      glow.set(0.2);
-      glow.set(withDelay(SWEEP_MS, withTiming(0, { duration: GLOW_OUT_MS, easing: Easing.out(Easing.quad) })));
-    }
+    if (change === 'completed') haptics.success();
     const timer = setTimeout(
       () => {
         if (change === 'completed') onCompleted();
         else onFold(false);
         setChange(null);
       },
-      change === 'completed' ? SWEEP_MS + 200 : 0,
+      change === 'completed' ? FOLD_AFTER_MS : 0,
     );
     return () => clearTimeout(timer);
     // Only the change matters; the callbacks are new on every render.
@@ -491,8 +517,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
 
   // Last time against the planned range: all sets at the top means more load today, most of
   // them under the bottom means less. Taking the suggested weight fills the sets still to do.
-  // It stays until the exercise has folded: gone at the tick, everything under it jumped up.
-  const advice = complete && change !== 'completed' ? null : progression(item.previous, plan, exercise.kind, loadIncrement(exercise.equipment));
+  const advice = shownComplete ? null : progression(item.previous, plan, exercise.kind, loadIncrement(exercise.equipment));
   const [weight, setWeight] = useState<number | null>(() => taken.get(item.id) ?? null);
   const takeWeight = (value: number) => {
     haptics.light();
@@ -526,23 +551,24 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
             accessibilityRole="button"
             accessibilityHint="Mostra storico e record. Tieni premuto per modificare gli esercizi"
             style={styles.exerciseTitle}>
-            {complete ? (
+            {shownComplete ? (
               <Animated.View entering={DONE_IN}>
                 <Icon name="checkmark.circle.fill" size={24} tone="accent" />
               </Animated.View>
             ) : null}
-            <View style={styles.flex}>
-              <AppText variant="headline" tone={complete ? 'text' : 'accent'} numberOfLines={collapsed ? 1 : undefined}>
+            {/* The name makes room for the tick as the exercise folds, instead of jumping aside. */}
+            <Animated.View layout={BLOCK_LAYOUT} style={styles.flex}>
+              <AppText variant="headline" tone={shownComplete ? 'text' : 'accent'} numberOfLines={collapsed ? 1 : undefined}>
                 {names.title}
               </AppText>
               <AppText variant="footnote" tone={holdsCurrent ? 'accent' : 'textSecondary'} weight={holdsCurrent ? '600' : undefined} numberOfLines={1}>
                 {holdsCurrent
                   ? `Ora: serie ${currentIndex + 1} di ${item.sets.length}`
-                  : complete && best
+                  : shownComplete && best
                   ? `${item.sets.length === 1 ? '1 serie' : `${item.sets.length} serie`} · migliore ${formatSet(best, exercise.kind)}`
                   : [names.subtitle, range ? `${item.sets.length} × ${range}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
               </AppText>
-            </View>
+            </Animated.View>
           </Pressable>
           <Pressable
             disabled={editing}
@@ -588,6 +614,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
         </View>
         {collapsed ? null : (
         <Animated.View entering={SETS_IN} exiting={SETS_OUT} pointerEvents={editing ? 'none' : 'auto'}>
+        <SetBars sets={item.sets} />
         {exercise.note ? <NoteRow text={exercise.note} onPress={editNote} /> : null}
         {advice ? (
           // What to do today and why, both in sight.
@@ -678,9 +705,20 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
         </Animated.View>
         )}
       </ListGroup>
-      <View pointerEvents="none" style={styles.sweepClip}>
-        <Animated.View style={[styles.sweep, { backgroundColor: theme.accent }, sweepStyle]} />
-      </View>
+    </View>
+  );
+}
+
+/** A bar for each set of the exercise, filling as they are ticked: how far along it is, at a glance. */
+function SetBars({ sets }: { sets: readonly WorkoutSet[] }) {
+  const theme = useTheme();
+  return (
+    <View style={styles.setBars} accessible accessibilityLabel={`${sets.filter((set) => set.done).length} serie fatte su ${sets.length}`}>
+      {sets.map((set) => (
+        <View key={set.id} style={[styles.setBar, { backgroundColor: theme.track }]}>
+          <Animated.View style={[styles.setBarFill, barTransition.fill, { width: set.done ? '100%' : '0%', backgroundColor: theme.accent }]} />
+        </View>
+      ))}
     </View>
   );
 }
@@ -1183,14 +1221,11 @@ function mix(from: string, to: string, t: number): string {
 
 const REST_IN = FadeInDown.springify().damping(18).stiffness(180);
 const REST_OUT = FadeOutDown.duration(320);
-/** The tick appears with the light, growing into place without going past it. */
+/** The tick appears as the exercise folds, growing into place without going past it. */
 const DONE_IN = new Keyframe({
   0: { opacity: 0, transform: [{ scale: 0.5 }] },
   100: { opacity: 1, transform: [{ scale: 1 }], easing: Easing.bezier(0.23, 1, 0.32, 1) },
 }).duration(340);
-/** The green light across a finished exercise, and its fading. */
-const SWEEP_MS = 520;
-const GLOW_OUT_MS = 420;
 const CURRENT_IN = FadeIn.duration(260);
 const FLAG_IN = FadeIn.duration(220);
 // Folding and unfolding: the sets fade across most of the card's resize, so the two read as one.
@@ -1271,6 +1306,10 @@ function RestButton({
   );
 }
 
+const barTransition = css.create({
+  fill: { transitionProperty: 'width', transitionDuration: 300, transitionTimingFunction: 'ease-out' },
+});
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
@@ -1280,8 +1319,9 @@ const styles = StyleSheet.create({
   titleTime: { fontSize: 22, lineHeight: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
   topSpace: { height: Spacing.xl },
   exercise: {},
-  sweepClip: { ...StyleSheet.absoluteFill, borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },
-  sweep: { ...StyleSheet.absoluteFill, opacity: 0, transformOrigin: 'left center' },
+  setBars: { flexDirection: 'row', gap: 3, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
+  setBar: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
+  setBarFill: { height: '100%', borderRadius: 2 },
   exerciseFooter: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.sm },
   adviceText: { flex: 1, gap: 2 },

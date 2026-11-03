@@ -94,6 +94,15 @@ export default function RootLayout() {
                 }}
               />
               <Stack.Screen
+                name="workout-done"
+                options={{
+                  presentation: 'formSheet',
+                  sheetAllowedDetents: [0.4],
+                  sheetGrabberVisible: true,
+                  headerShown: false,
+                }}
+              />
+              <Stack.Screen
                 name="note-sheet"
                 options={{
                   presentation: 'formSheet',

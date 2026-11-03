@@ -89,6 +89,11 @@ function subscribe(listener: () => void): () => void {
   };
 }
 
+/** Whether an item is waiting to be deleted, for what only needs to know now, not to follow it. */
+export function isPendingDelete(key: string): boolean {
+  return snapshot.has(key);
+}
+
 /** Keys of the items deleted but still undoable, to leave out of lists. */
 export function usePendingDeletes(): ReadonlySet<string> {
   return useSyncExternalStore(subscribe, () => snapshot);
