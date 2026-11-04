@@ -1,12 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
 import Animated, {
-  css,
-  cubicBezier,
   Easing,
   interpolateColor,
   useAnimatedProps,
   useAnimatedReaction,
+  useAnimatedStyle,
   useSharedValue,
   withTiming,
 } from 'react-native-reanimated';
@@ -26,7 +25,7 @@ export function ratio(value: number, target: number): number {
 }
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
-const FILL_EASING = cubicBezier(0.23, 1, 0.32, 1);
+const FILL_EASING = Easing.bezier(0.23, 1, 0.32, 1);
 
 type ProgressBarProps = {
   value: number;
@@ -40,17 +39,24 @@ type ProgressBarProps = {
 /** Fills up to the target and stays full past it, in its own colour: being over is said beside it. */
 export function ProgressBar({ value, target, color, height = 6, slowMs }: ProgressBarProps) {
   const theme = useTheme();
-  const r = ratio(value, target);
+  const r = Math.min(1, ratio(value, target));
+  const shown = useSharedValue(r);
+  const width = useSharedValue(0);
+  const reached = useRef(r);
+  useEffect(() => {
+    if (reached.current === r) return;
+    reached.current = r;
+    shown.set(withTiming(r, slowMs ? { duration: slowMs, easing: Easing.inOut(Easing.cubic) } : { duration: 500, easing: FILL_EASING }));
+  }, [shown, r, slowMs]);
+  // It slides in from the left rather than changing its width: with a width, the whole screen was
+  // laid out again at every frame, for as long as the bar moved.
+  const fill = useAnimatedStyle(() => ({
+    opacity: width.get() > 0 ? 1 : 0,
+    transform: [{ translateX: (shown.get() - 1) * width.get() }],
+  }));
   return (
-    <View style={[styles.track, { height, backgroundColor: theme.track }]}>
-      <Animated.View
-        style={[
-          styles.fill,
-          transitions.fill,
-          slowMs ? { transitionDuration: slowMs, transitionTimingFunction: 'ease-in-out' } : null,
-          { width: `${Math.min(1, r) * 100}%`, backgroundColor: color },
-        ]}
-      />
+    <View onLayout={(event) => width.set(event.nativeEvent.layout.width)} style={[styles.track, { height, backgroundColor: theme.track }]}>
+      <Animated.View style={[styles.fill, { backgroundColor: color }, fill]} />
     </View>
   );
 }
@@ -180,14 +186,9 @@ export function useCountedNumber(value: number, ms?: number): number {
   return counted;
 }
 
-// The bars grow to their new length instead of jumping, e.g. after adding food.
-const transitions = css.create({
-  fill: { transitionProperty: 'width', transitionDuration: 500, transitionTimingFunction: FILL_EASING },
-});
-
 const styles = StyleSheet.create({
   track: { width: '100%', borderRadius: Radius.pill, overflow: 'hidden' },
-  fill: { height: '100%', borderRadius: Radius.pill },
+  fill: { width: '100%', height: '100%', borderRadius: Radius.pill },
   ringCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center', gap: 2 },
-  ringNumber: { fontSize: 36, lineHeight: 42, letterSpacing: -0.5 },
+  ringNumber: { fontSize: 38, lineHeight: 44, letterSpacing: -0.5 },
 });

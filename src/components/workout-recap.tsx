@@ -11,7 +11,7 @@ import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { formatLongDate } from '@/lib/dates';
 import { clockOf } from '@/lib/plan';
-import { compareWorkouts, exerciseChange, formatLifted, formatSetShort, formatWorkoutLengthShort, isWorkSet, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
+import { compareWorkouts, exerciseChange, formatDuration, formatLifted, formatSetShort, formatWorkoutLengthShort, isWorkSet, setTimes, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
@@ -55,7 +55,7 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
   });
   const numbers = numbersOf(workout);
   const compared = previous && !arriving ? compareWorkouts(numbers, numbersOf(previous)) : null;
-  const rows = [
+  const rows: { label: string; value: number; format: (value: number) => string; compare?: string; tone: 'textSecondary' | 'accent' | 'warning' }[] = [
     { label: 'Durata', value: numbers.seconds, format: formatWorkoutLengthShort, compare: compared?.duration, tone: 'textSecondary' as const },
     { label: 'Serie', value: numbers.sets, format: String, compare: compared?.sets, tone: 'textSecondary' as const },
     {
@@ -66,6 +66,10 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
       tone: compared?.liftedTrend === 'up' ? ('accent' as const) : compared?.liftedTrend === 'down' ? ('warning' as const) : ('textSecondary' as const),
     },
   ];
+  // Reopened later, also how the time went: known for the sets ticked since it is kept.
+  const times = arriving ? null : setTimes(workout.exercises.flatMap((e) => e.sets));
+  if (times?.between != null) rows.push({ label: 'Tra una serie e l’altra', value: times.between, format: formatDuration, compare: 'in media', tone: 'textSecondary' as const });
+  if (times?.work != null) rows.push({ label: 'Durata di una serie', value: times.work, format: formatDuration, compare: 'in media, dalla fine del recupero', tone: 'textSecondary' as const });
   const recordOf = (exercise: WorkoutExercise) => records.some((r) => r.exercise.id === exercise.exercise.id);
 
   return (
@@ -87,7 +91,7 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
                 {row.label}
               </AppText>
               {row.compare ? (
-                <AppText variant="footnote" weight="600" tone={row.tone}>
+                <AppText variant="footnote" weight={row.compare.startsWith('in media') ? undefined : '600'} tone={row.tone}>
                   {row.compare}
                 </AppText>
               ) : null}

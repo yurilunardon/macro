@@ -13,14 +13,10 @@ export type ScrollTop = {
   openTop: SharedValue<number>;
   /** How much further the page can go down from where it is. */
   roomBelow: SharedValue<number>;
-  /** Where what stays at the top stops, so the day under it starts right below; null if nothing does. */
-  pinnedAt: SharedValue<number | null>;
   /** Scrolls back up to the top of the page; resolved once it is about there. */
   scrollToTop: () => Promise<void>;
-  /** Where the day under what stays at the top starts in sight. */
-  dayStart: () => number;
-  /** Scrolls up to where the day starts in sight. */
-  scrollToDayStart: () => void;
+  /** Scrolls up by this much, no further than the top. */
+  scrollUpBy: (distance: number) => void;
 };
 
 /**
@@ -35,7 +31,6 @@ export function useScrollTop(): ScrollTop {
   const offset = useSharedValue(0);
   const openTop = useSharedValue(0);
   const roomBelow = useSharedValue(0);
-  const pinnedAt = useSharedValue<number | null>(null);
   const reported = useHeaderHeight();
   const bar = useSharedValue(0);
   useEffect(() => {
@@ -56,15 +51,14 @@ export function useScrollTop(): ScrollTop {
     // Resolved once the scroll has about come to rest.
     return new Promise((resolve) => setTimeout(resolve, Math.min(300 + far / 4, 650)));
   });
-  const [dayStart] = useState(() => (): number => pinnedAt.get() ?? -(openTop.get() || bar.get()));
-  const [scrollToDayStart] = useState(() => (): void => {
-    const to = dayStart();
+  const [scrollUpBy] = useState(() => (distance: number): void => {
+    const to = Math.max(offset.get() - distance, -(openTop.get() || bar.get()));
     scheduleOnUI(() => {
       'worklet';
       scrollTo(ref, 0, to, true);
     });
   });
-  return { ref, onScroll, offset, openTop, roomBelow, pinnedAt, scrollToTop, dayStart, scrollToDayStart };
+  return { ref, onScroll, offset, openTop, roomBelow, scrollToTop, scrollUpBy };
 }
 
 /**

@@ -51,11 +51,8 @@ export default function SessionScreen() {
     <ScreenScroll>
       <Stack.Screen options={{ title: '' }} />
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sull’allenamento">
-          <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
-            Elimina allenamento
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
+        {/* The only action here: no need for a menu to hold it. */}
+        <Stack.Toolbar.Button icon="trash" accessibilityLabel="Elimina allenamento" onPress={() => void remove()} />
       </Stack.Toolbar>
       <WorkoutRecap workout={workout} records={records} previous={previous} />
     </ScreenScroll>

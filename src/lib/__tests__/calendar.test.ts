@@ -7,11 +7,13 @@ import {
   formatMinutes,
   formatWeekdays,
   rotateGymDays,
+  startWarning,
   summarizeActivity,
   weekStreak,
   type ActivityPlan,
   type ActivityRecord,
   type ActivityType,
+  type AgendaItem,
   type Occurrence,
   type WorkoutBrief,
 } from '../calendar';
@@ -393,5 +395,64 @@ describe('supplementReminders', () => {
       { date: '2026-10-29', time: '08:00', title: 'Integratori', body: 'Omega 3 5 g', ids: [2] },
       { date: '2026-10-29', time: '21:30', title: 'Integratori', body: 'Oggi non hai ancora preso Omega 3 e Vitamina C.', ids: [2, 3] },
     ]);
+  });
+});
+
+describe('startWarning', () => {
+  const GYM = 1;
+  const today = '2026-11-04';
+  const occurrence = (date: string, time: string | null, typeId = GYM): Occurrence => ({
+    key: `${date}${time}`,
+    recordId: null,
+    planId: 1,
+    typeId,
+    date,
+    time,
+    minutes: 60,
+    dayId: null,
+    note: null,
+    status: 'planned',
+  });
+  const planned = (date: string, time: string | null, typeId = GYM): AgendaItem => ({ kind: 'activity', key: `${date}${time}`, occurrence: occurrence(date, time, typeId), status: 'planned', dayId: null });
+  const warn = (items: Record<string, AgendaItem[]>, time: string, hasGymDays = true) =>
+    startWarning({ today, time, agenda: new Map(Object.entries(items)), gymTypeId: GYM, hasGymDays });
+
+  it('says nothing without gym days in the calendar', () => {
+    expect(warn({}, '11:00', false)).toBeNull();
+  });
+
+  it('says nothing within three hours of the planned time, either way', () => {
+    expect(warn({ [today]: [planned(today, '18:00')] }, '15:00')).toBeNull();
+    expect(warn({ [today]: [planned(today, '18:00')] }, '21:00')).toBeNull();
+  });
+
+  it('asks further from it than that, saying when it is planned', () => {
+    expect(warn({ [today]: [planned(today, '18:00')] }, '14:59')).toEqual({ title: 'È previsto alle 18:00', message: 'Sono le 14:59. Vuoi iniziarlo lo stesso?' });
+    expect(warn({ [today]: [planned(today, '18:00')] }, '21:01')?.title).toBe('È previsto alle 18:00');
+  });
+
+  it('takes the nearest of two gym times of a day', () => {
+    expect(warn({ [today]: [planned(today, '08:00'), planned(today, '19:00')] }, '17:00')).toBeNull();
+  });
+
+  it('takes any time on a gym day with no time set', () => {
+    expect(warn({ [today]: [planned(today, null)] }, '03:00')).toBeNull();
+  });
+
+  it('asks on a day without the gym, saying when the next is', () => {
+    expect(warn({ [today]: [planned(today, '20:00', 2)], '2026-11-05': [planned('2026-11-05', '18:30')] }, '11:00')).toEqual({
+      title: 'Oggi non è previsto l’allenamento',
+      message: 'Il prossimo è domani alle 18:30. Vuoi iniziarlo lo stesso?',
+    });
+    expect(warn({ '2026-11-06': [planned('2026-11-06', null)] }, '11:00')?.message).toBe('Il prossimo è venerdì 6 novembre. Vuoi iniziarlo lo stesso?');
+  });
+
+  it('asks without a next one when none is planned', () => {
+    expect(warn({}, '11:00')?.message).toBe('Vuoi iniziarlo lo stesso?');
+  });
+
+  it('says so when today’s workout has been done', () => {
+    const done: AgendaItem = { kind: 'workout', key: 'w1', workout: { id: 1, date: today, startedAt: `${today}T09:00:00.000Z`, name: 'Push' } as WorkoutBrief, occurrence: null };
+    expect(warn({ [today]: [done] }, '19:00')?.title).toBe('L’allenamento di oggi l’hai già fatto');
   });
 });

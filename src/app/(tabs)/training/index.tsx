@@ -37,7 +37,7 @@ import { useWorkoutStatus } from '@/hooks/use-workout-status';
 import { addDays, daysBetween, daysFrom, formatMonthName, formatRecent, formatShortDate, formatWeekdayAndDay, monthOf, type DateKey } from '@/lib/dates';
 import { muscleLabel } from '@/lib/exercises';
 import { countLabel } from '@/lib/format';
-import { periodRange, totalsOf, volumeBuckets, workoutsBetween } from '@/lib/progress';
+import { periodRange, totalsOf, workoutsBetween } from '@/lib/progress';
 import { formatLifted, formatSetShort, formatWorkoutLength, formatWorkoutLengthShort, isWorkSet } from '@/lib/training';
 import { buildTrainingLine, PAST_SHOWN, type LineRow } from '@/lib/training-line';
 import { haptics } from '@/services/haptics';
@@ -46,7 +46,7 @@ import { openActiveWorkout, startAndOpenWorkout, useWorkoutStarting } from '@/se
 /**
  * The gym, in three parts that look different from each other: the program on top, as a line that
  * follows time, with the next workout open; a card that opens the progress page; and the archive
- * (the past workouts and the exercise library) as two tiles.
+ * (the past workouts, the programs and the exercise library) as tiles.
  */
 export default function TrainingScreen() {
   const db = useSQLiteContext();
@@ -89,6 +89,8 @@ export default function TrainingScreen() {
   const hasGymDays = (soon.data?.plans ?? []).some((p) => p.typeId === gymTypeId);
 
   const start = (dayId: number | null, name: string) => startAndOpenWorkout(db, router, dayId, name);
+  // Asked for as such: no plan to compare it with.
+  const startFree = () => startAndOpenWorkout(db, router, null, 'Allenamento libero', { anyTime: true });
 
   const programs = data?.programs ?? [];
   const history = data?.history ?? [];
@@ -103,7 +105,7 @@ export default function TrainingScreen() {
     <ScreenScroll>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon="plus" accessibilityLabel="Nuovo">
-          <Stack.Toolbar.MenuAction icon="figure.strengthtraining.traditional" onPress={() => void start(null, 'Allenamento libero')}>
+          <Stack.Toolbar.MenuAction icon="figure.strengthtraining.traditional" onPress={() => void startFree()}>
             Allenamento libero
           </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon="list.bullet.rectangle" onPress={() => router.push('/training/new')}>
@@ -184,7 +186,7 @@ export default function TrainingScreen() {
           </AppText>
           <View style={styles.heroButton}>
             <Button title="Nuova scheda" onPress={() => router.push('/training/new')} />
-            <Button title="Allenamento libero" variant="plain" compact onPress={() => void start(null, 'Allenamento libero')} />
+            <Button title="Allenamento libero" variant="plain" compact onPress={() => void startFree()} />
           </View>
         </Card>
       ) : null}
@@ -211,6 +213,12 @@ export default function TrainingScreen() {
               label="Storico"
               detail={countLabel(history.length, 'allenamento', 'allenamenti')}
               onPress={() => router.push('/training/history')}
+            />
+            <Tile
+              symbol="list.bullet.rectangle"
+              label="Schede"
+              detail={countLabel(programs.length, 'scheda', 'schede')}
+              onPress={() => router.push('/training/programs')}
             />
             <Tile symbol="books.vertical" label="Esercizi" detail="La libreria" onPress={() => router.push('/training/exercises')} />
           </View>
@@ -524,14 +532,15 @@ function estimateSeconds(day: ProgramDay | null): number {
   return day.exercises.reduce((sum, e) => sum + e.sets * (40 + (e.restSeconds ?? restFor(e.exercise))), 0);
 }
 
-/** A way into the progress page: this month's workouts, and how the volume went week by week. */
+/** The picture on the card: bars going up, whatever the month was like. */
+const PROGRESS_PICTURE = [38, 62, 48, 78, 100];
+
+/** A way into the progress page: this month's workouts. */
 function ProgressCard({ history, today, onPress }: { history: readonly WorkoutSummary[]; today: DateKey; onPress: () => void }) {
   const theme = useTheme();
   const range = periodRange('month', today);
   const inside = workoutsBetween(history, range.from, range.to);
   const totals = totalsOf(inside);
-  const buckets = volumeBuckets('month', inside, range);
-  const most = Math.max(1, ...buckets.map((b) => b.kg));
   return (
     <Pressable
       onPress={onPress}
@@ -547,8 +556,8 @@ function ProgressCard({ history, today, onPress }: { history: readonly WorkoutSu
         </AppText>
       </View>
       <View style={styles.miniBars}>
-        {buckets.map((b) => (
-          <View key={b.key} style={[styles.miniBar, b.kg > 0 ? { height: `${Math.max(10, (b.kg / most) * 100)}%`, backgroundColor: theme.accent } : { height: 2, backgroundColor: theme.track }]} />
+        {PROGRESS_PICTURE.map((height) => (
+          <View key={height} style={[styles.miniBar, { height: `${height}%`, backgroundColor: theme.accent }]} />
         ))}
       </View>
       <Icon name="chevron.right" size={13} tone="textTertiary" weight="semibold" />
@@ -556,7 +565,7 @@ function ProgressCard({ history, today, onPress }: { history: readonly WorkoutSu
   );
 }
 
-function Tile({ symbol, label, detail, onPress }: { symbol: 'clock.arrow.circlepath' | 'books.vertical'; label: string; detail: string; onPress: () => void }) {
+function Tile({ symbol, label, detail, onPress }: { symbol: 'clock.arrow.circlepath' | 'list.bullet.rectangle' | 'books.vertical'; label: string; detail: string; onPress: () => void }) {
   const theme = useTheme();
   return (
     <Pressable
@@ -616,7 +625,7 @@ const styles = StyleSheet.create({
   miniBars: { flexDirection: 'row', alignItems: 'flex-end', gap: 4, height: 36 },
   miniBar: { width: 8, borderTopLeftRadius: 3, borderTopRightRadius: 3 },
   tiles: { flexDirection: 'row', gap: Spacing.sm },
-  tile: { flex: 1, gap: Spacing.sm, padding: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous', minHeight: 104 },
+  tile: { flex: 1, gap: Spacing.sm, padding: Spacing.md, borderRadius: Radius.lg, borderCurve: 'continuous', minHeight: 104 },
 });
 
 // What is below slides to its new place instead of jumping, and an open day fades in.

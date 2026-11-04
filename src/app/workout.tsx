@@ -1,7 +1,7 @@
 import { GlassView, isLiquidGlassAvailable } from 'expo-glass-effect';
-import { Stack, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useLocalSearchParams, useNavigation, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { memo, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react';
+import { memo, useCallback, useEffect, useRef, useState, useSyncExternalStore, type Dispatch, type SetStateAction } from 'react';
 import Animated, {
   css,
   Easing,
@@ -53,7 +53,7 @@ import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Radius, Spacing } from '@/constants/theme';
 import { restFor, updateExerciseOptions } from '@/db/exercises';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
-import { useLiveQuery } from '@/db/live';
+import { holdLiveQueries, useLiveQuery } from '@/db/live';
 import {
   addSet,
   deleteSet,
@@ -71,6 +71,7 @@ import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useScrollTop } from '@/hooks/use-scroll-top';
 import { useSettled } from '@/hooks/use-settled';
+import { useStableCallback } from '@/hooks/use-stable-callback';
 import { useTheme } from '@/hooks/use-theme';
 import { loadIncrement, muscleLabel } from '@/lib/exercises';
 import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
@@ -122,6 +123,11 @@ const FOLD_AFTER_MS = 500;
 /** Once it has folded, the offer to end a workout with nothing left to do. */
 const OFFER_END_AFTER_MS = 950;
 const isSetHidden = (setId: number) => isPendingDelete(`set:${setId}`);
+/**
+ * Once the sheet is up, what was left for later is built one exercise at a time, this far apart:
+ * all at once it took one long moment, with the page stuck just as it landed.
+ */
+const BUILD_EVERY_MS = 80;
 
 /** The workout in progress. Swiping the sheet down keeps it running; it comes back from the tab bar. */
 export default function WorkoutScreen() {
@@ -142,15 +148,20 @@ export default function WorkoutScreen() {
   // it slides away, instead of flashing "Nessun allenamento in corso".
   const [closing, setClosing] = useState(false);
   // While the sheet slides up, the native menus and pickers of every set and exercise are drawn
-  // as plain views: built all at once, their SwiftUI views made the slide stutter. They take
-  // over once the sheet is up, when the exercises further down are built too.
+  // as plain views: built all at once, their SwiftUI views made the slide stutter. They take over
+  // once the sheet is up, exercise by exercise, when those further down are built too.
   const settled = useSettled(700);
+  const [built, setBuilt] = useState(0);
   // Just started, the workout may still be being written if that took long: its name is already there.
   const starting = useWorkoutStarting();
   const { title: startingTitle } = useLocalSearchParams<{ title?: string }>();
   const [openedAt] = useState(() => new Date().toISOString());
   const [shown, setShown] = useState<Workout | null>(null);
   if (data?.workout && data.workout !== shown) setShown(data.workout);
+
+  // While this is on top, what is under it does not read and draw at every set ticked.
+  useFocusEffect(useCallback(() => holdLiveQueries([ACTIVE_WORKOUT_KEY]), []));
+
   // What a ticked set starts: the rest, with what comes next. Kept outside, so every set's
   // handler stays the same function and a tick redraws the set ticked, not every row.
   const offerTimer = useRef<ReturnType<typeof setTimeout> | undefined>(undefined);
@@ -164,8 +175,8 @@ export default function WorkoutScreen() {
           // With a day of the program, nothing left means it is over: no rest, the offer to end it.
           // A free workout goes on as long as exercises are added.
           const others = workoutNow.exercises.map((ex) => ({ sets: ex.sets.filter((set) => set.id !== setId) }));
-          if (workoutNow.dayId === null || !(others.every((ex) => ex.sets.every((set) => set.done || isSetHidden(set.id))))) {
-            restTimer.start(rest, nextLabel(workoutNow, setId, (e) => names(e.exercise).title), { sound: data?.sound });
+          if (workoutNow.dayId === null || !others.every((ex) => ex.sets.every((set) => set.done || isSetHidden(set.id)))) {
+            restTimer.start(rest, nextLabel(workoutNow, setId, (e) => names(e.exercise).title), { sound: data?.sound ?? false });
             return;
           }
           restTimer.stop();
@@ -192,7 +203,68 @@ export default function WorkoutScreen() {
     return () => clearTimeout(timer);
   }, [count, scroll.ref]);
 
-  const finish = async () => {
+  const workout = data?.workout ?? (closing ? shown : null);
+  const allExercises = workout?.exercises ?? [];
+  const exercises =
+    localOrder && localOrder.length === allExercises.length
+      ? localOrder.map((id) => allExercises.find((ex) => ex.id === id)).filter((ex) => ex !== undefined)
+      : allExercises;
+
+  useEffect(() => {
+    if (!settled || built >= exercises.length) return;
+    const timer = setTimeout(() => setBuilt((n) => n + 1), BUILD_EVERY_MS);
+    return () => clearTimeout(timer);
+  }, [settled, built, exercises.length]);
+
+  // While the sheet rises only what is on screen is built: everything down to the second open
+  // exercise. Each open one costs a row of inputs per set, and the sheet only leaves after this.
+  let openSoFar = 0;
+  const onScreen = exercises.findIndex((ex) => !foldedIds.has(ex.id) && ++openSoFar === FIRST_OPEN_EXERCISES) + 1 || exercises.length;
+  const firstExercises = exercises.slice(0, Math.max(onScreen, built));
+  const title = (e: WorkoutExercise) => names(e.exercise).title;
+  // The set to do now is picked out, so the eye finds it at once after a rest.
+  const progress = workoutProgress(exercises);
+  const currentSetId = progress.current ? exercises[progress.current.exercise].sets[progress.current.set].id : null;
+
+  /** Folds and unfolds exercises; kept in `folded` while the sheet is closed and reopened. */
+  const fold = useStableCallback((changes: readonly (readonly [number, boolean])[]) =>
+    setFoldedIds((previous) => {
+      const next = new Set(previous);
+      for (const [id, value] of changes) {
+        if (value) next.add(id);
+        else next.delete(id);
+      }
+      folded.clear();
+      for (const id of next) folded.add(id);
+      return next;
+    }),
+  );
+  const foldOne = useStableCallback((id: number, value: boolean) => fold([[id, value]]));
+
+  // The last set of an exercise folds it away and opens the next one still to do, so with
+  // everything folded the workout reads one exercise at a time.
+  const onCompleted = useStableCallback((id: number) => {
+    const at = exercises.findIndex((ex) => ex.id === id);
+    const todo = (ex: WorkoutExercise) => ex.sets.some((set) => !set.done);
+    const next = exercises.slice(at + 1).find(todo) ?? exercises.slice(0, at).find(todo);
+    fold(next ? [[id, true], [next.id, false]] : [[id, true]]);
+  });
+
+  const removeExercise = useStableCallback(async (id: number) => {
+    const ex = exercises.find((e) => e.id === id);
+    if (!ex) return;
+    const done = ex.sets.filter((set) => set.done).length;
+    const ok = await confirmDestructive({
+      title: `Eliminare ${title(ex)}?`,
+      message: done > 0 ? `${done === 1 ? '1 serie completata verrà eliminata' : `${done} serie completate verranno eliminate`}.` : undefined,
+      action: 'Elimina esercizio',
+    });
+    if (!ok) return;
+    haptics.light();
+    await removeWorkoutExercise(db, ex.id);
+  });
+
+  const finish = useStableCallback(async () => {
     const active = data?.workout;
     if (!active) return;
     Keyboard.dismiss();
@@ -205,16 +277,53 @@ export default function WorkoutScreen() {
     // The summary covers this sheet straight away; closing it closes both.
     if (result === 'finished') router.push({ pathname: '/workout-summary', params: { id: active.id } });
     else router.back();
-  };
+  });
   // The sheet offering to end it, when nothing is left, does it from here.
   useEffect(() => {
     endFromSheet.run = () => void finish();
     return () => {
       endFromSheet.run = null;
     };
+  }, [finish]);
+
+  const discard = useStableCallback(async () => {
+    const active = data?.workout;
+    if (!active) return;
+    const ok = await confirmDestructive({
+      title: 'Annullare l’allenamento?',
+      message: 'Le serie registrate verranno eliminate.',
+      action: 'Annulla allenamento',
+    });
+    if (!ok) return;
+    setClosing(true);
+    await deleteWorkout(db, active.id);
+    restTimer.stop();
+    router.back();
   });
 
-  const workout = data?.workout ?? (closing ? shown : null);
+  const addExercise = useStableCallback(() => {
+    const active = data?.workout;
+    if (!active) return;
+    adding.current = true;
+    router.push({ pathname: '/exercise-picker', params: { target: 'workout', id: active.id } });
+  });
+
+  const openNote = useStableCallback(() => {
+    const active = data?.workout;
+    if (active) router.push({ pathname: '/note-sheet', params: { kind: 'workout', id: active.id, text: active.notes ?? '' } });
+  });
+
+  const startEditing = useStableCallback(() => setEditing(true));
+
+  const onDragEnd = useStableCallback((ordered: readonly WorkoutExercise[]) => {
+    if (ordered === exercises) return;
+    setLocalOrder(ordered.map((ex) => ex.id));
+    void reorderWorkoutExercises(
+      db,
+      ordered.map((ex) => ex.id),
+    );
+  });
+
   if (!workout && !starting && data) {
     return (
       <View style={[styles.center, { backgroundColor: theme.background }]}>
@@ -224,79 +333,6 @@ export default function WorkoutScreen() {
       </View>
     );
   }
-
-  const allExercises = workout?.exercises ?? [];
-  const exercises =
-    localOrder && localOrder.length === allExercises.length
-      ? localOrder.map((id) => allExercises.find((ex) => ex.id === id)).filter((ex) => ex !== undefined)
-      : allExercises;
-  // While the sheet rises only what is on screen is built: everything down to the second open
-  // exercise. Each open one costs a row of inputs per set, and the sheet only leaves after this.
-  let openSoFar = 0;
-  const firstExercises = settled
-    ? exercises
-    : exercises.slice(
-        0,
-        exercises.findIndex((ex) => !foldedIds.has(ex.id) && ++openSoFar === FIRST_OPEN_EXERCISES) + 1 || exercises.length,
-      );
-  const title = (e: WorkoutExercise) => names(e.exercise).title;
-  // The set to do now is picked out, so the eye finds it at once after a rest.
-  const progress = workoutProgress(exercises);
-  const currentSetId = progress.current ? exercises[progress.current.exercise].sets[progress.current.set].id : null;
-
-  /** Folds and unfolds exercises; kept in `folded` while the sheet is closed and reopened. */
-  const fold = (changes: readonly (readonly [number, boolean])[]) =>
-    setFoldedIds((previous) => {
-      const next = new Set(previous);
-      for (const [id, value] of changes) {
-        if (value) next.add(id);
-        else next.delete(id);
-      }
-      folded.clear();
-      for (const id of next) folded.add(id);
-      return next;
-    });
-
-  // The last set of an exercise folds it away and opens the next one still to do, so with
-  // everything folded the workout reads one exercise at a time.
-  const onCompleted = (id: number) => {
-    const at = exercises.findIndex((ex) => ex.id === id);
-    const todo = (ex: WorkoutExercise) => ex.sets.some((set) => !set.done);
-    const next = exercises.slice(at + 1).find(todo) ?? exercises.slice(0, at).find(todo);
-    fold(next ? [[id, true], [next.id, false]] : [[id, true]]);
-  };
-
-  const removeExercise = async (ex: WorkoutExercise) => {
-    const done = ex.sets.filter((set) => set.done).length;
-    const ok = await confirmDestructive({
-      title: `Eliminare ${title(ex)}?`,
-      message: done > 0 ? `${done === 1 ? '1 serie completata verrà eliminata' : `${done} serie completate verranno eliminate`}.` : undefined,
-      action: 'Elimina esercizio',
-    });
-    if (!ok) return;
-    haptics.light();
-    await removeWorkoutExercise(db, ex.id);
-  };
-
-  const discard = async () => {
-    if (!workout) return;
-    const ok = await confirmDestructive({
-      title: 'Annullare l’allenamento?',
-      message: 'Le serie registrate verranno eliminate.',
-      action: 'Annulla allenamento',
-    });
-    if (!ok) return;
-    setClosing(true);
-    await deleteWorkout(db, workout.id);
-    restTimer.stop();
-    router.back();
-  };
-
-  const addExercise = () => {
-    if (!workout) return;
-    adding.current = true;
-    router.push({ pathname: '/exercise-picker', params: { target: 'workout', id: workout.id } });
-  };
 
   // The scroll view is the first view of the screen, as iOS expects for the bar above it.
   return (
@@ -332,7 +368,7 @@ export default function WorkoutScreen() {
               // Filled in once there is a note.
               icon={workout?.notes ? 'note.text' : 'square.and.pencil'}
               accessibilityLabel={workout?.notes ? 'Nota dell’allenamento' : 'Aggiungi una nota'}
-              onPress={() => workout && router.push({ pathname: '/note-sheet', params: { kind: 'workout', id: workout.id, text: workout.notes ?? '' } })}
+              onPress={openNote}
             />
           )}
           {editing ? null : (
@@ -393,27 +429,22 @@ export default function WorkoutScreen() {
             hapticsEnabled
             // Out of edit mode a hold never fights the swipes on the sets.
             sortEnabled={editing}
-            onDragEnd={({ data: ordered }) => {
-              if (ordered === exercises) return;
-              setLocalOrder(ordered.map((ex) => ex.id));
-              void reorderWorkoutExercises(
-                db,
-                ordered.map((ex) => ex.id),
-              );
-            }}
-            renderItem={({ item: ex }) => (
-              <Jiggle editing={editing} inset={0} removeLabel={`Elimina ${title(ex)}`} onRemove={() => void removeExercise(ex)}>
+            onDragEnd={({ data: ordered }) => onDragEnd(ordered)}
+            renderItem={({ item: ex, index }) => (
+              <Jiggle editing={editing} inset={0} removeLabel={`Elimina ${title(ex)}`} onRemove={() => void removeExercise(ex.id)}>
                 <ExerciseBlock
                   item={ex}
-                  currentSetId={currentSetId}
-                  names={names(ex.exercise)}
-                  settled={settled}
+                  // Only to the one holding it: a tick moves it on without touching the others.
+                  currentSetId={ex.sets.some((set) => set.id === currentSetId) ? currentSetId : null}
+                  title={names(ex.exercise).title}
+                  subtitle={names(ex.exercise).subtitle}
+                  settled={settled && index < built}
                   editing={editing}
                   collapsed={foldedIds.has(ex.id)}
-                  onEdit={() => setEditing(true)}
-                  onFold={(value) => fold([[ex.id, value]])}
-                  onCompleted={() => onCompleted(ex.id)}
-                  onRemove={() => void removeExercise(ex)}
+                  onEdit={startEditing}
+                  onFold={foldOne}
+                  onCompleted={onCompleted}
+                  onRemove={removeExercise}
                 />
               </Jiggle>
             )}
@@ -455,8 +486,10 @@ function NoteRow({ text, onPress }: { text: string; onPress: () => void }) {
 
 type ExerciseBlockProps = {
   item: WorkoutExercise;
+  /** The set to do now, if it is in this exercise. */
   currentSetId: number | null;
-  names: { title: string; subtitle: string | null };
+  title: string;
+  subtitle: string | null;
   /** Edit mode: only to drag or remove. */
   editing: boolean;
   /** The sheet is up: native menus and pickers can be built. */
@@ -464,10 +497,10 @@ type ExerciseBlockProps = {
   collapsed: boolean;
   /** Held on its name: edit mode starts. */
   onEdit: () => void;
-  onFold: (collapsed: boolean) => void;
+  onFold: (id: number, collapsed: boolean) => void;
   /** Its last set was just ticked. */
-  onCompleted: () => void;
-  onRemove: () => void;
+  onCompleted: (id: number) => void;
+  onRemove: (id: number) => void;
 };
 
 /** Exercises folded by hand or once done, kept while the workout is closed and reopened. */
@@ -475,8 +508,9 @@ const folded = new Set<number>();
 /** The load suggested from last time, once taken, by exercise of the workout. */
 const taken = new Map<number, number>();
 
-function ExerciseBlock({ item: given, currentSetId, names, editing, settled, collapsed, onEdit, onFold, onCompleted, onRemove }: ExerciseBlockProps) {
+const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, title, subtitle, editing, settled, collapsed, onEdit, onFold, onCompleted, onRemove }: ExerciseBlockProps) {
   const db = useSQLiteContext();
+  const names = { title, subtitle };
   // A set deleted is gone at once, with "Annulla" for a few seconds, as every row in the app.
   const hidden = usePendingDeletes();
   const item = { ...given, sets: given.sets.filter((set) => !hidden.has(`set:${set.id}`)) };
@@ -498,8 +532,8 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
     if (change === 'completed') haptics.success();
     const timer = setTimeout(
       () => {
-        if (change === 'completed') onCompleted();
-        else onFold(false);
+        if (change === 'completed') onCompleted(item.id);
+        else onFold(item.id, false);
         setChange(null);
       },
       change === 'completed' ? FOLD_AFTER_MS : 0,
@@ -574,7 +608,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
             disabled={editing}
             onPress={() => {
               haptics.selection();
-              onFold(!collapsed);
+              onFold(item.id, !collapsed);
             }}
             hitSlop={{ top: 8, bottom: 8, left: 4, right: 2 }}
             accessibilityRole="button"
@@ -606,7 +640,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
                     icon: 'arrow.triangle.2.circlepath',
                     onPress: () => router.push({ pathname: '/exercise-picker', params: { target: 'replace', id: item.id } }),
                   },
-                  { label: 'Elimina esercizio', icon: 'trash', destructive: true, onPress: onRemove },
+                  { label: 'Elimina esercizio', icon: 'trash', destructive: true, onPress: () => onRemove(item.id) },
                 ],
               },
             ]}
@@ -707,7 +741,7 @@ function ExerciseBlock({ item: given, currentSetId, names, editing, settled, col
       </ListGroup>
     </View>
   );
-}
+});
 
 /** A bar for each set of the exercise, filling as they are ticked: how far along it is, at a glance. */
 function SetBars({ sets }: { sets: readonly WorkoutSet[] }) {
@@ -716,7 +750,7 @@ function SetBars({ sets }: { sets: readonly WorkoutSet[] }) {
     <View style={styles.setBars} accessible accessibilityLabel={`${sets.filter((set) => set.done).length} serie fatte su ${sets.length}`}>
       {sets.map((set) => (
         <View key={set.id} style={[styles.setBar, { backgroundColor: theme.track }]}>
-          <Animated.View style={[styles.setBarFill, barTransition.fill, { width: set.done ? '100%' : '0%', backgroundColor: theme.accent }]} />
+          <Animated.View style={[styles.setBarFill, barTransition.fill, { transform: [{ scaleX: set.done ? 1 : 0 }], backgroundColor: theme.accent }]} />
         </View>
       ))}
     </View>
@@ -841,10 +875,16 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
           { ...previous, weight: suggested, reps: null }
         : { type: 'normal', weight: suggested, reps: null, seconds: null, rir: null, done: false };
   const onUpdate = (fields: SetFields) => void updateSet(db, set.id, fields);
-  const onComplete = async (fields: SetFields) => {
-    await updateSet(db, set.id, { ...fields, done: true });
+  // A tick answers at once, and the rest starts: the write and the read after it follow.
+  const [ticking, setTicking] = useState<boolean | null>(null);
+  if (ticking !== null && ticking === set.done) setTicking(null);
+  const done = ticking ?? set.done;
+  const onComplete = (fields: SetFields) => {
+    const startedAt = restTimer.endedAt();
+    setTicking(true);
     haptics.light();
     latest.onSetDone?.(set.id, rest);
+    void updateSet(db, set.id, { ...fields, done: true, startedAt });
   };
   // A set deleted is gone at once, with "Annulla" for a few seconds, as every row in the app.
   const onDelete = () => deleteWithUndo({ key: `set:${set.id}`, title: 'Serie eliminata', run: () => deleteSet(db, set.id) });
@@ -910,8 +950,9 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
     : null;
 
   const tick = () => {
-    if (set.done) {
+    if (done) {
       haptics.selection();
+      setTicking(false);
       onUpdate({ done: false });
       return;
     }
@@ -967,12 +1008,12 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
       keyboardType="decimal-pad"
       inputAccessoryViewID={KEYBOARD_BAR}
       selectTextOnFocus
-      editable={!set.done}
+      editable={!done}
       accessibilityLabel={label}
       style={[
         styles.input,
         {
-          backgroundColor: set.done ? 'transparent' : theme.fill,
+          backgroundColor: done ? 'transparent' : theme.fill,
           color: flagged ? theme.warning : theme.text,
         },
         missing && value === '' && { borderColor: theme.danger, borderWidth: 1.5 },
@@ -996,13 +1037,13 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
   return (
     <Animated.View entering={SET_IN} exiting={SET_OUT} layout={BLOCK_LAYOUT} style={styles.setSlot}>
     <SwipeToDelete collapse={false} onDelete={onDelete}>
-    <View style={set.done && { backgroundColor: `${theme.accent}1F` }}>
+    <View style={done && { backgroundColor: `${theme.accent}1F` }}>
     {divided ? <View style={[styles.setDivider, { backgroundColor: theme.separator }]} /> : null}
     <Animated.View style={[styles.setRow, shakeStyle]}>
       {/* No mark for the set to do now, as in Strong and Hevy: the sets done turn green, and the
           next one is the first still white. */}
       <View style={styles.colSet}>
-        <SetTypeMenu inert={!settled} badge={badge} type={set.type} done={set.done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
+        <SetTypeMenu inert={!settled} badge={badge} type={set.type} done={done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
       </View>
       <AppText variant="subhead" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
         {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
@@ -1020,15 +1061,15 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
         onPress={tick}
         hitSlop={6}
         accessibilityRole="checkbox"
-        accessibilityState={{ checked: set.done }}
-        accessibilityLabel={set.done ? 'Serie fatta, tocca per riaprirla' : 'Segna la serie come fatta'}
+        accessibilityState={{ checked: done }}
+        accessibilityLabel={done ? 'Serie fatta, tocca per riaprirla' : 'Segna la serie come fatta'}
         style={({ pressed }) => [
           styles.colCheck,
           styles.check,
-          set.done ? { backgroundColor: theme.accent } : { borderWidth: 2, borderColor: theme.separator, backgroundColor: theme.card },
+          done ? { backgroundColor: theme.accent } : { borderWidth: 2, borderColor: theme.separator, backgroundColor: theme.card },
           pressed && { opacity: 0.6 },
         ]}>
-        <Icon name="checkmark" size={15} weight="bold" color={set.done ? theme.onAccent : theme.textTertiary} />
+        <Icon name="checkmark" size={15} weight="bold" color={done ? theme.onAccent : theme.textTertiary} />
       </Pressable>
     </Animated.View>
     </View>
@@ -1125,6 +1166,7 @@ function RestBar() {
     fade.set(1);
   };
   const skip = () => {
+    restTimer.markEnded();
     setSkipping(true);
     haptics.medium();
     fade.set(
@@ -1307,7 +1349,8 @@ function RestButton({
 }
 
 const barTransition = css.create({
-  fill: { transitionProperty: 'width', transitionDuration: 300, transitionTimingFunction: 'ease-out' },
+  // Scaled rather than widened: a width lays out the whole screen at every frame.
+  fill: { transitionProperty: 'transform', transitionDuration: 300, transitionTimingFunction: 'ease-out' },
 });
 
 const styles = StyleSheet.create({
@@ -1321,7 +1364,7 @@ const styles = StyleSheet.create({
   exercise: {},
   setBars: { flexDirection: 'row', gap: 3, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   setBar: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
-  setBarFill: { height: '100%', borderRadius: 2 },
+  setBarFill: { width: '100%', height: '100%', borderRadius: 2, transformOrigin: 'left center' },
   exerciseFooter: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.sm },
   adviceText: { flex: 1, gap: 2 },

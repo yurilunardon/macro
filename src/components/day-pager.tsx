@@ -82,19 +82,16 @@ export function useDayPager(today: DateKey, asked: DateKey | null = null, scroll
     if (day === dayAtShown.current || (moving.current?.date === day && h > (heightNow.current ?? 0))) setHeight(h);
   };
 
-  // A day shorter than where the page is has nothing to show there, and the page left past its end
-  // would jump when next touched: that place is not on this day, so it starts from its beginning.
-  const pastItsEnd = (h: number) =>
-    scroll !== undefined &&
-    scroll.offset.get() > scroll.dayStart() + 1 &&
-    (heightNow.current ?? h) - h > scroll.roomBelow.get() + insets.bottom + 1;
+  // How far the page is past the end of a day this tall. It stays where it is as long as the day
+  // reaches that far; past the end it would jump when next touched, so it comes up only that much.
+  const pastItsEnd = (h: number) => (scroll ? (heightNow.current ?? h) - h - (scroll.roomBelow.get() + insets.bottom) : 0);
 
   /** A day about to come in: a taller one has its room already, so it is never cut as it slides. */
   const makeRoom = (day: DateKey) => {
     const h = heights.current.get(day);
     if (h === undefined) return;
     if (h > (heightNow.current ?? 0)) setHeight(h);
-    else if (pastItsEnd(h)) scroll?.scrollToDayStart();
+    else if (pastItsEnd(h) > 1) scroll?.scrollUpBy(pastItsEnd(h));
   };
 
   /** The day on screen, at rest: the pager fits it, after the page has come up if it has to. */
@@ -104,11 +101,11 @@ export function useDayPager(today: DateKey, asked: DateKey | null = null, scroll
     const h = heights.current.get(day);
     if (h === undefined) return;
     clearTimeout(fitTimer.current);
-    if (!pastItsEnd(h)) {
+    if (pastItsEnd(h) <= 1) {
       setHeight(h);
       return;
     }
-    scroll?.scrollToDayStart();
+    scroll?.scrollUpBy(pastItsEnd(h));
     fitTimer.current = setTimeout(() => setHeight(heights.current.get(day) ?? h), FIT_AFTER_SCROLL_MS);
   };
 

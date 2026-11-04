@@ -208,6 +208,29 @@ export function compareWorkouts(now: WorkoutNumbers, before: WorkoutNumbers): Wo
   };
 }
 
+/** Longer than this between two sets is a pause, not a rest; a set longer than this was not timed well. */
+const LONGEST_REST_S = 15 * 60;
+const LONGEST_SET_S = 10 * 60;
+
+export type SetTimes = {
+  /** Seconds on average from one set ticked to the next, null with fewer than two. */
+  between: number | null;
+  /** Seconds a set took on average, from the end of the rest before it to its tick; null if never known. */
+  work: number | null;
+};
+
+/** How the time of a workout went: from when each set was ticked, and when the rest before it ended. */
+export function setTimes(sets: readonly { doneAt: string | null; startedAt: string | null }[]): SetTimes {
+  const seconds = (from: string, to: string) => (new Date(to).getTime() - new Date(from).getTime()) / 1000;
+  const ticks = sets.flatMap((set) => (set.doneAt ? [set.doneAt] : [])).sort();
+  const gaps = ticks.slice(1).map((tick, index) => seconds(ticks[index], tick)).filter((gap) => gap > 0 && gap <= LONGEST_REST_S);
+  const works = sets
+    .flatMap((set) => (set.doneAt && set.startedAt ? [seconds(set.startedAt, set.doneAt)] : []))
+    .filter((work) => work > 0 && work <= LONGEST_SET_S);
+  const average = (values: readonly number[]) => (values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
+  return { between: average(gaps), work: average(works) };
+}
+
 /** Whether nothing is left to do in a workout, leaving out the sets `hidden` says are being deleted. */
 export function allSetsDone(exercises: readonly { sets: readonly { id: number; done: boolean }[] }[], hidden: (setId: number) => boolean = () => false): boolean {
   const sets = exercises.flatMap((e) => e.sets).filter((set) => !hidden(set.id));

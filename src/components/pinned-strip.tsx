@@ -1,7 +1,7 @@
 import { useHeaderHeight } from 'expo-router/react-navigation';
 import { useEffect, useRef, type ReactNode } from 'react';
 import { Platform, StyleSheet, View } from 'react-native';
-import Animated, { useAnimatedReaction, useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
+import Animated, { useAnimatedStyle, useSharedValue, withTiming, type SharedValue } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { Spacing } from '@/constants/theme';
@@ -44,11 +44,7 @@ export function PinnedStrip({ scroll, children }: { scroll: ScrollTop; children:
   const theme = useTheme();
   const bar = usePinnedBar();
   const top = useSharedValue(0);
-  const { offset, pinnedAt } = scroll;
-  useAnimatedReaction(
-    () => top.get() - bar.get(),
-    (at) => pinnedAt.set(at),
-  );
+  const { offset } = scroll;
 
   const pinned = useAnimatedStyle(() => ({ transform: [{ translateY: Math.max(0, offset.get() + bar.get() - top.get()) }] }));
   // Only once pinned: before, it would hide what is above the strip on the page.

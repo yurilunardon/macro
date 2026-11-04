@@ -42,6 +42,41 @@ function versionOf(topics: readonly Topic[]): number {
 }
 
 /**
+ * While a screen is all there is in sight, the ones under it need not follow every write: at each
+ * ticked set, every page under the workout's sheet read the database again and drew itself, for
+ * nothing. They wait, as they were, and catch up once it has gone.
+ */
+let held: { versions: Record<Topic, number>; following: ReadonlySet<string> } | null = null;
+let releaseTimer: ReturnType<typeof setTimeout> | undefined;
+/** Long enough for the sheet to have gone: reading while it leaves would make it stutter. */
+const RELEASE_AFTER_MS = 400;
+
+function versionFor(key: string, topics: readonly Topic[]): number {
+  if (!held || held.following.has(key)) return versionOf(topics);
+  const frozen = held.versions;
+  return topics.reduce((sum, topic) => sum + frozen[topic], 0);
+}
+
+/** Holds every query but the ones named; the function returned lets them go. */
+export function holdLiveQueries(following: readonly string[]): () => void {
+  clearTimeout(releaseTimer);
+  held ??= { versions: { ...versions }, following: new Set(following) };
+  for (const listener of listeners) listener();
+  return () => {
+    clearTimeout(releaseTimer);
+    releaseTimer = setTimeout(() => {
+      held = null;
+      for (const listener of listeners) listener();
+    }, RELEASE_AFTER_MS);
+  };
+}
+
+/** Whether what is on screen is under a screen that holds the queries, so it need not tick either. */
+export function useLiveQueriesHeld(): boolean {
+  return useSyncExternalStore(subscribe, () => held !== null);
+}
+
+/**
  * The last result of each query. A screen opened again shows it at once instead of a spinner,
  * and reads again if something was written since; `prefetchLiveQuery` fills it just before a
  * screen opens.
@@ -103,7 +138,7 @@ export function useLiveQuery<T>(
 ): LiveState<T> {
   const db = useSQLiteContext();
   // Versions only grow, so their sum changes exactly when one of the topics does.
-  const dataVersion = useSyncExternalStore(subscribe, () => versionOf(topics));
+  const dataVersion = useSyncExternalStore(subscribe, () => versionFor(key, topics));
   const token = `${key}#${dataVersion}`;
   // What it showed last time, even if something was written since: a screen opened again draws
   // whole from its first frame and changes only where the new read differs, instead of a

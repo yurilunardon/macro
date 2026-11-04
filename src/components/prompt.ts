@@ -83,6 +83,26 @@ export function confirmDestructive({ title, message, action }: ConfirmOptions): 
   });
 }
 
+/** A question before going ahead, for what is not destructive: the alert in the middle of the screen. */
+export function confirmStart({ title, message, action }: ConfirmOptions): Promise<boolean> {
+  return new Promise((resolve) => {
+    // The web preview has no alerts.
+    if (Platform.OS === 'web') {
+      resolve(true);
+      return;
+    }
+    Alert.alert(
+      title,
+      message,
+      [
+        { text: 'Annulla', style: 'cancel', onPress: () => resolve(false) },
+        { text: action, isPreferred: true, onPress: () => resolve(true) },
+      ],
+      { cancelable: true, onDismiss: () => resolve(false) },
+    );
+  });
+}
+
 type ChooseOptions = {
   title: string;
   message?: string;

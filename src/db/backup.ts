@@ -84,7 +84,7 @@ const WORKOUT_EXERCISE_COLUMNS = [
 ] as const satisfies readonly (keyof WorkoutExerciseRow)[];
 const WORKOUT_SET_COLUMNS = [
   'id', 'workout_exercise_id', 'position', 'type', 'weight', 'reps', 'seconds', 'rir', 'target_weight', 'target_reps',
-  'done', 'done_at',
+  'done', 'done_at', 'started_at',
 ] as const satisfies readonly (keyof WorkoutSetRow)[];
 
 const ACTIVITY_TYPE_COLUMNS = [

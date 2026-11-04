@@ -106,8 +106,8 @@ export default function RootLayout() {
                 name="note-sheet"
                 options={{
                   presentation: 'formSheet',
-                  sheetAllowedDetents: [0.6, 1],
-                  sheetGrabberVisible: true,
+                  // Half the screen and no more: it opens without the keyboard, which would lift it.
+                  sheetAllowedDetents: [0.5],
                   headerShown: false,
                 }}
               />

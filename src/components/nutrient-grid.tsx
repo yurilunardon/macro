@@ -9,7 +9,7 @@ import type { Nutrients } from '@/lib/nutrition';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
-import { ProgressBar } from './progress';
+import { ProgressBar, useCountedNumber } from './progress';
 
 export const NUTRIENT_LABELS: Record<BreakdownKey, string> = {
   protein: 'Proteine',
@@ -67,14 +67,7 @@ export function MacroBars({ totals, targets, onPress, slowMs }: MacroBarsProps) 
                 </AppText>
                 {over ? <Icon name="exclamationmark.circle.fill" size={13} tone="warning" /> : null}
               </View>
-              <AppText variant="footnote" numeric numberOfLines={1}>
-                <AppText variant="footnote" weight="600" numeric>
-                  {Math.round(value)}
-                </AppText>
-                <AppText variant="footnote" tone="textSecondary" numeric>
-                  {` / ${target} g`}
-                </AppText>
-              </AppText>
+              <MacroAmount value={value} target={target} ms={slowMs} />
             </View>
             <ProgressBar value={value} target={target} color={theme[key]} height={4} slowMs={slowMs} />
           </Pressable>
@@ -84,10 +77,25 @@ export function MacroBars({ totals, targets, onPress, slowMs }: MacroBarsProps) 
   );
 }
 
+/** How much was eaten, bigger than its goal: it moves with the ring, its number counting along. */
+function MacroAmount({ value, target, ms }: { value: number; target: number; ms?: number }) {
+  const counted = useCountedNumber(value, ms);
+  return (
+    <AppText numeric numberOfLines={1}>
+      <AppText variant="headline" weight="700" numeric>
+        {counted}
+      </AppText>
+      <AppText variant="footnote" tone="textSecondary" numeric>
+        {` / ${target} g`}
+      </AppText>
+    </AppText>
+  );
+}
+
 const styles = StyleSheet.create({
   // Tight, beside the ring: the ring is what the eye should find first.
   list: { flex: 1, gap: Spacing.sm },
-  item: { gap: 3 },
+  item: { gap: 2 },
   pressed: { opacity: 0.6 },
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
   name: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },

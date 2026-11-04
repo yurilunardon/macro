@@ -2,9 +2,14 @@ import type { useRouter } from 'expo-router';
 import type { SQLiteDatabase } from 'expo-sqlite';
 import { useSyncExternalStore } from 'react';
 
+import { confirmStart } from '@/components/prompt';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
+import { getCalendar } from '@/db/calendar';
 import { forgetLiveQuery, notifyChange, prefetchLiveQuery } from '@/db/live';
 import { getActiveWorkout, startWorkout } from '@/db/workouts';
+import { buildAgenda, expandActivities, startWarning } from '@/lib/calendar';
+import { addDays, todayKey } from '@/lib/dates';
+import { clockOf } from '@/lib/plan';
 
 import { haptics } from './haptics';
 
@@ -43,6 +48,21 @@ export function openActiveWorkout(db: SQLiteDatabase, router: ReturnType<typeof 
   router.push('/workout');
 }
 
+/** Starting at a day or a time the plan does not expect: says so, and asks. True to go ahead. */
+async function agreesWithPlan(db: SQLiteDatabase): Promise<boolean> {
+  const today = todayKey();
+  const to = addDays(today, 13);
+  const data = await getCalendar(db, today, to);
+  const warning = startWarning({
+    today,
+    time: clockOf(new Date().toISOString()),
+    agenda: buildAgenda({ occurrences: expandActivities(data.plans, data.records, today, to), workouts: data.workouts, gymTypeId: data.gymTypeId, today, rotation: data.rotation }),
+    gymTypeId: data.gymTypeId,
+    hasGymDays: data.plans.some((p) => p.typeId === data.gymTypeId),
+  });
+  return warning === null || confirmStart({ ...warning, action: 'Inizia' });
+}
+
 /**
  * Starts a workout of a day of the program and opens it; one already running is opened instead.
  * Without a day it takes `name`, e.g. the "Push" planned in the calendar.
@@ -52,11 +72,18 @@ export function openActiveWorkout(db: SQLiteDatabase, router: ReturnType<typeof 
  * screens under the sheet hear of it only once covered: reading again and redrawing while it rises
  * was what made it stutter.
  */
-export async function startAndOpenWorkout(db: SQLiteDatabase, router: ReturnType<typeof useRouter>, dayId: number | null, name: string): Promise<void> {
+export async function startAndOpenWorkout(
+  db: SQLiteDatabase,
+  router: ReturnType<typeof useRouter>,
+  dayId: number | null,
+  name: string,
+  { anyTime = false }: { anyTime?: boolean } = {},
+): Promise<void> {
   if (await getActiveWorkout(db)) {
     openActiveWorkout(db, router);
     return;
   }
+  if (!anyTime && !(await agreesWithPlan(db))) return;
   haptics.success();
   setStarting(true);
   // What it showed last is another workout, or none.

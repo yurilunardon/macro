@@ -136,7 +136,8 @@ function DayBar({ progress, slowMs }: { progress: number; slowMs?: number }) {
   }, [shown, progress, slowMs]);
   const fill = useAnimatedStyle(() => {
     const p = shown.get();
-    return { width: BAR_WIDTH * Math.min(1, p), backgroundColor: interpolateColor(p, RING_STOPS, tones, 'HSV') };
+    // It slides in, as the macros' bars do: a width lays out the whole screen at every frame.
+    return { transform: [{ translateX: (Math.min(1, p) - 1) * BAR_WIDTH }], backgroundColor: interpolateColor(p, RING_STOPS, tones, 'HSV') };
   });
   return (
     <View style={[styles.bar, { backgroundColor: theme.track }]}>
@@ -184,6 +185,6 @@ const styles = StyleSheet.create({
   slot: { width: CIRCLE, height: CIRCLE, alignItems: 'center', justifyContent: 'center' },
   circle: { ...StyleSheet.absoluteFill, borderRadius: CIRCLE / 2 },
   bar: { width: BAR_WIDTH, height: 4, borderRadius: 2, overflow: 'hidden' },
-  barFill: { height: '100%', borderRadius: 2 },
-  number: { fontSize: 16, lineHeight: 21, fontWeight: '600', fontVariant: ['tabular-nums'] },
+  barFill: { width: BAR_WIDTH, height: '100%', borderRadius: 2 },
+  number: { fontSize: 17, lineHeight: 22, fontWeight: '600', fontVariant: ['tabular-nums'] },
 });

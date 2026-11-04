@@ -219,7 +219,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
         <AppText variant="headline" numberOfLines={1}>
           {formatLongDate(date)}
         </AppText>
-        <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+        <AppText variant="subhead" tone="textSecondary" numberOfLines={1}>
           {relative}
         </AppText>
       </View>
@@ -303,8 +303,8 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
           const canCopy = count === 0 && data.yesterdayMeals.has(meal.key);
           const addRow = (pressed: boolean) => (
             <View style={[styles.addRow, pressed && { backgroundColor: theme.cardPressed }]}>
-              <Icon name="plus.circle.fill" size={20} tone="accent" />
-              <AppText tone="accent">
+              <Icon name="plus.circle.fill" size={18} tone="accent" />
+              <AppText variant="callout" tone="accent">
                 Aggiungi alimento
               </AppText>
             </View>
@@ -314,9 +314,9 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
             <Animated.View key={meal.key} layout={draining ? DRAIN_LAYOUT : MEAL_LAYOUT} style={styles.meal}>
               <ListGroup>
                 <View style={[styles.mealHeader, count > 0 && styles.mealHeaderWithMenu]}>
-                  <Icon name={meal.symbol} size={18} tone="textSecondary" />
-                  {/* The meal is the section's title: a size above the rows, so it reads first. */}
-                  <AppText variant="title3" style={styles.flex} numberOfLines={1}>
+                  <Icon name={meal.symbol} size={17} tone="textSecondary" />
+                  {/* The meal is the section's title: heavier than the rows and a point over them, no more. */}
+                  <AppText variant="headline" style={styles.flex} numberOfLines={1}>
                     {meal.label}
                   </AppText>
                   {/* It counts along with the ring; with the meal's last food it fades where it is. */}
@@ -372,7 +372,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                   const row = (pressed: boolean) => (
                     <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
                       <View style={styles.entryText}>
-                        <AppText numberOfLines={1}>{entry.name}</AppText>
+                        <AppText variant="callout" numberOfLines={1}>{entry.name}</AppText>
                         {entryDetail(entry) ? (
                           <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
                             {entryDetail(entry)}
@@ -446,7 +446,7 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
             onPress={() => void clearDay()}
             accessibilityRole="button"
             style={({ pressed }) => [styles.clearDay, pressed && styles.pressed]}>
-            <AppText variant="subhead" weight="600" tone="danger">
+            <AppText variant="subhead" tone="danger">
               Svuota giorno
             </AppText>
           </Pressable>
@@ -461,7 +461,10 @@ function MealKcal({ value, ms }: { value: number; ms?: number }) {
   const counted = useCountedNumber(value, ms);
   return (
     <AppText variant="subhead" weight="600" tone="textSecondary" numeric>
-      {`${formatKcal(counted)} kcal`}
+      {formatKcal(counted)}
+      <AppText variant="footnote" tone="textSecondary">
+        {' kcal'}
+      </AppText>
     </AppText>
   );
 }
@@ -469,7 +472,7 @@ function MealKcal({ value, ms }: { value: number; ms?: number }) {
 /** "435 kcal" on one line, the number leading. */
 function Kcal({ value }: { value: number }) {
   return (
-    <AppText numeric tone="textSecondary">
+    <AppText variant="subhead" numeric tone="textSecondary">
       {formatKcal(value)}
       <AppText variant="footnote" tone="textSecondary">
         {' kcal'}
@@ -495,14 +498,14 @@ const styles = StyleSheet.create({
   },
   // The ⋯ is drawn in a 40-wide button: this puts it in line with the calories under it.
   mealHeaderWithMenu: { paddingRight: Spacing.sm },
-  addRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, minHeight: 48 },
+  addRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, minHeight: 46 },
   entry: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.sm + 2,
-    minHeight: 52,
+    paddingVertical: Spacing.sm,
+    minHeight: 50,
   },
   entryText: { flex: 1, gap: 1 },
   clearDay: { alignSelf: 'center', paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg, marginTop: Spacing.lg },

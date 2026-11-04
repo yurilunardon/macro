@@ -336,6 +336,7 @@ export const MIGRATIONS: readonly Migration[] = [
   `,
   // 11: a program day's symbol, picked by hand; none means the one its name suggests.
   `ALTER TABLE program_days ADD COLUMN icon TEXT;`,
+  `ALTER TABLE workout_sets ADD COLUMN started_at TEXT;`,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

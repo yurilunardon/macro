@@ -3,7 +3,7 @@
  * every week. Pure, so the rules (what repeats, what counts as done, which day of the program
  * falls on which date) are tested without a database.
  */
-import { addDays, daysBetween, weekdayOf, weekOf, type DateKey } from './dates';
+import { addDays, daysBetween, formatLongDate, weekdayOf, weekOf, type DateKey } from './dates';
 import { nextInRotation } from './training';
 
 export type ActivityColor = 'green' | 'orange' | 'red' | 'blue' | 'purple' | 'teal' | 'pink' | 'yellow' | 'indigo';
@@ -456,4 +456,53 @@ export function isPendingDelete(item: AgendaItem, pending: ReadonlySet<string>):
     if (match && Number(match[1]) === o.planId && o.date >= match[2]) return true;
   }
   return false;
+}
+
+/** How far from the planned time a workout still counts as on time, either way. */
+const START_MARGIN_MINUTES = 180;
+
+const minutesOf = (time: string) => Number(time.slice(0, 2)) * 60 + Number(time.slice(3, 5));
+
+/**
+ * What to say before starting a workout the plan does not expect now: no gym today, or hours from
+ * when it is planned. Null when it is on time, or when no gym days are planned at all, so there is
+ * nothing to compare it with.
+ */
+export function startWarning({
+  today,
+  time,
+  agenda,
+  gymTypeId,
+  hasGymDays,
+}: {
+  today: DateKey;
+  /** The time now, "HH:MM". */
+  time: string;
+  agenda: ReadonlyMap<DateKey, readonly AgendaItem[]>;
+  gymTypeId: number | null;
+  hasGymDays: boolean;
+}): { title: string; message: string } | null {
+  if (!hasGymDays) return null;
+  const items = agenda.get(today) ?? [];
+  const isPlannedGym = (i: AgendaItem): i is Extract<AgendaItem, { kind: 'activity' }> => i.kind === 'activity' && i.status === 'planned' && i.occurrence.typeId === gymTypeId;
+  const planned = items.filter(isPlannedGym);
+  if (planned.length === 0) {
+    const next = [...agenda.entries()]
+      .filter(([date]) => date > today)
+      .sort(([a], [b]) => (a < b ? -1 : 1))
+      .flatMap(([, list]) => list.filter(isPlannedGym))[0];
+    const day = next ? (daysBetween(today, next.occurrence.date) === 1 ? 'domani' : formatLongDate(next.occurrence.date).toLowerCase()) : null;
+    const when = next ? `Il prossimo è ${day}${next.occurrence.time ? ` alle ${next.occurrence.time}` : ''}. ` : '';
+    return {
+      title: items.some((i) => i.kind === 'workout') ? 'L’allenamento di oggi l’hai già fatto' : 'Oggi non è previsto l’allenamento',
+      message: `${when}Vuoi iniziarlo lo stesso?`,
+    };
+  }
+  const times = planned.flatMap((i) => (i.occurrence.time ? [i.occurrence.time] : []));
+  // A gym day with no time set can be any time.
+  if (times.length < planned.length) return null;
+  const now = minutesOf(time);
+  const nearest = times.reduce((best, t) => (Math.abs(minutesOf(t) - now) < Math.abs(minutesOf(best) - now) ? t : best));
+  if (Math.abs(minutesOf(nearest) - now) <= START_MARGIN_MINUTES) return null;
+  return { title: `È previsto alle ${nearest}`, message: `Sono le ${time}. Vuoi iniziarlo lo stesso?` };
 }

@@ -1,4 +1,4 @@
-import { useLiveQuery } from '@/db/live';
+import { useLiveQueriesHeld, useLiveQuery } from '@/db/live';
 import { getActiveWorkout, getWorkout, type WorkoutExercise } from '@/db/workouts';
 import { formatDuration, workoutProgress } from '@/lib/training';
 import { useRestTimer } from '@/services/rest-timer';
@@ -30,7 +30,9 @@ export function useWorkoutStatus(): WorkoutStatus | null {
   const id = active?.id ?? null;
   const { data: workout } = useLiveQuery(`workout-status:${id}`, (database) => (id === null ? Promise.resolve(null) : getWorkout(database, id)), ['training']);
   const rest = useRestTimer();
-  const now = useClock(1000, id !== null && !starting);
+  // Not while the workout's own sheet covers what shows this.
+  const covered = useLiveQueriesHeld();
+  const now = useClock(1000, id !== null && !starting && !covered);
   if (!active || starting) return null;
   const resting = rest !== null && rest.endsAt > now;
   const ready = rest !== null && !resting;

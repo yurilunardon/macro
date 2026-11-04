@@ -11,7 +11,7 @@ export const BACKUP_APP = 'macro';
  * calendar and supplements, 8 the moments of the supplements and the time of a weigh-in, 9 the
  * symbol of a program day. Older files are still accepted.
  */
-export const BACKUP_VERSION = 9;
+export const BACKUP_VERSION = 10;
 
 export type FoodRow = {
   id: number;
@@ -166,6 +166,7 @@ export type WorkoutSetRow = {
   target_reps: number | null;
   done: number;
   done_at: string | null;
+  started_at: string | null;
 };
 
 export type ActivityTypeRow = {
@@ -423,6 +424,7 @@ const WORKOUT_SET_COLUMNS: Record<keyof WorkoutSetRow, Check> = {
   target_reps: 'number?',
   done: 'number',
   done_at: 'string?',
+  started_at: 'string?',
 };
 
 const ACTIVITY_TYPE_COLUMNS: Record<keyof ActivityTypeRow, Check> = {

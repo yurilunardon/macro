@@ -16,6 +16,8 @@ export type RestState = {
 };
 
 let state: RestState | null = null;
+/** When the last rest was ended by hand: "Vai" or "Salta". */
+let endedByHand: number | null = null;
 let sound = false;
 let finishTimer: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
@@ -91,6 +93,7 @@ function set(next: RestState | null): void {
 export const restTimer = {
   start(seconds: number, label: string, options: { sound: boolean }): void {
     sound = options.sound;
+    endedByHand = null;
     set({ endsAt: Date.now() + seconds * 1000, total: seconds, label });
   },
   /**
@@ -108,7 +111,21 @@ export const restTimer = {
   /** Ends the rest: skipped while it runs, or "Vai" once it is over. */
   stop(): void {
     if (!state) return;
+    endedByHand ??= Date.now();
     set(null);
+  },
+  /** "Salta" is pressed: the rest is over from now, though its panel takes a moment to go. */
+  markEnded(): void {
+    endedByHand ??= Date.now();
+  },
+  /**
+   * When the last rest ended, as an ISO date: about when the next set began. Null if it is still
+   * running, or there was none: a set ticked then says nothing about how long it took.
+   */
+  endedAt(): string | null {
+    if (endedByHand !== null) return new Date(endedByHand).toISOString();
+    if (state && state.endsAt <= Date.now()) return new Date(state.endsAt).toISOString();
+    return null;
   },
 };
 

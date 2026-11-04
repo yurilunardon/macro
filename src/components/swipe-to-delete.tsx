@@ -177,7 +177,8 @@ export function SwipeToDelete({ children, onDelete, confirm, label = 'Elimina', 
   // The red button fills the space the row leaves and grows with the swipe.
   const actionStyle = useAnimatedStyle(() => {
     const reveal = Math.max(0, -x.get());
-    return { opacity: reveal > 0.5 ? 1 : 0, width: reveal };
+    // Slid in from the right rather than widened: a width lays out the whole screen at every frame.
+    return { opacity: reveal > 0.5 ? 1 : 0, transform: [{ translateX: width.get() - reveal }] };
   });
   // As in Messages and Mail: the label stays centred in the red button while it grows, and once
   // a full swipe is armed it jumps to the button's leading edge and follows the finger.
@@ -224,6 +225,7 @@ const styles = StyleSheet.create({
     position: 'absolute',
     top: 0,
     bottom: 0,
+    left: 0,
     right: 0,
     borderTopLeftRadius: RADIUS,
     borderBottomLeftRadius: RADIUS,

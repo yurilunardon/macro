@@ -6,6 +6,7 @@ import {
   dayIcon,
   allSetsDone,
   compareWorkouts,
+  setTimes,
   exerciseChange,
   estimateOneRepMax,
   formatDuration,
@@ -265,6 +266,43 @@ describe('compareWorkouts', () => {
       lifted: 'come l’ultima volta',
       liftedTrend: 'same',
     });
+  });
+});
+
+describe('setTimes', () => {
+  const at = (minutes: number, seconds = 0) => new Date(Date.UTC(2026, 10, 4, 18, minutes, seconds)).toISOString();
+
+  it('averages the time from one tick to the next, whatever order the sets are in', () => {
+    const sets = [
+      { doneAt: at(6), startedAt: null },
+      { doneAt: at(0), startedAt: null },
+      { doneAt: at(2), startedAt: null },
+    ];
+    expect(setTimes(sets).between).toBe(180);
+  });
+
+  it('leaves out a pause and sets not ticked', () => {
+    const sets = [
+      { doneAt: at(0), startedAt: null },
+      { doneAt: at(2), startedAt: null },
+      { doneAt: null, startedAt: null },
+      { doneAt: at(40), startedAt: null },
+    ];
+    expect(setTimes(sets).between).toBe(120);
+  });
+
+  it('times a set from the end of the rest before it, when known', () => {
+    const sets = [
+      { doneAt: at(2), startedAt: at(1, 30) },
+      { doneAt: at(5), startedAt: at(4) },
+      { doneAt: at(8), startedAt: null },
+    ];
+    expect(setTimes(sets).work).toBe(45);
+  });
+
+  it('has nothing to say with too little', () => {
+    expect(setTimes([])).toEqual({ between: null, work: null });
+    expect(setTimes([{ doneAt: at(0), startedAt: null }])).toEqual({ between: null, work: null });
   });
 });
 

@@ -27,6 +27,8 @@ export type WorkoutSet = LoggedSet & {
   targetReps: number | null;
   /** When it was ticked. */
   doneAt: string | null;
+  /** About when it started: when the rest before it ended. Unknown for the first set, or if ticked before that. */
+  startedAt: string | null;
 };
 
 export type WorkoutExercise = {
@@ -65,6 +67,7 @@ type SetRow = {
   target_reps: number | null;
   done: number;
   done_at: string | null;
+  started_at: string | null;
 };
 
 function setFromRow(row: SetRow): WorkoutSet {
@@ -79,6 +82,7 @@ function setFromRow(row: SetRow): WorkoutSet {
     targetWeight: row.target_weight,
     targetReps: row.target_reps,
     doneAt: row.done_at,
+    startedAt: row.started_at,
   };
 }
 
@@ -315,14 +319,20 @@ export async function addSet(db: SQLiteDatabase, workoutExerciseId: number): Pro
   notifyChange('training');
 }
 
-export type SetFields = Partial<Pick<LoggedSet, 'type' | 'weight' | 'reps' | 'seconds' | 'rir' | 'done'>>;
+export type SetFields = Partial<Pick<LoggedSet, 'type' | 'weight' | 'reps' | 'seconds' | 'rir' | 'done'>> & {
+  /** About when it started, when that is known: see `restTimer.endedAt`. */
+  startedAt?: string | null;
+};
 
 export async function updateSet(db: SQLiteDatabase, setId: number, fields: SetFields): Promise<void> {
   const current = await db.getFirstAsync<SetRow>('SELECT * FROM workout_sets WHERE id = ?', setId);
   if (!current) return;
-  const next = { ...setFromRow(current), ...fields };
+  const before = setFromRow(current);
+  const next = { ...before, ...fields };
+  // Leaving a box without changing it: every screen showing the workout would read it all again.
+  if (next.type === before.type && next.weight === before.weight && next.reps === before.reps && next.seconds === before.seconds && next.rir === before.rir && next.done === before.done) return;
   await db.runAsync(
-    'UPDATE workout_sets SET type = ?, weight = ?, reps = ?, seconds = ?, rir = ?, done = ?, done_at = ? WHERE id = ?',
+    'UPDATE workout_sets SET type = ?, weight = ?, reps = ?, seconds = ?, rir = ?, done = ?, done_at = ?, started_at = ? WHERE id = ?',
     next.type,
     next.weight,
     next.reps,
@@ -330,6 +340,7 @@ export async function updateSet(db: SQLiteDatabase, setId: number, fields: SetFi
     next.rir,
     next.done ? 1 : 0,
     next.done ? (current.done === 1 ? current.done_at : new Date().toISOString()) : null,
+    next.done ? next.startedAt : null,
     setId,
   );
   notifyChange('training');
