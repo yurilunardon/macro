@@ -51,6 +51,15 @@ export async function seedSampleData(db: SQLiteDatabase): Promise<void> {
   }
   await finishWorkout(db, past, new Date(Date.now() - 2 * 86_400_000 + 3_600_000));
   await seedCalendar(db, today);
+  // Written in a moment above: sets ticked at believable times, for the numbers on the time they took.
+  const finished = `workout_exercise_id IN (SELECT we.id FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id WHERE w.ended_at IS NOT NULL) AND done = 1`;
+  await db.execAsync(`
+    UPDATE workout_sets SET done_at = strftime('%Y-%m-%dT%H:%M:%fZ',
+      (SELECT w.started_at FROM workout_exercises we JOIN workouts w ON w.id = we.workout_id WHERE we.id = workout_exercise_id),
+      '+' || ((position + 1 + 4 * (SELECT we.position FROM workout_exercises we WHERE we.id = workout_exercise_id)) * (140 + workout_exercise_id % 30)) || ' seconds')
+    WHERE ${finished};
+    UPDATE workout_sets SET started_at = strftime('%Y-%m-%dT%H:%M:%fZ', done_at, '-' || (35 + id % 25) || ' seconds') WHERE ${finished};
+  `);
 
   const pull = (await getPrograms(db))[0].days[1];
   const current = await startWorkout(db, { dayId: pull.id, now: new Date(Date.now() - 25 * 60_000) });

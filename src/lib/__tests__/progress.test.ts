@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { compareCounts, howOften, monthWeeks, periodRange, totalsOf, volumeBuckets, workoutsBetween, workoutsPerMonth } from '../progress';
+import { compareCounts, howOften, monthWeeks, periodRange, totalsOf, volumeBuckets, workoutsBetween, workoutsPerMonth, compareTimes, restBuckets, timesOf } from '../progress';
 
 const workout = (date: string, tonnage = 1000, workSets = 10) => ({
   date,
@@ -100,5 +100,44 @@ describe('monthWeeks', () => {
     expect(weeks[1][0]).toBe('2026-11-02');
     expect(weeks[weeks.length - 1][0]).toBe('2026-11-30');
     expect(weeks[weeks.length - 1][1]).toBeNull();
+  });
+});
+
+describe('times of a period', () => {
+  const range = { previousOf: 'di settembre', previousName: 'settembre' };
+  const workout = (date: string, minutes: number, times: { between: number; betweens: number; work?: number; works?: number }) => ({
+    date,
+    startedAt: `${date}T18:00:00.000Z`,
+    endedAt: new Date(new Date(`${date}T18:00:00.000Z`).getTime() + minutes * 60000).toISOString(),
+    workSets: 10,
+    tonnage: 1000,
+    times: { betweenSeconds: times.between * times.betweens, betweens: times.betweens, workSeconds: (times.work ?? 0) * (times.works ?? 0), works: times.works ?? 0 },
+  });
+
+  it('counts every set the same, however long each workout', () => {
+    const times = timesOf([workout('2026-11-02', 60, { between: 100, betweens: 1 }), workout('2026-11-04', 40, { between: 200, betweens: 3, work: 50, works: 2 })]);
+    expect(times).toEqual({ between: 175, work: 50, workout: 3000 });
+  });
+
+  it('knows nothing of a time never recorded, nor of an empty period', () => {
+    expect(timesOf([{ date: '2026-11-02', startedAt: '2026-11-02T18:00:00.000Z', endedAt: '2026-11-02T19:00:00.000Z', workSets: 1, tonnage: 1 }])).toEqual({ between: null, work: null, workout: 3600 });
+    expect(timesOf([])).toEqual({ between: null, work: null, workout: null });
+  });
+
+  it('gives the average rest for each stretch of the period', () => {
+    const buckets = restBuckets('week', [workout('2026-11-02', 60, { between: 100, betweens: 2 }), workout('2026-11-04', 40, { between: 200, betweens: 3 })], { from: '2026-11-02', to: '2026-11-08' });
+    expect(buckets.map((b) => b.value)).toEqual([100, 0, 200, 0, 0, 0, 0]);
+  });
+
+  it('says how a time compares', () => {
+    expect(compareTimes(120, 132, range)).toBe('12 s in meno di settembre');
+    expect(compareTimes(200, 75, range)).toBe('2 min 05 in più di settembre');
+    expect(compareTimes(3600, 3000, range)).toBe('10 min in più di settembre');
+    expect(compareTimes(90.2, 90, range)).toBe('Come settembre');
+  });
+
+  it('says nothing without both to compare', () => {
+    expect(compareTimes(null, 90, range)).toBeNull();
+    expect(compareTimes(90, null, range)).toBeNull();
   });
 });

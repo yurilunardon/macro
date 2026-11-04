@@ -13,6 +13,8 @@ import {
   type LoggedSet,
   type SetType,
   type Suggestion,
+  setTimeTotals,
+  type SetTimeTotals,
 } from '@/lib/training';
 
 import { exerciseFromRow, type Exercise, type ExerciseRow } from './exercises';
@@ -403,6 +405,7 @@ export type WorkoutSummary = {
   exerciseNames: string[];
   workSets: number;
   tonnage: number;
+  times: SetTimeTotals;
 };
 
 /** Finished workouts, newest first. */
@@ -434,6 +437,7 @@ export async function getWorkoutHistory(db: SQLiteDatabase, limit = 500): Promis
       exerciseNames: [...new Set(own.map((s) => s.name))],
       workSets: logged.filter(isWorkSet).length,
       tonnage: tonnage(logged),
+      times: setTimeTotals(logged),
     };
   });
 }

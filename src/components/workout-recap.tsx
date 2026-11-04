@@ -20,7 +20,7 @@ type Records = Awaited<ReturnType<typeof getRecords>>;
 
 /** One after the other, the first ones first, without any bounce, once the tick has gone. */
 const STAGGER = 45;
-export const RECAP_AFTER_MS = 1050;
+export const RECAP_AFTER_MS = 1250;
 const rowIn = (index: number) => FadeInDown.delay(RECAP_AFTER_MS + index * STAGGER).duration(280);
 
 /** How long the numbers take to grow, each starting a little after the one above. */

@@ -5,6 +5,7 @@ import {
   bestOneRepMax,
   dayIcon,
   allSetsDone,
+  averageSetTimes,
   compareWorkouts,
   setTimes,
   exerciseChange,
@@ -303,6 +304,15 @@ describe('setTimes', () => {
   it('has nothing to say with too little', () => {
     expect(setTimes([])).toEqual({ between: null, work: null });
     expect(setTimes([{ doneAt: at(0), startedAt: null }])).toEqual({ between: null, work: null });
+  });
+});
+
+describe('averageSetTimes', () => {
+  it('adds workouts up so each set counts the same', () => {
+    const one = { betweenSeconds: 200, betweens: 2, workSeconds: 0, works: 0 };
+    const two = { betweenSeconds: 400, betweens: 2, workSeconds: 90, works: 2 };
+    expect(averageSetTimes([one, two])).toEqual({ between: 150, work: 45 });
+    expect(averageSetTimes([])).toEqual({ between: null, work: null });
   });
 });
 

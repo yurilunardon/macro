@@ -1,10 +1,11 @@
 import { addDays, addMonths, daysBetween, formatMonthName, fromDateKey, monthOf, monthRange, weekOf, type DateKey } from './dates';
 import { formatNumber } from './format';
+import { averageSetTimes, type SetTimes, type SetTimeTotals } from './training';
 
 export type Period = 'week' | 'month' | 'year';
 
 /** What the numbers need of a finished workout. */
-export type ProgressWorkout = { date: DateKey; startedAt: string; endedAt: string; workSets: number; tonnage: number };
+export type ProgressWorkout = { date: DateKey; startedAt: string; endedAt: string; workSets: number; tonnage: number; times?: SetTimeTotals };
 
 export type PeriodRange = {
   from: DateKey;
@@ -84,19 +85,20 @@ export function howOften(period: Period, count: number, from: DateKey, to: DateK
 }
 
 export type VolumeBucket = { key: string; label: string; title: string; kg: number };
+export type PeriodBucket = { key: string; label: string; title: string; value: number };
 
 const WEEKDAY_LETTERS = ['L', 'M', 'M', 'G', 'V', 'S', 'D'];
 const WEEKDAY_NAMES = ['Lunedì', 'Martedì', 'Mercoledì', 'Giovedì', 'Venerdì', 'Sabato', 'Domenica'];
 const MONTH_LETTERS = ['G', 'F', 'M', 'A', 'M', 'G', 'L', 'A', 'S', 'O', 'N', 'D'];
 
-/** The kilos lifted over a period, split as it reads best: by day, by week of the month, by month. */
-export function volumeBuckets(period: Period, workouts: readonly ProgressWorkout[], range: Pick<PeriodRange, 'from' | 'to'>): VolumeBucket[] {
+/** A value for each stretch of a period, split as it reads best: by day, by week of the month, by month. */
+function periodBuckets<W extends ProgressWorkout>(period: Period, workouts: readonly W[], range: Pick<PeriodRange, 'from' | 'to'>, valueOf: (workouts: readonly W[]) => number): PeriodBucket[] {
   const inside = workoutsBetween(workouts, range.from, range.to);
-  const sum = (from: DateKey, to: DateKey) => workoutsBetween(inside, from, to).reduce((total, w) => total + w.tonnage, 0);
+  const value = (from: DateKey, to: DateKey) => valueOf(workoutsBetween(inside, from, to));
   if (period === 'week') {
     return WEEKDAY_LETTERS.map((label, i) => {
       const day = addDays(range.from, i);
-      return { key: day, label, title: WEEKDAY_NAMES[i], kg: sum(day, day) };
+      return { key: day, label, title: WEEKDAY_NAMES[i], value: value(day, day) };
     });
   }
   if (period === 'year') {
@@ -104,18 +106,50 @@ export function volumeBuckets(period: Period, workouts: readonly ProgressWorkout
     return MONTH_LETTERS.map((label, i) => {
       const month = `${year}-${String(i + 1).padStart(2, '0')}`;
       const { from, to } = monthRange(month);
-      return { key: month, label, title: formatMonthName(month), kg: sum(from, to) };
+      return { key: month, label, title: formatMonthName(month), value: value(from, to) };
     });
   }
-  const buckets: VolumeBucket[] = [];
+  const buckets: PeriodBucket[] = [];
   // The weeks of the month, Monday to Sunday, cut at its first and last day.
   for (let start = range.from, n = 1; start <= range.to; n += 1) {
     const sunday = weekOf(start)[6];
     const end = sunday < range.to ? sunday : range.to;
-    buckets.push({ key: start, label: `S${n}`, title: `Settimana ${n}`, kg: sum(start, end) });
+    buckets.push({ key: start, label: `S${n}`, title: `Settimana ${n}`, value: value(start, end) });
     start = addDays(end, 1);
   }
   return buckets;
+}
+
+/** The kilos lifted over a period. */
+export function volumeBuckets(period: Period, workouts: readonly ProgressWorkout[], range: Pick<PeriodRange, 'from' | 'to'>): VolumeBucket[] {
+  return periodBuckets(period, workouts, range, (inside) => inside.reduce((total, w) => total + w.tonnage, 0)).map(({ value, ...bucket }) => ({ ...bucket, kg: value }));
+}
+
+/** The average time between sets over a period; 0 where it is not known. */
+export function restBuckets(period: Period, workouts: readonly ProgressWorkout[], range: Pick<PeriodRange, 'from' | 'to'>): PeriodBucket[] {
+  return periodBuckets(period, workouts, range, (inside) => timesOf(inside).between ?? 0);
+}
+
+/** How the time of a period's workouts went, on average. */
+export function timesOf(workouts: readonly ProgressWorkout[]): SetTimes & { workout: number | null } {
+  return {
+    ...averageSetTimes(workouts.flatMap((w) => (w.times ? [w.times] : []))),
+    workout: workouts.length > 0 ? totalsOf(workouts).seconds / workouts.length : null,
+  };
+}
+
+/** "45 s", "2 min 05": a difference between two times. */
+function formatSpan(seconds: number): string {
+  const s = Math.round(seconds);
+  return s < 60 ? `${s} s` : `${Math.floor(s / 60)} min${s % 60 === 0 ? '' : ` ${String(s % 60).padStart(2, '0')}`}`;
+}
+
+/** "12 s in meno di settembre", "Come la settimana scorsa"; null without both to compare. */
+export function compareTimes(now: number | null, before: number | null, range: Pick<PeriodRange, 'previousOf' | 'previousName'>): string | null {
+  if (now === null || before === null) return null;
+  const diff = Math.round(now - before);
+  if (diff === 0) return `Come ${range.previousName}`;
+  return `${formatSpan(Math.abs(diff))} in ${diff > 0 ? 'più' : 'meno'} ${range.previousOf}`;
 }
 
 /** How many workouts in each month of the year of `from`, January first. */

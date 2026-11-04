@@ -13,6 +13,7 @@ import Animated, {
   LayoutAnimationConfig,
   LinearTransition,
   useAnimatedStyle,
+  useReducedMotion,
   useSharedValue,
   withSequence,
   withSpring,
@@ -47,6 +48,7 @@ import { RangeFlag } from '@/components/range-flag';
 import { RestPicker } from '@/components/rest-picker';
 import { SetTypeMenu } from '@/components/set-type-menu';
 import { editButton } from '@/components/edit-button';
+import { ExpandingRings } from '@/components/expanding-rings';
 import { FoldChevron } from '@/components/fold-chevron';
 import { Jiggle } from '@/components/jiggle';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
@@ -118,10 +120,21 @@ function nextLabel(workout: Workout, setId: number, title: (e: WorkoutExercise) 
 
 /** The exercises open while the sheet rises: about what fits on screen. The rest arrive as it lands. */
 const FIRST_OPEN_EXERCISES = 2;
-/** The last set ticked, the exercise's bar fills, then it folds. */
-const FOLD_AFTER_MS = 500;
-/** Once it has folded, the offer to end a workout with nothing left to do. */
-const OFFER_END_AFTER_MS = 950;
+/**
+ * The last set ticked, its bar fills and a wave of light runs across the exercise's bars, each
+ * swelling after the one before it: the first as the fill ends, the whole wave in about the same
+ * time however many sets there are. Then the exercise folds.
+ */
+const WAVE_AFTER_MS = 200;
+const WAVE_STEP_MS = 110;
+const WAVE_SPAN_MS = 420;
+const WAVE_BAR_MS = 380;
+const waveStep = (bars: number) => (bars > 1 ? Math.min(WAVE_STEP_MS, WAVE_SPAN_MS / (bars - 1)) : 0);
+const foldAfter = (bars: number) => WAVE_AFTER_MS + waveStep(bars) * Math.max(0, bars - 1) + WAVE_BAR_MS;
+/** How long the rings around the tick take, once it has appeared. */
+const TICK_RINGS_MS = 1000;
+/** Once it has folded and its rings have gone, the offer to end a workout with nothing left to do. */
+const OFFER_END_AFTER_MS = 1800;
 const isSetHidden = (setId: number) => isPendingDelete(`set:${setId}`);
 /**
  * Once the sheet is up, what was left for later is built one exercise at a time, this far apart:
@@ -527,21 +540,32 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
     setChange(complete ? 'completed' : 'reopened');
   }
   const shownComplete = complete && change !== 'completed';
+  // The rings around the tick: only when it has just been earned, not whenever the tick is drawn.
+  const [ringing, setRinging] = useState(false);
   useEffect(() => {
     if (change === null) return;
     if (change === 'completed') haptics.success();
     const timer = setTimeout(
       () => {
-        if (change === 'completed') onCompleted(item.id);
-        else onFold(item.id, false);
+        if (change === 'completed') {
+          onCompleted(item.id);
+          setRinging(true);
+        } else {
+          onFold(item.id, false);
+        }
         setChange(null);
       },
-      change === 'completed' ? FOLD_AFTER_MS : 0,
+      change === 'completed' ? foldAfter(item.sets.length) : 0,
     );
     return () => clearTimeout(timer);
     // Only the change matters; the callbacks are new on every render.
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [change]);
+  useEffect(() => {
+    if (!ringing) return;
+    const timer = setTimeout(() => setRinging(false), TICK_RINGS_MS);
+    return () => clearTimeout(timer);
+  }, [ringing]);
   const best = bestSet(item.sets);
   const rest = item.restSeconds ?? restFor(exercise);
   const plan = item.repMin !== null && item.repMax !== null ? { min: item.repMin, max: item.repMax } : null;
@@ -586,9 +610,12 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
             accessibilityHint="Mostra storico e record. Tieni premuto per modificare gli esercizi"
             style={styles.exerciseTitle}>
             {shownComplete ? (
-              <Animated.View entering={DONE_IN}>
-                <Icon name="checkmark.circle.fill" size={24} tone="accent" />
-              </Animated.View>
+              <View>
+                {ringing ? <ExpandingRings size={TICK_SIZE} color={theme.accent} /> : null}
+                <Animated.View entering={DONE_IN}>
+                  <Icon name="checkmark.circle.fill" size={TICK_SIZE} tone="accent" />
+                </Animated.View>
+              </View>
             ) : null}
             {/* The name makes room for the tick as the exercise folds, instead of jumping aside. */}
             <Animated.View layout={BLOCK_LAYOUT} style={styles.flex}>
@@ -648,7 +675,7 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
         </View>
         {collapsed ? null : (
         <Animated.View entering={SETS_IN} exiting={SETS_OUT} pointerEvents={editing ? 'none' : 'auto'}>
-        <SetBars sets={item.sets} />
+        <SetBars sets={item.sets} wave={change === 'completed'} />
         {exercise.note ? <NoteRow text={exercise.note} onPress={editNote} /> : null}
         {advice ? (
           // What to do today and why, both in sight.
@@ -743,17 +770,43 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
   );
 });
 
-/** A bar for each set of the exercise, filling as they are ticked: how far along it is, at a glance. */
-function SetBars({ sets }: { sets: readonly WorkoutSet[] }) {
-  const theme = useTheme();
+/**
+ * A bar for each set of the exercise, filling as they are ticked: how far along it is, at a glance.
+ * With the last one, `wave` runs a light across them.
+ */
+function SetBars({ sets, wave }: { sets: readonly WorkoutSet[]; wave: boolean }) {
   return (
     <View style={styles.setBars} accessible accessibilityLabel={`${sets.filter((set) => set.done).length} serie fatte su ${sets.length}`}>
-      {sets.map((set) => (
-        <View key={set.id} style={[styles.setBar, { backgroundColor: theme.track }]}>
-          <Animated.View style={[styles.setBarFill, barTransition.fill, { transform: [{ scaleX: set.done ? 1 : 0 }], backgroundColor: theme.accent }]} />
-        </View>
+      {sets.map((set, index) => (
+        <SetBar key={set.id} done={set.done} waveAfter={wave ? WAVE_AFTER_MS + index * waveStep(sets.length) : null} />
       ))}
     </View>
+  );
+}
+
+function SetBar({ done, waveAfter }: { done: boolean; waveAfter: number | null }) {
+  const theme = useTheme();
+  const reduced = useReducedMotion();
+  const swell = useSharedValue(0);
+  useEffect(() => {
+    if (waveAfter === null || reduced) return;
+    swell.set(
+      withDelay(
+        waveAfter,
+        withSequence(
+          withTiming(1, { duration: WAVE_BAR_MS * 0.45, easing: Easing.out(Easing.quad) }),
+          withTiming(0, { duration: WAVE_BAR_MS * 0.55, easing: Easing.inOut(Easing.quad) }),
+        ),
+      ),
+    );
+  }, [swell, waveAfter, reduced]);
+  const barStyle = useAnimatedStyle(() => ({ transform: [{ scaleY: 1 + 1.6 * swell.get() }] }));
+  const lightStyle = useAnimatedStyle(() => ({ opacity: 0.55 * swell.get() }));
+  return (
+    <Animated.View style={[styles.setBar, { backgroundColor: theme.track }, barStyle]}>
+      <Animated.View style={[styles.setBarFill, barTransition.fill, { transform: [{ scaleX: done ? 1 : 0 }], backgroundColor: theme.accent }]} />
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, styles.setBarLight, lightStyle]} />
+    </Animated.View>
   );
 }
 
@@ -1261,6 +1314,7 @@ function mix(from: string, to: string, t: number): string {
   return `#${parts.map((p) => p.toString(16).padStart(2, '0')).join('')}`;
 }
 
+const TICK_SIZE = 24;
 const REST_IN = FadeInDown.springify().damping(18).stiffness(180);
 const REST_OUT = FadeOutDown.duration(320);
 /** The tick appears as the exercise folds, growing into place without going past it. */
@@ -1365,6 +1419,7 @@ const styles = StyleSheet.create({
   setBars: { flexDirection: 'row', gap: 3, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   setBar: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
   setBarFill: { width: '100%', height: '100%', borderRadius: 2, transformOrigin: 'left center' },
+  setBarLight: { backgroundColor: '#FFFFFF' },
   exerciseFooter: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.sm },
   adviceText: { flex: 1, gap: 2 },

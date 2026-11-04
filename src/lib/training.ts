@@ -219,16 +219,31 @@ export type SetTimes = {
   work: number | null;
 };
 
+/** The same as sums, so that workouts can be added up into a week or a year, each set counting the same. */
+export type SetTimeTotals = { betweenSeconds: number; betweens: number; workSeconds: number; works: number };
+
 /** How the time of a workout went: from when each set was ticked, and when the rest before it ended. */
-export function setTimes(sets: readonly { doneAt: string | null; startedAt: string | null }[]): SetTimes {
+export function setTimeTotals(sets: readonly { doneAt: string | null; startedAt: string | null }[]): SetTimeTotals {
   const seconds = (from: string, to: string) => (new Date(to).getTime() - new Date(from).getTime()) / 1000;
   const ticks = sets.flatMap((set) => (set.doneAt ? [set.doneAt] : [])).sort();
   const gaps = ticks.slice(1).map((tick, index) => seconds(ticks[index], tick)).filter((gap) => gap > 0 && gap <= LONGEST_REST_S);
   const works = sets
     .flatMap((set) => (set.doneAt && set.startedAt ? [seconds(set.startedAt, set.doneAt)] : []))
     .filter((work) => work > 0 && work <= LONGEST_SET_S);
-  const average = (values: readonly number[]) => (values.length > 0 ? values.reduce((sum, value) => sum + value, 0) / values.length : null);
-  return { between: average(gaps), work: average(works) };
+  const sum = (values: readonly number[]) => values.reduce((total, value) => total + value, 0);
+  return { betweenSeconds: sum(gaps), betweens: gaps.length, workSeconds: sum(works), works: works.length };
+}
+
+/** The averages of one or many workouts. */
+export function averageSetTimes(totals: readonly SetTimeTotals[]): SetTimes {
+  const add = (pick: (t: SetTimeTotals) => number) => totals.reduce((sum, t) => sum + pick(t), 0);
+  const betweens = add((t) => t.betweens);
+  const works = add((t) => t.works);
+  return { between: betweens > 0 ? add((t) => t.betweenSeconds) / betweens : null, work: works > 0 ? add((t) => t.workSeconds) / works : null };
+}
+
+export function setTimes(sets: readonly { doneAt: string | null; startedAt: string | null }[]): SetTimes {
+  return averageSetTimes([setTimeTotals(sets)]);
 }
 
 /** Whether nothing is left to do in a workout, leaving out the sets `hidden` says are being deleted. */

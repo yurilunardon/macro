@@ -14,8 +14,8 @@ import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { monthOf, weekOf, type DateKey } from '@/lib/dates';
 import { formatNumber } from '@/lib/format';
-import { compareCounts, dayNumber, howOften, monthWeeks, periodRange, totalsOf, volumeBuckets, workoutsBetween, workoutsPerMonth, type Period, type ProgressWorkout, type VolumeBucket } from '@/lib/progress';
-import { formatLifted, formatWorkoutLengthShort } from '@/lib/training';
+import { compareCounts, compareTimes, dayNumber, howOften, monthWeeks, periodRange, restBuckets, timesOf, totalsOf, volumeBuckets, workoutsBetween, workoutsPerMonth, type Period, type PeriodBucket, type ProgressWorkout } from '@/lib/progress';
+import { formatDuration, formatLifted, formatWorkoutLengthShort } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 
 const PERIODS = [
@@ -28,8 +28,8 @@ const FADE = FadeIn.duration(220);
 
 /**
  * How the training is going, for the week, the month or the year: how many workouts as the big
- * number, then three chapters on the page itself, each saying in a line what its numbers mean:
- * how regular it was, how much was lifted, and the records beaten.
+ * number, then chapters on the page itself, each saying in a line what its numbers mean: how
+ * regular it was, how much was lifted, how the time went, and the records beaten.
  */
 export default function ProgressScreen() {
   const theme = useTheme();
@@ -44,6 +44,9 @@ export default function ProgressScreen() {
   const inside = workoutsBetween(workouts, range.from, range.to);
   const totals = totalsOf(inside);
   const compare = compareCounts(totals.count, workoutsBetween(workouts, range.previousFrom, range.previousTo).length, range);
+  const before = workoutsBetween(workouts, range.previousFrom, range.previousTo);
+  const times = timesOf(inside);
+  const timesBefore = timesOf(before);
   const load = [`${formatLifted(totals.kg)} sollevati`, totals.count > 0 ? `${formatWorkoutLengthShort(totals.seconds)} in palestra` : null, `${totals.sets} serie`].filter(Boolean).join(' · ');
 
   return (
@@ -74,8 +77,26 @@ export default function ProgressScreen() {
         </Chapter>
 
         <Chapter title="Carico" line={load}>
-          <VolumeChart buckets={volumeBuckets(period, inside, range)} />
+          <BarChart buckets={volumeBuckets(period, inside, range).map(({ kg, ...bucket }) => ({ ...bucket, value: kg }))} format={formatLifted} />
         </Chapter>
+
+        {times.workout !== null ? (
+          <Chapter title="Tempi" line="In media, in questo periodo">
+            <View>
+              <TimeRow label="Un allenamento" value={formatWorkoutLengthShort(times.workout)} change={compareTimes(times.workout, timesBefore.workout, range)} />
+              {times.between !== null ? <TimeRow divided label="Tra una serie e l’altra" value={formatDuration(times.between)} change={compareTimes(times.between, timesBefore.between, range)} /> : null}
+              {times.work !== null ? <TimeRow divided label="Una serie" value={formatDuration(times.work)} change={compareTimes(times.work, timesBefore.work, range)} /> : null}
+            </View>
+            {times.between !== null ? (
+              <View style={styles.timeChart}>
+                <AppText variant="footnote" tone="textSecondary">
+                  Tra una serie e l’altra
+                </AppText>
+                <BarChart buckets={restBuckets(period, inside, range)} format={formatDuration} />
+              </View>
+            ) : null}
+          </Chapter>
+        ) : null}
 
         {records && records.length > 0 ? (
           <Chapter title="Record" line={records.length === 1 ? '1 esercizio più forte di sempre' : `${records.length} esercizi più forti di sempre`}>
@@ -107,6 +128,28 @@ function Chapter({ title, line, children }: { title: string; line: string; child
         </AppText>
       </View>
       {children}
+    </View>
+  );
+}
+
+/** A time of the period, with how it compares with the one before. */
+function TimeRow({ label, value, change, divided = false }: { label: string; value: string; change: string | null; divided?: boolean }) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.timeRow, divided && { borderTopWidth: StyleSheet.hairlineWidth, borderTopColor: theme.separator }]}>
+      <View style={styles.flex}>
+        <AppText variant="subhead" tone="textSecondary">
+          {label}
+        </AppText>
+        {change ? (
+          <AppText variant="footnote" tone="textSecondary" numeric>
+            {change}
+          </AppText>
+        ) : null}
+      </View>
+      <AppText variant="title3" numeric numberOfLines={1}>
+        {value}
+      </AppText>
     </View>
   );
 }
@@ -168,10 +211,10 @@ function MonthTiles({ workouts, from }: { workouts: readonly ProgressWorkout[]; 
 }
 
 /** One bar per stretch of the period; a tap on a bar shows what it holds in the heading. */
-function VolumeChart({ buckets }: { buckets: readonly VolumeBucket[] }) {
+function BarChart({ buckets, format }: { buckets: readonly PeriodBucket[]; format: (value: number) => string }) {
   const theme = useTheme();
   const [picked, setPicked] = useState<string | null>(null);
-  const most = Math.max(1, ...buckets.map((b) => b.kg));
+  const most = Math.max(1, ...buckets.map((b) => b.value));
   const shown = buckets.find((b) => b.key === picked) ?? null;
   return (
     <View style={styles.chart}>
@@ -181,7 +224,7 @@ function VolumeChart({ buckets }: { buckets: readonly VolumeBucket[] }) {
         </AppText>
         {shown ? (
           <AppText variant="footnote" weight="600" numeric>
-            {formatLifted(shown.kg)}
+            {format(shown.value)}
           </AppText>
         ) : null}
       </View>
@@ -194,14 +237,14 @@ function VolumeChart({ buckets }: { buckets: readonly VolumeBucket[] }) {
               setPicked(b.key === picked ? null : b.key);
             }}
             accessibilityRole="button"
-            accessibilityLabel={`${b.title}: ${formatLifted(b.kg)}`}
+            accessibilityLabel={`${b.title}: ${format(b.value)}`}
             style={styles.barSlot}>
             <View style={styles.barTrack}>
               <View
                 style={[
                   styles.bar,
-                  b.kg > 0
-                    ? { height: `${Math.max(4, (b.kg / most) * 100)}%`, backgroundColor: theme.accent, opacity: picked === null || b.key === picked ? 1 : 0.4 }
+                  b.value > 0
+                    ? { height: `${Math.max(4, (b.value / most) * 100)}%`, backgroundColor: theme.accent, opacity: picked === null || b.key === picked ? 1 : 0.4 }
                     : { height: 2, backgroundColor: theme.track },
                 ]}
               />
@@ -235,5 +278,7 @@ const styles = StyleSheet.create({
   barSlot: { flex: 1, alignItems: 'center', gap: Spacing.xs },
   barTrack: { height: 88, width: '100%', alignItems: 'center', justifyContent: 'flex-end' },
   bar: { width: '70%', maxWidth: 24, borderTopLeftRadius: 4, borderTopRightRadius: 4 },
+  timeRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 50, paddingVertical: Spacing.sm },
+  timeChart: { gap: Spacing.xs, marginTop: Spacing.sm },
   record: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 28 },
 });
