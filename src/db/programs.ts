@@ -5,6 +5,8 @@ import type { ProgramTemplate } from '@/lib/templates';
 import { dayIcon, nextInRotation, type DayIcon } from '@/lib/training';
 
 import { exerciseFromRow, type Exercise, type ExerciseRow } from './exercises';
+import { isWarmUp, WARM_UP_REF } from '@/lib/exercises';
+
 import { notifyChange } from './live';
 import { moveRow, setOrder } from './ordering';
 import { getSetting, setSetting } from './settings';
@@ -46,7 +48,7 @@ export async function getPrograms(db: SQLiteDatabase, { drafts = false }: { draf
     `SELECT d.id, d.program_id, d.name, d.icon, COUNT(x.id) AS n,
        (SELECT GROUP_CONCAT(muscle) FROM (
           SELECT e.muscle AS muscle FROM day_exercises x2 JOIN exercises e ON e.id = x2.exercise_id
-          WHERE x2.day_id = d.id GROUP BY e.muscle ORDER BY SUM(x2.sets) DESC, MIN(x2.position) LIMIT 3)) AS muscles
+          WHERE x2.day_id = d.id AND (e.ref IS NULL OR e.ref <> '${WARM_UP_REF}') GROUP BY e.muscle ORDER BY SUM(x2.sets) DESC, MIN(x2.position) LIMIT 3)) AS muscles
      FROM program_days d LEFT JOIN day_exercises x ON x.day_id = d.id
      GROUP BY d.id ORDER BY d.position, d.id`,
   );
@@ -287,16 +289,23 @@ export async function addDayExercise(
   exerciseId: number,
   plan: PlanFields = DEFAULT_PLAN,
 ): Promise<number> {
-  const last = await db.getFirstAsync<{ p: number | null }>('SELECT MAX(position) AS p FROM day_exercises WHERE day_id = ?', dayId);
+  const exercise = await db.getFirstAsync<{ ref: string | null }>('SELECT ref FROM exercises WHERE id = ?', exerciseId);
+  const warmUp = exercise !== null && isWarmUp(exercise);
+  if (warmUp) {
+    const there = await db.getFirstAsync<{ id: number }>('SELECT id FROM day_exercises WHERE day_id = ? AND exercise_id = ?', dayId, exerciseId);
+    if (there) return there.id;
+  }
+  const edge = await db.getFirstAsync<{ first: number | null; last: number | null }>('SELECT MIN(position) AS first, MAX(position) AS last FROM day_exercises WHERE day_id = ?', dayId);
   const result = await db.runAsync(
     `INSERT INTO day_exercises (day_id, exercise_id, position, sets, rep_min, rep_max, rest_seconds, note)
      VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
     dayId,
     exerciseId,
-    (last?.p ?? -1) + 1,
-    plan.sets,
-    plan.repMin,
-    plan.repMax,
+    // The warm-up goes first, one tick and no reps; the rest at the end.
+    warmUp ? (edge?.first ?? 0) - 1 : (edge?.last ?? -1) + 1,
+    warmUp ? 1 : plan.sets,
+    warmUp ? 0 : plan.repMin,
+    warmUp ? 0 : plan.repMax,
     plan.restSeconds,
     plan.note,
   );

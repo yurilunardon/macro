@@ -1,4 +1,4 @@
-import type { Equipment, ExerciseKind, Muscle } from '@/lib/exercises';
+import { WARM_UP_REF, type Equipment, type ExerciseKind, type Muscle } from '@/lib/exercises';
 
 export type BuiltInExercise = {
   /** Stable id: never change it, workouts and plans point at the exercise through it. */
@@ -23,11 +23,14 @@ const e = (
   kind: ExerciseKind = 'weight',
 ): BuiltInExercise => ({ ref, name, nameEn, muscle, secondary, equipment, kind });
 
-/** Bump when the list changes, so existing installs get the new exercises. 2 added English names. */
-export const EXERCISES_VERSION = 2;
+/** Bump when the list changes, so existing installs get the new exercises. 2 added English names, 3 the warm-up. */
+export const EXERCISES_VERSION = 3;
 
 /** The common gym exercises, with their Italian and English names. */
 export const BUILT_IN_EXERCISES: readonly BuiltInExercise[] = [
+  // Not really an exercise: what is done before them, ticked once when over. Its muscle is only there
+  // because every exercise has one: it shows nowhere.
+  e(WARM_UP_REF, 'Riscaldamento', 'Riscaldamento', 'quads', [], 'bodyweight', 'time'),
   // Petto
   e('bench-press', 'Panca piana con bilanciere', 'Bench press', 'chest', ['triceps', 'shoulders'], 'barbell'),
   e('incline-bench-press', 'Panca inclinata con bilanciere', 'Incline bench press', 'chest', ['shoulders', 'triceps'], 'barbell'),

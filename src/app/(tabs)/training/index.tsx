@@ -1,4 +1,4 @@
-import { Stack, useIsFocused, useRouter } from 'expo-router';
+import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
@@ -35,7 +35,7 @@ import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { useWorkoutStatus } from '@/hooks/use-workout-status';
 import { addDays, daysBetween, daysFrom, formatMonthName, formatRecent, formatShortDate, formatWeekdayAndDay, monthOf, type DateKey } from '@/lib/dates';
-import { muscleLabel } from '@/lib/exercises';
+import { isWarmUp, muscleLabel } from '@/lib/exercises';
 import { countLabel } from '@/lib/format';
 import { periodRange, totalsOf, workoutsBetween } from '@/lib/progress';
 import { formatLifted, formatSetShort, formatWorkoutLength, formatWorkoutLengthShort, isWorkSet } from '@/lib/training';
@@ -53,11 +53,10 @@ export default function TrainingScreen() {
   const router = useRouter();
   const today = useToday();
   const { names } = useExerciseNames();
-  // Under the workout's sheet this page stays as it was, part of it still showing behind the sheet;
-  // it changes when the sheet goes away.
-  const starting = useWorkoutStarting();
-  const focused = useIsFocused();
-  const still = starting || !focused;
+  // As a workout starts this page stays as it was, part of it still showing behind the rising sheet;
+  // under the sheet its queries wait by themselves. Behind a page further in, on the other hand, it
+  // keeps up: held until it came back, it all changed and jumped under the finger going back.
+  const still = useWorkoutStarting();
   const { data: live } = useLiveQuery(
     'training-home',
     async (database) => {
@@ -145,11 +144,17 @@ export default function TrainingScreen() {
                 ],
               },
             ]}>
+            {/* Says what it is, with the system's mark for a button that picks one of many. */}
             <View style={styles.programTitle}>
-              <AppText variant="title3" numberOfLines={1} style={styles.shrink}>
-                {next.program.name}
+              <AppText variant="caption" weight="600" tone="textSecondary">
+                SCHEDA IN USO
               </AppText>
-              <Icon name="chevron.down" size={14} tone="accent" weight="semibold" />
+              <View style={styles.programName}>
+                <AppText variant="title3" numberOfLines={1} style={styles.shrink}>
+                  {next.program.name}
+                </AppText>
+                <Icon name="chevron.up.chevron.down" size={13} tone="accent" weight="semibold" />
+              </View>
             </View>
           </MenuButton>
           <TrainingLine
@@ -502,9 +507,11 @@ function ComingDay({
                   <AppText variant="subhead" numberOfLines={1} style={styles.flex}>
                     {names(planned.exercise).title}
                   </AppText>
-                  <AppText variant="subhead" tone="textSecondary" numeric>
-                    {`${planned.sets} × ${planned.repMin}–${planned.repMax}`}
-                  </AppText>
+                  {isWarmUp(planned.exercise) ? null : (
+                    <AppText variant="subhead" tone="textSecondary" numeric>
+                      {`${planned.sets} × ${planned.repMin}–${planned.repMax}`}
+                    </AppText>
+                  )}
                 </View>
               ))}
             </View>
@@ -597,7 +604,8 @@ const styles = StyleSheet.create({
   live: { width: 8, height: 8, alignItems: 'center', justifyContent: 'center' },
   liveDot: { width: 8, height: 8, borderRadius: 4 },
   liveRing: { position: 'absolute', width: 8, height: 8, borderRadius: 4 },
-  programTitle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, alignSelf: 'flex-start', minHeight: 44, paddingHorizontal: Spacing.xs },
+  programTitle: { alignSelf: 'flex-start', justifyContent: 'center', gap: 1, minHeight: 44, paddingHorizontal: Spacing.xs },
+  programName: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2 },
   line: { marginTop: Spacing.xs },
   step: { flexDirection: 'row', gap: Spacing.sm },
   rail: { width: 20, alignItems: 'center' },

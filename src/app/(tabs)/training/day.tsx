@@ -17,11 +17,12 @@ import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { restFor } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
+import { addWarmUp } from '@/db/exercise-picks';
 import { dayScreen } from '@/db/screens';
 import { deleteDay, removeDayExercise, setDayIcon, renameDay, reorderDayExercises, type PlannedExercise } from '@/db/programs';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
-import { muscleLabel } from '@/lib/exercises';
+import { isWarmUp, muscleLabel } from '@/lib/exercises';
 import { formatDuration } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 import { startAndOpenWorkout } from '@/services/start-workout';
@@ -48,6 +49,7 @@ const HINT_IN = FadeIn.duration(EDIT_MS);
 const HINT_OUT = FadeOut.duration(160);
 
 function planSummary(planned: PlannedExercise): string {
+  if (isWarmUp(planned.exercise)) return 'Prima di iniziare: lo spunti quando hai finito';
   const unit = planned.exercise.kind === 'time' ? ' s' : '';
   return `${planned.sets} × ${planned.repMin}–${planned.repMax}${unit} · recupero ${formatDuration(
     planned.restSeconds ?? restFor(planned.exercise),
@@ -160,6 +162,14 @@ export default function DayScreen() {
         <ListGroup>
           {exercises.map((planned) => (
             <SwipeToDelete key={planned.id} onDelete={() => removeExercise(planned)}>
+              {/* Nothing to set on the warm-up: no sets, no reps, no rest. */}
+              {isWarmUp(planned.exercise) ? (
+                <View style={[styles.row, { height: rowHeight }]}>
+                  <Animated.View entering={TEXT_FROM_EDIT} style={styles.flex}>
+                    {rowText(planned)}
+                  </Animated.View>
+                </View>
+              ) : (
               <Link href={{ pathname: '/plan-exercise', params: { id: planned.id } }} asChild>
                 <Link.Trigger>
                   <Pressable accessibilityRole="button">
@@ -179,8 +189,13 @@ export default function DayScreen() {
                   </Link.MenuAction>
                 </Link.Menu>
               </Link>
+              )}
             </SwipeToDelete>
           ))}
+          {/* A day is best started warm: offered until it has one. */}
+          {exercises.some((planned) => isWarmUp(planned.exercise)) ? null : (
+            <ActionRow label="Aggiungi riscaldamento" symbol="flame" onPress={() => void addWarmUp(db, { dayId: day.id })} />
+          )}
           <ActionRow
             label="Aggiungi esercizio"
             onPress={() => router.push({ pathname: '/exercise-picker', params: { target: 'day', id: day.id } })}

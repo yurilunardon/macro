@@ -77,18 +77,20 @@ export function MacroBars({ totals, targets, onPress, slowMs }: MacroBarsProps) 
   );
 }
 
-/** How much was eaten, bigger than its goal: it moves with the ring, its number counting along. */
+/** How much was eaten, a little bigger than its goal: it moves with the ring, its number counting along. */
 function MacroAmount({ value, target, ms }: { value: number; target: number; ms?: number }) {
   const counted = useCountedNumber(value, ms);
   return (
-    <AppText numeric numberOfLines={1}>
-      <AppText variant="headline" weight="700" numeric>
+    // Two texts side by side, each as wide as it needs: as one, with two sizes in it, its last letters
+    // were cut as the number grew. The name beside it gives way instead.
+    <View style={styles.amount}>
+      <AppText variant="subhead" weight="600" numeric>
         {counted}
       </AppText>
       <AppText variant="footnote" tone="textSecondary" numeric>
         {` / ${target} g`}
       </AppText>
-    </AppText>
+    </View>
   );
 }
 
@@ -98,5 +100,6 @@ const styles = StyleSheet.create({
   item: { gap: 2 },
   pressed: { opacity: 0.6 },
   top: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs },
+  amount: { flexDirection: 'row', alignItems: 'baseline', flexShrink: 0 },
   name: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: 4 },
 });

@@ -12,7 +12,7 @@ import { searchExercises } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
 import { setSetting } from '@/db/settings';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
-import { equipmentLabel, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
+import { equipmentLabel, isWarmUp, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
 
 /** The whole exercise library, to look at an exercise's history or change its blocks. */
 export default function ExercisesScreen() {
@@ -56,7 +56,9 @@ export default function ExercisesScreen() {
             title={names(exercise).title}
             subtitle={
               exercise.ref
-                ? (names(exercise).subtitle ?? muscleLabel(exercise.muscle))
+                ? isWarmUp(exercise)
+                  ? 'Prima di iniziare: lo spunti quando hai finito'
+                  : (names(exercise).subtitle ?? muscleLabel(exercise.muscle))
                 : `${muscleLabel(exercise.muscle)} · ${equipmentLabel(exercise.equipment)} · creato da te`
             }
             onPress={() => router.push({ pathname: '/training/exercise', params: { id: exercise.id } })}

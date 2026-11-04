@@ -10,6 +10,7 @@ import type { getRecords, Workout, WorkoutExercise } from '@/db/workouts';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { formatLongDate } from '@/lib/dates';
+import { isWarmUp } from '@/lib/exercises';
 import { clockOf } from '@/lib/plan';
 import { compareWorkouts, exerciseChange, formatDuration, formatLifted, formatSetShort, formatWorkoutLengthShort, isWorkSet, setTimes, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
 
@@ -119,6 +120,21 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
           </AppText>
         </Step>
         {workout.exercises.map((exercise, index) => {
+          if (isWarmUp(exercise.exercise)) {
+            const seconds = exercise.sets[0]?.seconds ?? null;
+            return (
+              <Step key={exercise.id} done index={index + 3} arriving={arriving}>
+                <View style={[styles.exercise, { backgroundColor: theme.card }]}>
+                  <AppText numberOfLines={1}>Riscaldamento</AppText>
+                  {seconds !== null ? (
+                    <AppText variant="footnote" tone="textSecondary" numeric>
+                      {formatWorkoutLengthShort(seconds)}
+                    </AppText>
+                  ) : null}
+                </View>
+              </Step>
+            );
+          }
           const work = exercise.sets.filter(isWorkSet);
           const change = exerciseChange(work, exercise.previous, exercise.exercise.kind);
           return (

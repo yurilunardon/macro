@@ -46,6 +46,8 @@ type SettingsMap = {
   planReviewOn: DateKey;
   /** The agreed gym days were tied to their days of the program, which is done only once. */
   gymDaysPinned: boolean;
+  /** How many times the offer of a warm-up was turned down in a row: it stops asking after a few. */
+  warmUpSkips: number;
   /** The daily ceilings on sugars, saturated fat and salt, when changed from the usual ones. */
   nutrientLimits: Partial<NutrientLimits>;
 };

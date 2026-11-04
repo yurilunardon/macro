@@ -7,6 +7,7 @@ import { PROGRAM_TEMPLATES } from '@/lib/templates';
 
 import { readBackup, restoreBackup } from '../backup';
 import { getDayPlan, setTrainingSettings } from '../days';
+import { addWarmUp } from '../exercise-picks';
 import { deleteExercise, insertExercise, searchExercises, seedExercises, updateExerciseOptions } from '../exercises';
 import {
   addDay,
@@ -238,5 +239,69 @@ describe('training backup', () => {
     expect({ ...restored, exportedAt: '' }).toEqual({ ...exported, exportedAt: '' });
     expect((await getWorkoutHistory(phone))[0].workSets).toBe(17);
     expect((await searchExercises(phone, { query: 'mio esercizio' }))[0].note).toBe('Nota');
+  });
+});
+
+describe('warm-up', () => {
+  const setUp = async () => {
+    const warmUp = (await searchExercises(db, { query: 'riscaldamento' }))[0];
+    const programId = await createProgram(db, 'Scheda');
+    const dayId = await addDay(db, programId, 'Push');
+    const bench = (await searchExercises(db, { query: 'bench press' }))[0];
+    await addDayExercise(db, dayId, bench.id);
+    return { warmUp, dayId, bench };
+  };
+
+  it('is in the library, but under no muscle', async () => {
+    expect((await searchExercises(db, { query: 'riscaldamento' })).map((e) => e.ref)).toEqual(['warm-up']);
+    expect((await searchExercises(db, { muscle: 'quads' })).some((e) => e.ref === 'warm-up')).toBe(false);
+  });
+
+  it('goes first in a day, once, with one tick and no reps', async () => {
+    const { warmUp, dayId } = await setUp();
+    await addDayExercise(db, dayId, warmUp.id);
+    await addDayExercise(db, dayId, warmUp.id);
+    const day = await getDay(db, dayId);
+    expect(day?.exercises.map((e) => e.exercise.ref)).toEqual(['warm-up', 'bench-press']);
+    expect(day?.exercises[0]).toMatchObject({ sets: 1, repMin: 0, repMax: 0 });
+  });
+
+  it('starts as one warm-up set, which counts in no total', async () => {
+    const { warmUp, dayId } = await setUp();
+    await addDayExercise(db, dayId, warmUp.id);
+    const id = await startWorkout(db, { dayId });
+    const workout = await getWorkout(db, id);
+    expect(workout?.exercises[0].exercise.ref).toBe('warm-up');
+    expect(workout?.exercises[0].sets).toHaveLength(1);
+    expect(workout?.exercises[0].sets[0].type).toBe('warmup');
+    expect(workout?.exercises[0].repMin).toBeNull();
+    await updateSet(db, workout?.exercises[0].sets[0].id ?? 0, { done: true, seconds: 480 });
+    await updateSet(db, workout?.exercises[1].sets[0].id ?? 0, { weight: 50, reps: 10, done: true });
+    await finishWorkout(db, id);
+    const [summary] = await getWorkoutHistory(db);
+    expect(summary.workSets).toBe(1);
+    expect(summary.tonnage).toBe(500);
+    expect(summary.exerciseNames).not.toContain('Riscaldamento');
+  });
+
+  it('is gone from a finished workout if never ticked', async () => {
+    const { warmUp, dayId } = await setUp();
+    await addDayExercise(db, dayId, warmUp.id);
+    const id = await startWorkout(db, { dayId });
+    const workout = await getWorkout(db, id);
+    await updateSet(db, workout?.exercises[1].sets[0].id ?? 0, { weight: 50, reps: 10, done: true });
+    await finishWorkout(db, id);
+    expect((await getWorkout(db, id))?.exercises.map((e) => e.exercise.ref)).toEqual(['bench-press']);
+  });
+
+  it('is added to the day and to the workout in progress, on top', async () => {
+    const { dayId } = await setUp();
+    const id = await startWorkout(db, { dayId });
+    await addWarmUp(db, { dayId, workoutId: id });
+    await addWarmUp(db, { dayId, workoutId: id });
+    expect((await getDay(db, dayId))?.exercises.map((e) => e.exercise.ref)).toEqual(['warm-up', 'bench-press']);
+    const workout = await getWorkout(db, id);
+    expect(workout?.exercises.map((e) => e.exercise.ref)).toEqual(['warm-up', 'bench-press']);
+    expect(workout?.exercises[0].sets.map((s) => s.type)).toEqual(['warmup']);
   });
 });

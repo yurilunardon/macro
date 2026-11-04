@@ -1,4 +1,4 @@
-import { useIsFocused, useRouter } from 'expo-router';
+import { useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { memo, useEffect, useState } from 'react';
 import { StyleSheet, View } from 'react-native';
@@ -38,10 +38,11 @@ export const CalendarDay = memo(function CalendarDay({ date, today, interactive,
   const router = useRouter();
   const theme = useTheme();
   const now = clockOf(new Date(useClock(60_000)).toISOString());
-  // Under the workout's sheet the page stays as it was; it changes when the sheet goes away.
+  // As a workout starts the page stays as it was; under its sheet the queries wait by themselves.
+  // Nothing here may follow whether the tab is on screen: all the days kept ready drew themselves
+  // again each time, just as the tab bar was moving.
   const starting = useWorkoutStarting();
-  const focused = useIsFocused();
-  const plan = useFrozen(useDayPlan(date, today), starting || !focused);
+  const plan = useFrozen(useDayPlan(date, today), starting);
   const gymTypeId = plan.calendar?.gymTypeId ?? null;
   const dayNames = plan.calendar?.dayNames ?? new Map<number, string>();
 

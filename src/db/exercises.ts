@@ -9,6 +9,7 @@ import {
   type Equipment,
   type ExerciseKind,
   type Muscle,
+  WARM_UP_REF,
 } from '@/lib/exercises';
 import { normalizeSearch } from '@/lib/search';
 
@@ -127,6 +128,9 @@ export async function searchExercises(
   if (muscle) {
     conditions.push('e.muscle = ?');
     params.push(muscle);
+    // Its muscle means nothing.
+    conditions.push('(e.ref IS NULL OR e.ref <> ?)');
+    params.push(WARM_UP_REF);
   }
   const rows = await db.getAllAsync<ExerciseRow & { uses: number }>(
     `SELECT ${COLUMNS.split(', ').map((c) => `e.${c}`).join(', ')},

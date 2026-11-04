@@ -13,7 +13,7 @@ import { applyPick, isPickerTarget, type PickerTarget } from '@/db/exercise-pick
 import { searchExercises, type Exercise } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
-import { equipmentLabel, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
+import { equipmentLabel, isWarmUp, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
 import { haptics } from '@/services/haptics';
 
 /** The exercise library to choose from: native search, a filter by muscle, the most used first. */
@@ -78,7 +78,7 @@ export default function ExercisePickerScreen() {
           'name' in item ? (
             <Row
               title={names(item).title}
-              subtitle={names(item).subtitle ?? `${muscleLabel(item.muscle)} · ${equipmentLabel(item.equipment)}`}
+              subtitle={isWarmUp(item) ? 'Prima di iniziare: lo spunti quando hai finito' : (names(item).subtitle ?? `${muscleLabel(item.muscle)} · ${equipmentLabel(item.equipment)}`)}
               onPress={() => void pick(item)}
               chevron={false}
             />

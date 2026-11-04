@@ -1,7 +1,7 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -47,7 +47,8 @@ export default function NoteSheet() {
   );
 
   return (
-    <ScrollView style={{ backgroundColor: theme.background }} contentContainerStyle={styles.content} keyboardShouldPersistTaps="handled" automaticallyAdjustKeyboardInsets>
+    // No scroll view: with the keyboard up it scrolled away the title and the words above the box.
+    <View style={[styles.content, { backgroundColor: theme.background }]}>
       <View style={styles.header}>
         <AppText variant="title3" style={styles.flex}>
           {fixed ? 'Nota dell’esercizio' : 'Nota dell’allenamento'}
@@ -68,13 +69,13 @@ export default function NoteSheet() {
         accessibilityLabel={fixed ? 'Nota fissa dell’esercizio' : 'Nota dell’allenamento'}
         style={[styles.input, { color: theme.text, backgroundColor: theme.card }]}
       />
-    </ScrollView>
+    </View>
   );
 }
 
 const styles = StyleSheet.create({
   flex: { flex: 1 },
-  content: { flexGrow: 1, padding: Spacing.lg, gap: Spacing.sm },
+  content: { flex: 1, padding: Spacing.lg, gap: Spacing.sm },
   header: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 44 },
-  input: { flexGrow: 1, minHeight: 110, marginTop: Spacing.xs, fontSize: 17, lineHeight: 22, padding: Spacing.lg, borderRadius: 22, borderCurve: 'continuous', textAlignVertical: 'top' },
+  input: { flex: 1, marginTop: Spacing.xs, fontSize: 17, lineHeight: 22, padding: Spacing.lg, borderRadius: 22, borderCurve: 'continuous', textAlignVertical: 'top' },
 });

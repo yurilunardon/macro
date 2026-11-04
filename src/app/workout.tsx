@@ -25,12 +25,11 @@ import Animated, {
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import {
-  InputAccessoryView,
   Keyboard,
-  Platform,
   Pressable,
   StyleSheet,
   TextInput,
+  useWindowDimensions,
   View,
 } from 'react-native';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
@@ -55,6 +54,8 @@ import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Radius, Spacing } from '@/constants/theme';
 import { restFor, updateExerciseOptions } from '@/db/exercises';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
+import { addWarmUp } from '@/db/exercise-picks';
+import { setSetting } from '@/db/settings';
 import { holdLiveQueries, useLiveQuery } from '@/db/live';
 import {
   addSet,
@@ -71,17 +72,18 @@ import {
 } from '@/db/workouts';
 import { useClock } from '@/hooks/use-clock';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
-import { useScrollTop } from '@/hooks/use-scroll-top';
+import { useScrollTop, type ScrollTop } from '@/hooks/use-scroll-top';
 import { useSettled } from '@/hooks/use-settled';
 import { useStableCallback } from '@/hooks/use-stable-callback';
 import { useTheme } from '@/hooks/use-theme';
-import { loadIncrement, muscleLabel } from '@/lib/exercises';
+import { isWarmUp, loadIncrement, muscleLabel } from '@/lib/exercises';
 import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
 import {
   allSetsDone,
   bestOneRepMax,
   formatDuration,
   formatSet,
+  formatWorkoutLengthShort,
   progression,
   workoutProgress,
   type LoggedSet,
@@ -136,6 +138,10 @@ const TICK_RINGS_MS = 1000;
 /** Once it has folded and its rings have gone, the offer to end a workout with nothing left to do. */
 const OFFER_END_AFTER_MS = 1800;
 const isSetHidden = (setId: number) => isPendingDelete(`set:${setId}`);
+/** After turning it down this many times in a row, it stops offering a warm-up. */
+const WARM_UP_OFFERS = 3;
+/** The workouts where the offer of a warm-up was turned down, kept while the sheet is closed and reopened. */
+const warmUpTurnedDown = new Set<number>();
 /**
  * Once the sheet is up, what was left for later is built one exercise at a time, this far apart:
  * all at once it took one long moment, with the page stuck just as it landed.
@@ -187,7 +193,7 @@ export default function WorkoutScreen() {
       ? (setId, rest) => {
           // With a day of the program, nothing left means it is over: no rest, the offer to end it.
           // A free workout goes on as long as exercises are added.
-          const others = workoutNow.exercises.map((ex) => ({ sets: ex.sets.filter((set) => set.id !== setId) }));
+          const others = workoutNow.exercises.filter((ex) => !isWarmUp(ex.exercise)).map((ex) => ({ sets: ex.sets.filter((set) => set.id !== setId) }));
           if (workoutNow.dayId === null || !others.every((ex) => ex.sets.every((set) => set.done || isSetHidden(set.id)))) {
             restTimer.start(rest, nextLabel(workoutNow, setId, (e) => names(e.exercise).title), { sound: data?.sound ?? false });
             return;
@@ -196,7 +202,7 @@ export default function WorkoutScreen() {
           clearTimeout(offerTimer.current);
           offerTimer.current = setTimeout(() => {
             // Still so, and still here: a set may have been opened again, or the sheet closed.
-            if (current.current && allSetsDone(current.current.exercises, isSetHidden) && navigation.isFocused()) router.push('/workout-done');
+            if (current.current && allSetsDone(current.current.exercises.filter((ex) => !isWarmUp(ex.exercise)), isSetHidden) && navigation.isFocused()) router.push('/workout-done');
           }, OFFER_END_AFTER_MS);
         }
       : null;
@@ -328,6 +334,33 @@ export default function WorkoutScreen() {
 
   const startEditing = useStableCallback(() => setEditing(true));
 
+  // A warm-up is offered on a day of the program without one, before the first set.
+  const [offerGone, setOfferGone] = useState(false);
+  const offersWarmUp =
+    workout !== null &&
+    workout.dayId !== null &&
+    !editing &&
+    !offerGone &&
+    !warmUpTurnedDown.has(workout.id) &&
+    (data?.warmUpSkips ?? 0) < WARM_UP_OFFERS &&
+    !workout.exercises.some((ex) => isWarmUp(ex.exercise)) &&
+    !workout.exercises.some((ex) => ex.sets.some((set) => set.done));
+  const takeWarmUp = useStableCallback(() => {
+    const active = data?.workout;
+    setOfferGone(true);
+    if (!active) return;
+    haptics.light();
+    void addWarmUp(db, { dayId: active.dayId, workoutId: active.id });
+    void setSetting(db, 'warmUpSkips', 0);
+  });
+  const turnDownWarmUp = useStableCallback(() => {
+    const active = data?.workout;
+    setOfferGone(true);
+    if (!active) return;
+    warmUpTurnedDown.add(active.id);
+    void setSetting(db, 'warmUpSkips', (data?.warmUpSkips ?? 0) + 1);
+  });
+
   const onDragEnd = useStableCallback((ordered: readonly WorkoutExercise[]) => {
     if (ordered === exercises) return;
     setLocalOrder(ordered.map((ex) => ex.id));
@@ -351,7 +384,8 @@ export default function WorkoutScreen() {
   return (
     <>
       {/* Dragging an exercise scrolls the page, and counts on iOS to stop it at its ends. */}
-      <ScreenScroll scroll={scroll} scrollToOverflowEnabled={false}>
+      {/* The bar over the keyboard cannot follow a keyboard dragged by the finger: it leaves at once. */}
+      <ScreenScroll scroll={scroll} scrollToOverflowEnabled={false} keyboardDismissMode="on-drag">
         {/* While editing, a tap anywhere outside the exercises ends it, as on the Home Screen. */}
         <View onStartShouldSetResponder={() => editing} onResponderRelease={() => setEditing(false)}>
         {/* The time, big in the bar at the top, with the name of the workout above it. */}
@@ -412,6 +446,8 @@ export default function WorkoutScreen() {
         {/* Keeps the first exercise's buttons out of the reach of the bar's own, which take touches a good way below it. */}
         <View style={styles.topSpace} />
 
+        {offersWarmUp && workout ? <WarmUpOffer dayName={workout.name} onTake={takeWarmUp} onTurnDown={turnDownWarmUp} /> : null}
+
         {/* Rows already there when the screen opens appear with it; new sets slide in. */}
         <LayoutAnimationConfig skipEntering>
           {/*
@@ -445,6 +481,9 @@ export default function WorkoutScreen() {
             onDragEnd={({ data: ordered }) => onDragEnd(ordered)}
             renderItem={({ item: ex, index }) => (
               <Jiggle editing={editing} inset={0} removeLabel={`Elimina ${title(ex)}`} onRemove={() => void removeExercise(ex.id)}>
+                {isWarmUp(ex.exercise) ? (
+                  <WarmUpBlock item={ex} startedAt={workout?.startedAt ?? openedAt} editing={editing} />
+                ) : (
                 <ExerciseBlock
                   item={ex}
                   // Only to the one holding it: a tick moves it on without touching the others.
@@ -459,6 +498,7 @@ export default function WorkoutScreen() {
                   onCompleted={onCompleted}
                   onRemove={removeExercise}
                 />
+                )}
               </Jiggle>
             )}
           />
@@ -480,10 +520,113 @@ export default function WorkoutScreen() {
       </ScreenScroll>
       {/* Out of edit mode, "Termina" waits at the bottom whenever no rest is running. */}
       <RestBar />
-      <KeyboardBar />
+      <KeyboardBar scroll={scroll} />
     </>
   );
 }
+
+/**
+ * The offer of a warm-up, at the top of a workout that has none. Taking it puts one first in the
+ * day of the program too, as it says, so it is there the next times.
+ */
+function WarmUpOffer({ dayName, onTake, onTurnDown }: { dayName: string; onTake: () => void; onTurnDown: () => void }) {
+  const theme = useTheme();
+  // It closes by itself before anything happens: gone at once, all the page under it jumped up.
+  const natural = useSharedValue(0);
+  const closed = useSharedValue(0);
+  const style = useAnimatedStyle(() => (closed.get() === 0 ? {} : { height: natural.get() * (1 - closed.get()), opacity: 1 - closed.get(), overflow: 'hidden' }));
+  const close = (then: () => void) => {
+    closed.set(
+      withTiming(1, COLLAPSE, (finished) => {
+        'worklet';
+        if (finished) scheduleOnRN(then);
+      }),
+    );
+  };
+  return (
+    <Animated.View onLayout={(event) => closed.get() === 0 && natural.set(event.nativeEvent.layout.height)} style={style}>
+      <View style={[styles.warmUpOffer, { backgroundColor: theme.card }]}>
+        <Icon name="flame.fill" size={20} tone="warning" />
+        <View style={styles.flex}>
+          <AppText variant="subhead" weight="600">
+            Ti scaldi prima?
+          </AppText>
+          <AppText variant="footnote" tone="textSecondary">
+            {`In cima a ${dayName}, anche le prossime volte.`}
+          </AppText>
+        </View>
+        <Button title="Aggiungi" variant="tinted" compact onPress={() => close(onTake)} />
+        <Pressable onPress={() => close(onTurnDown)} hitSlop={6} accessibilityRole="button" accessibilityLabel="Non ora" style={styles.warmUpClose}>
+          <Icon name="xmark" size={13} weight="semibold" tone="textSecondary" />
+        </Pressable>
+      </View>
+    </Animated.View>
+  );
+}
+
+/** The warm-up: no sets, only how long it has been going and a tick when it is over. */
+const WarmUpBlock = memo(function WarmUpBlock({ item, startedAt, editing }: { item: WorkoutExercise; startedAt: string; editing: boolean }) {
+  const db = useSQLiteContext();
+  const theme = useTheme();
+  const set = item.sets[0] as WorkoutSet | undefined;
+  const [ticking, setTicking] = useState<boolean | null>(null);
+  if (ticking !== null && ticking === set?.done) setTicking(null);
+  const done = ticking ?? set?.done ?? false;
+  const now = useClock(1000, !done);
+  const [ringing, setRinging] = useState(false);
+  useEffect(() => {
+    if (!ringing) return;
+    const timer = setTimeout(() => setRinging(false), TICK_RINGS_MS);
+    return () => clearTimeout(timer);
+  }, [ringing]);
+  const tick = () => {
+    if (!set) return;
+    if (done) {
+      haptics.selection();
+      setTicking(false);
+      void updateSet(db, set.id, { done: false, seconds: null });
+      return;
+    }
+    haptics.success();
+    setTicking(true);
+    setRinging(true);
+    // The first set starts about now.
+    restTimer.markEnded();
+    void updateSet(db, set.id, { done: true, seconds: Math.round((Date.now() - new Date(startedAt).getTime()) / 1000) });
+  };
+  const elapsed = (now - new Date(startedAt).getTime()) / 1000;
+  return (
+    <ListGroup>
+      <View style={styles.warmUp} pointerEvents={editing ? 'none' : 'auto'}>
+        <View style={styles.flex}>
+          <AppText variant="headline" tone={done ? 'text' : 'accent'} numberOfLines={1}>
+            Riscaldamento
+          </AppText>
+          <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
+            {done ? `Fatto in ${formatWorkoutLengthShort(set?.seconds ?? elapsed)}` : `Da ${formatDuration(elapsed)} · spunta quando hai finito`}
+          </AppText>
+        </View>
+        <View>
+          {ringing ? <ExpandingRings size={44} color={theme.accent} reach={1.9} /> : null}
+          <Pressable
+            onPress={tick}
+            hitSlop={6}
+            accessibilityRole="checkbox"
+            accessibilityState={{ checked: done }}
+            accessibilityLabel={done ? 'Riscaldamento finito, tocca per riaprirlo' : 'Ho finito il riscaldamento'}
+            style={({ pressed }) => [
+              styles.colCheck,
+              styles.check,
+              done ? { backgroundColor: theme.accent } : { borderWidth: 2, borderColor: theme.separator, backgroundColor: theme.card },
+              pressed && { opacity: 0.6 },
+            ]}>
+            <Icon name="checkmark" size={15} weight="bold" color={done ? theme.onAccent : theme.textTertiary} />
+          </Pressable>
+        </View>
+      </View>
+    </ListGroup>
+  );
+});
 
 /** An exercise's fixed note: a tap changes or deletes it. */
 function NoteRow({ text, onPress }: { text: string; onPress: () => void }) {
@@ -814,8 +957,9 @@ function toText(value: number | null | undefined, decimals = 2): string {
   return value === null || value === undefined ? '' : numberToInput(value, decimals);
 }
 
-/** The bar over the keyboard of every value box: − and + by a step, and "Fine". */
-const KEYBOARD_BAR = Platform.OS === 'ios' ? 'workout-keyboard' : undefined;
+const KEY_BAR_HEIGHT = 56;
+/** About the curve the keyboard moves on. */
+const KEYBOARD_EASING = Easing.bezier(0.38, 0.7, 0.125, 1);
 
 /** The value box being typed in: how far − and + move it, and how. */
 type Nudge = { step: number; by: (delta: number) => void };
@@ -841,48 +985,79 @@ const nudge = (() => {
  * Over the keyboard while a value is typed: − and + by the step of that box (the load by the
  * smallest plates of its equipment, reps by one), as the keypad of Strong, so a load changes with
  * a thumb instead of retyping it. "Fine" closes the keyboard.
+ *
+ * Our own view, moved along with the keyboard: the system's bar for this attaches to the first text
+ * box with its id and to no other, so only the first box of the whole workout had it.
  */
-function KeyboardBar() {
+function KeyboardBar({ scroll }: { scroll: ScrollTop }) {
   const theme = useTheme();
+  const { height: screen } = useWindowDimensions();
   const target = useSyncExternalStore(nudge.subscribe, nudge.get);
-  if (!KEYBOARD_BAR) return null;
-  const step = target ? formatNumber(target.step, 2) : '';
+  const lift = useSharedValue(0);
+  const keyboard = useRef(0);
+  // iOS brings the box being typed in just above the keyboard, which here is under this bar.
+  const reveal = useStableCallback(() => {
+    if (keyboard.current === 0) return;
+    TextInput.State.currentlyFocusedInput()?.measureInWindow((_x, y, _width, height) => {
+      const under = y + height + Spacing.sm - (screen - keyboard.current - KEY_BAR_HEIGHT);
+      if (under > 0) scroll.ref.current?.scrollTo({ y: scroll.offset.get() + under, animated: true });
+    });
+  });
+  useEffect(() => {
+    const subscriptions = [
+      Keyboard.addListener('keyboardWillShow', (event) => {
+        keyboard.current = event.endCoordinates.height;
+        lift.set(withTiming(event.endCoordinates.height, { duration: event.duration || 250, easing: KEYBOARD_EASING }));
+      }),
+      Keyboard.addListener('keyboardDidShow', () => reveal()),
+      Keyboard.addListener('keyboardWillHide', (event) => {
+        keyboard.current = 0;
+        lift.set(withTiming(0, { duration: event.duration || 250, easing: KEYBOARD_EASING }));
+      }),
+      // Not before: it goes down with the keyboard. And the note's sheet has a keyboard of its own.
+      Keyboard.addListener('keyboardDidHide', () => nudge.set(null)),
+    ];
+    return () => subscriptions.forEach((s) => s.remove());
+  }, [lift, reveal]);
+  // From box to box the keyboard stays where it is, and only this says the box has changed.
+  useEffect(() => {
+    if (!target) return;
+    const timer = setTimeout(reveal, 80);
+    return () => clearTimeout(timer);
+  }, [target, reveal]);
+  const style = useAnimatedStyle(() => ({ transform: [{ translateY: -lift.get() }] }));
+  if (!target) return null;
+  const step = formatNumber(target.step, 2);
   const press = (delta: number) => {
     haptics.selection();
-    target?.by(delta);
+    target.by(delta);
   };
   return (
-    <InputAccessoryView nativeID={KEYBOARD_BAR} backgroundColor="transparent">
-      <View style={styles.keyboardBar}>
-        {target ? (
-          <>
-            <Pressable
-              onPress={() => press(-target.step)}
-              accessibilityRole="button"
-              accessibilityLabel={`Togli ${step}`}
-              style={({ pressed }) => [styles.keyButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
-              <AppText variant="headline" numeric>{`−${step}`}</AppText>
-            </Pressable>
-            <Pressable
-              onPress={() => press(target.step)}
-              accessibilityRole="button"
-              accessibilityLabel={`Aggiungi ${step}`}
-              style={({ pressed }) => [styles.keyButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
-              <AppText variant="headline" numeric>{`+${step}`}</AppText>
-            </Pressable>
-          </>
-        ) : null}
-        <View style={styles.flex} />
-        <Pressable
-          onPress={() => Keyboard.dismiss()}
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.keyButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
-          <AppText variant="headline" tone="accent">
-            Fine
-          </AppText>
-        </Pressable>
-      </View>
-    </InputAccessoryView>
+    <Animated.View style={[styles.keyboardBar, { backgroundColor: theme.background, borderTopColor: theme.separator }, style]}>
+      <Pressable
+        onPress={() => press(-target.step)}
+        accessibilityRole="button"
+        accessibilityLabel={`Togli ${step}`}
+        style={({ pressed }) => [styles.keyButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
+        <AppText variant="headline" numeric>{`−${step}`}</AppText>
+      </Pressable>
+      <Pressable
+        onPress={() => press(target.step)}
+        accessibilityRole="button"
+        accessibilityLabel={`Aggiungi ${step}`}
+        style={({ pressed }) => [styles.keyButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
+        <AppText variant="headline" numeric>{`+${step}`}</AppText>
+      </Pressable>
+      <View style={styles.flex} />
+      <Pressable
+        onPress={() => Keyboard.dismiss()}
+        accessibilityRole="button"
+        style={({ pressed }) => [styles.keyButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
+        <AppText variant="headline" tone="accent">
+          Fine
+        </AppText>
+      </Pressable>
+    </Animated.View>
   );
 }
 
@@ -1059,7 +1234,6 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
       placeholder={placeholder}
       placeholderTextColor={theme.textTertiary}
       keyboardType="decimal-pad"
-      inputAccessoryViewID={KEYBOARD_BAR}
       selectTextOnFocus
       editable={!done}
       accessibilityLabel={label}
@@ -1467,7 +1641,10 @@ const styles = StyleSheet.create({
   skipped: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   restDisabled: { opacity: 0.35 },
   restSlot: { position: 'absolute', left: Spacing.md, right: Spacing.md },
-  keyboardBar: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
+  keyboardBar: { position: 'absolute', left: 0, right: 0, bottom: 0, height: KEY_BAR_HEIGHT, flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, borderTopWidth: StyleSheet.hairlineWidth },
+  warmUpOffer: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, padding: Spacing.md, paddingRight: Spacing.xs, marginBottom: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous' },
+  warmUpClose: { width: 32, height: 44, alignItems: 'center', justifyContent: 'center' },
+  warmUp: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingLeft: Spacing.lg, paddingRight: Spacing.md, paddingVertical: Spacing.sm, minHeight: 60 },
   keyButton: { minWidth: 64, height: 40, paddingHorizontal: Spacing.md, borderRadius: 20, alignItems: 'center', justifyContent: 'center' },
   restTimeRow: { alignSelf: 'flex-start', transformOrigin: 'left center' },
   bump: { position: 'absolute', left: 84, top: 0, width: 64 },

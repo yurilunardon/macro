@@ -35,7 +35,8 @@ export async function endWorkout(
     restTimer.stop();
     return 'cancelled';
   }
-  const pending = sets.length - done;
+  // A warm-up not ticked is nothing lost.
+  const pending = sets.filter((s) => !s.done && s.type !== 'warmup').length;
   if (pending > 0 || confirm) {
     const ok = await confirmDestructive({
       title: 'Terminare l’allenamento?',

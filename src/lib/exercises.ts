@@ -1,5 +1,13 @@
 import { normalizeSearch } from './search';
 
+/** The warm-up in the library. */
+export const WARM_UP_REF = 'warm-up';
+
+/** Not sets and reps but one tick when it is over, at the top of a day; it counts in no statistic. */
+export function isWarmUp(exercise: { ref: string | null }): boolean {
+  return exercise.ref === WARM_UP_REF;
+}
+
 export type Muscle =
   | 'chest'
   | 'back'

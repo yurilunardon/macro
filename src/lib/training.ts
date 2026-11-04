@@ -223,8 +223,10 @@ export type SetTimes = {
 export type SetTimeTotals = { betweenSeconds: number; betweens: number; workSeconds: number; works: number };
 
 /** How the time of a workout went: from when each set was ticked, and when the rest before it ended. */
-export function setTimeTotals(sets: readonly { doneAt: string | null; startedAt: string | null }[]): SetTimeTotals {
+export function setTimeTotals(all: readonly { doneAt: string | null; startedAt: string | null; type?: SetType }[]): SetTimeTotals {
   const seconds = (from: string, to: string) => (new Date(to).getTime() - new Date(from).getTime()) / 1000;
+  // Warming up is not resting: what counts starts after it.
+  const sets = all.filter((set) => set.type !== 'warmup');
   const ticks = sets.flatMap((set) => (set.doneAt ? [set.doneAt] : [])).sort();
   const gaps = ticks.slice(1).map((tick, index) => seconds(ticks[index], tick)).filter((gap) => gap > 0 && gap <= LONGEST_REST_S);
   const works = sets
@@ -242,7 +244,7 @@ export function averageSetTimes(totals: readonly SetTimeTotals[]): SetTimes {
   return { between: betweens > 0 ? add((t) => t.betweenSeconds) / betweens : null, work: works > 0 ? add((t) => t.workSeconds) / works : null };
 }
 
-export function setTimes(sets: readonly { doneAt: string | null; startedAt: string | null }[]): SetTimes {
+export function setTimes(sets: readonly { doneAt: string | null; startedAt: string | null; type?: SetType }[]): SetTimes {
   return averageSetTimes([setTimeTotals(sets)]);
 }
 

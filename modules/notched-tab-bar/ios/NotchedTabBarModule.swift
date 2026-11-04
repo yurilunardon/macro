@@ -323,7 +323,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     .animation(
       reduceMotion
         ? .easeOut(duration: 0.2)
-        : lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .spring(response: 0.5, dampingFraction: 0.78),
+        : lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .spring(response: 0.32, dampingFraction: 0.86),
       value: center)
     .animation(.easeOut(duration: 0.2), value: lifted)
     .allowsHitTesting(false)
@@ -413,11 +413,11 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
         .monospacedDigit()
         .foregroundStyle(on ? Color.white : Color.primary)
     }
-    .animation(.easeOut(duration: 0.25).delay(on ? 0.22 : 0), value: on)
+    .animation(.easeOut(duration: 0.16).delay(on ? 0.1 : 0), value: on)
     .scaleEffect(pressed ? 0.94 : 1)
     .frame(width: size, height: size)
     .barGlass(in: Circle(), tint: on ? props.accent : nil)
-    .animation(.easeOut(duration: 0.3).delay(on ? 0.22 : 0), value: on)
+    .animation(.easeOut(duration: 0.18).delay(on ? 0.1 : 0), value: on)
     .overlay {
       Circle()
         .fill(RadialGradient(
@@ -426,18 +426,18 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
         .opacity(pressed ? 1 : 0)
     }
     .animation(reduceMotion ? .easeOut(duration: 0.15) : .spring(response: 0.3, dampingFraction: 0.6), value: pressed)
-    .animation(.spring(response: 0.3, dampingFraction: 0.5), value: beat)
+    .animation(.spring(response: 0.24, dampingFraction: 0.75), value: beat)
     .background { Circle().strokeBorder(props.accent, lineWidth: 3).modifier(Wave(progress: halo)) }
     .frame(width: Metrics.fab, height: Metrics.fab)
     // The one-value form: the app still runs on iOS 16.
     .onChange(of: on) { now in
       guard now, !reduceMotion else { return }
-      withAnimation(.easeOut(duration: 0.7).delay(0.24)) { halo = 1 }
+      withAnimation(.easeOut(duration: 0.42).delay(0.1)) { halo = 1 }
       // Back to the start unseen, ready for the next time.
-      DispatchQueue.main.asyncAfter(deadline: .now() + 1.1) { halo = 0 }
-      DispatchQueue.main.asyncAfter(deadline: .now() + 0.22) {
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.65) { halo = 0 }
+      DispatchQueue.main.asyncAfter(deadline: .now() + 0.1) {
         beat = true
-        DispatchQueue.main.asyncAfter(deadline: .now() + 0.18) { beat = false }
+        DispatchQueue.main.asyncAfter(deadline: .now() + 0.14) { beat = false }
       }
     }
     .allowsHitTesting(false)

@@ -16,6 +16,7 @@ import {
   setTimeTotals,
   type SetTimeTotals,
 } from '@/lib/training';
+import { isWarmUp } from '@/lib/exercises';
 
 import { exerciseFromRow, type Exercise, type ExerciseRow } from './exercises';
 import { notifyChange } from './live';
@@ -124,13 +125,15 @@ async function insertSets(
   count: number,
   target: { weight: number | null; reps: number | null },
   from = 0,
+  type: SetType = 'normal',
 ): Promise<void> {
   for (let i = 0; i < count; i++) {
     await db.runAsync(
       `INSERT INTO workout_sets (workout_exercise_id, position, type, target_weight, target_reps)
-       VALUES (?, ?, 'normal', ?, ?)`,
+       VALUES (?, ?, ?, ?, ?)`,
       workoutExerciseId,
       from + i,
+      type,
       target.weight,
       target.reps,
     );
@@ -174,18 +177,20 @@ export async function startWorkout(
     );
     workoutId = workout.lastInsertRowId;
     for (const [position, p] of planned.entries()) {
+      const warmUp = isWarmUp(p.exercise);
       const inserted = await tx.runAsync(
         `INSERT INTO workout_exercises (workout_id, exercise_id, position, rep_min, rep_max, rest_seconds, note)
          VALUES (?, ?, ?, ?, ?, ?, ?)`,
         workoutId,
         p.exercise.id,
         position,
-        p.repMin,
-        p.repMax,
+        warmUp ? null : p.repMin,
+        warmUp ? null : p.repMax,
         p.restSeconds,
         p.note,
       );
-      await insertSets(tx, inserted.lastInsertRowId, p.sets, targetsOf(suggestionFor(p.exercise, p, previous[position])));
+      if (warmUp) await insertSets(tx, inserted.lastInsertRowId, 1, { weight: null, reps: null }, 0, 'warmup');
+      else await insertSets(tx, inserted.lastInsertRowId, p.sets, targetsOf(suggestionFor(p.exercise, p, previous[position])));
     }
   });
   if (!quiet) notifyChange('training', 'settings');
@@ -257,10 +262,25 @@ export async function addWorkoutExercise(db: SQLiteDatabase, workoutId: number, 
   const workout = await db.getFirstAsync<{ started_at: string }>('SELECT started_at FROM workouts WHERE id = ?', workoutId);
   const exercise = await db.getFirstAsync<ExerciseRow>(`SELECT ${EXERCISE_COLUMNS} FROM exercises e WHERE e.id = ?`, exerciseId);
   if (!workout || !exercise) return 0;
-  const last = await db.getFirstAsync<{ p: number | null }>(
-    'SELECT MAX(position) AS p FROM workout_exercises WHERE workout_id = ?',
+  const edge = await db.getFirstAsync<{ first: number | null; p: number | null }>(
+    'SELECT MIN(position) AS first, MAX(position) AS p FROM workout_exercises WHERE workout_id = ?',
     workoutId,
   );
+  // The warm-up goes first, one tick and no reps, and only once.
+  if (isWarmUp(exercise)) {
+    const there = await db.getFirstAsync<{ id: number }>('SELECT id FROM workout_exercises WHERE workout_id = ? AND exercise_id = ?', workoutId, exerciseId);
+    if (there) return there.id;
+    const added = await db.runAsync(
+      'INSERT INTO workout_exercises (workout_id, exercise_id, position) VALUES (?, ?, ?)',
+      workoutId,
+      exerciseId,
+      (edge?.first ?? 0) - 1,
+    );
+    await insertSets(db, added.lastInsertRowId, 1, { weight: null, reps: null }, 0, 'warmup');
+    notifyChange('training');
+    return added.lastInsertRowId;
+  }
+  const last = { p: edge?.p ?? null };
   const inserted = await db.runAsync(
     'INSERT INTO workout_exercises (workout_id, exercise_id, position, rep_min, rep_max) VALUES (?, ?, ?, ?, ?)',
     workoutId,
@@ -434,7 +454,7 @@ export async function getWorkoutHistory(db: SQLiteDatabase, limit = 500): Promis
       date: w.date,
       startedAt: w.started_at,
       endedAt: w.ended_at,
-      exerciseNames: [...new Set(own.map((s) => s.name))],
+      exerciseNames: [...new Set(own.filter((s) => s.type !== 'warmup').map((s) => s.name))],
       workSets: logged.filter(isWorkSet).length,
       tonnage: tonnage(logged),
       times: setTimeTotals(logged),
