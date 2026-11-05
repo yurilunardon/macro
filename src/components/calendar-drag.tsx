@@ -90,6 +90,8 @@ export function useCalendarDrag({
     latest.current = { date, agenda, kinds: calendar?.kinds ?? null };
   });
 
+  const { ref: scrollRef, offset, roomBelow } = scroll;
+  const { pinnedRow, weeks, gridTop: monthGridTop } = month;
   const pointerX = useSharedValue(0);
   const pointerY = useSharedValue(0);
   const lifted = useSharedValue(false);
@@ -152,13 +154,44 @@ export function useCalendarDrag({
     refresh();
   };
 
+  // The day turns with the finger at the side of the screen, until it comes away.
+  const turning = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
+  const setEdge = (direction: number) => {
+    clearInterval(turning.current);
+    if (direction === 0 || lift.current?.kind !== 'block') return;
+    turning.current = setInterval(() => {
+      const next = addDays(latest.current.date, direction);
+      goTo(next);
+      firstHour.set(dayLayouts.get(next)?.firstHour ?? firstHour.get());
+      refresh();
+    }, TURN_EVERY_MS);
+  };
+  useEffect(() => () => clearInterval(turning.current), []);
+
+  // Near the top or the bottom the page runs under the block; at the side, the day turns.
+  const frame = useFrameCallback(() => {
+    if (!lifted.get()) return;
+    const y = pointerY.get();
+    const x = pointerX.get();
+    const top = weekEnd.get();
+    let step = 0;
+    if (overCell.get() < 0 && y > top && y < top + SCROLL_ZONE) step = -SCROLL_STEP;
+    else if (y > windowHeight - BOTTOM_ZONE - SCROLL_ZONE) step = Math.min(SCROLL_STEP, Math.max(0, roomBelow.get()));
+    if (step !== 0) scrollTo(scrollRef, 0, offset.get() + step, false);
+    const side = x < EDGE ? -1 : x > windowWidth - EDGE ? 1 : 0;
+    const wanted = overCell.get() >= 0 || !canChangeDay.get() ? 0 : side;
+    if (wanted !== edge.get()) {
+      edge.set(wanted);
+      scheduleOnRN(setEdge, wanted);
+    }
+  }, false);
   const begin = (x: number, y: number) => {
     const day = latest.current.date;
     const layout = dayLayouts.get(day);
     const grid = layout?.grid.current;
     if (!layout || !grid) return;
     monthView.current?.measureInWindow((mx, my, mw) => {
-      monthTop.set(my + scroll.offset.get());
+      monthTop.set(my + offset.get());
       monthLeft.set(mx);
       monthWidth.set(mw);
     });
@@ -176,7 +209,7 @@ export function useCalendarDrag({
         toast.show('La partita viene dal calendario della squadra', 'calendar');
         return;
       }
-      gridTop.set(gy + scroll.offset.get());
+      gridTop.set(gy + offset.get());
       firstHour.set(layout.firstHour);
       haptics.medium();
       calendarDrag.set({ selected: null });
@@ -202,11 +235,14 @@ export function useCalendarDrag({
       }
       overCell.set(-1);
       lifted.set(true);
+      // From here and not from a reaction: on the UI thread this ordinary function would crash the app.
+      frame.setActive(true);
     });
   };
 
   const clear = () => {
     lifted.set(false);
+    frame.setActive(false);
     lift.current = null;
     origin.current = null;
     setFloating(null);
@@ -309,20 +345,6 @@ export function useCalendarDrag({
     clear();
   };
 
-  // The day turns with the finger at the side of the screen, until it comes away.
-  const turning = useRef<ReturnType<typeof setInterval> | undefined>(undefined);
-  const setEdge = (direction: number) => {
-    clearInterval(turning.current);
-    if (direction === 0 || lift.current?.kind !== 'block') return;
-    turning.current = setInterval(() => {
-      const next = addDays(latest.current.date, direction);
-      goTo(next);
-      firstHour.set(dayLayouts.get(next)?.firstHour ?? firstHour.get());
-      refresh();
-    }, TURN_EVERY_MS);
-  };
-  useEffect(() => () => clearInterval(turning.current), []);
-
   const pan = usePanGesture({
     activateAfterLongPress: HOLD_MS,
     onActivate: (event) => {
@@ -352,22 +374,22 @@ export function useCalendarDrag({
       if (!lifted.get()) return null;
       const y = pointerY.get();
       const x = pointerX.get();
-      const offset = scroll.offset.get();
+      const scrolled = offset.get();
       // The rows on screen, and the selected week where it stays when the page has gone past it.
-      const top = monthTop.get() - offset + MONTH_ROWS_TOP;
-      const pinnedAt = month.pinnedRow.get();
+      const top = monthTop.get() - scrolled + MONTH_ROWS_TOP;
+      const pinnedAt = pinnedRow.get();
       const rowAt = top + pinnedAt * DAY_ROW;
-      const held = Math.max(0, offset + bar.get() - (month.gridTop.get() + MONTH_ROWS_TOP + pinnedAt * DAY_ROW));
+      const held = Math.max(0, scrolled + bar.get() - (monthGridTop.get() + MONTH_ROWS_TOP + pinnedAt * DAY_ROW));
       const pinned = rowAt + held;
       let row = -1;
       if (y >= pinned && y < pinned + DAY_ROW) row = pinnedAt;
       else if (held <= 0) {
         const at = Math.floor((y - top) / DAY_ROW);
-        if (at >= 0 && at < month.weeks.get()) row = at;
+        if (at >= 0 && at < weeks.get()) row = at;
       }
       const column = Math.floor(((x - monthLeft.get()) / Math.max(1, monthWidth.get())) * 7);
       const cell = canChangeDay.get() && row >= 0 && column >= 0 && column < 7 ? row * 7 + column : -1;
-      const raw = minuteOfY(y + offset - gridTop.get(), firstHour.get()) - grab.get();
+      const raw = minuteOfY(y + scrolled - gridTop.get(), firstHour.get()) - grab.get();
       return { cell, minute: snapMinute(raw, length.get()), weekEnd: pinned + DAY_ROW };
     },
     (next) => {
@@ -384,35 +406,12 @@ export function useCalendarDrag({
     },
   );
 
-  // Near the top or the bottom the page runs under the block; at the side, the day turns.
-  const { ref: scrollRef, offset, roomBelow } = scroll;
-  const frame = useFrameCallback(() => {
-    if (!lifted.get()) return;
-    const y = pointerY.get();
-    const x = pointerX.get();
-    const top = weekEnd.get();
-    let step = 0;
-    if (overCell.get() < 0 && y > top && y < top + SCROLL_ZONE) step = -SCROLL_STEP;
-    else if (y > windowHeight - BOTTOM_ZONE - SCROLL_ZONE) step = Math.min(SCROLL_STEP, Math.max(0, roomBelow.get()));
-    if (step !== 0) scrollTo(scrollRef, 0, offset.get() + step, false);
-    const side = x < EDGE ? -1 : x > windowWidth - EDGE ? 1 : 0;
-    const wanted = overCell.get() >= 0 || !canChangeDay.get() ? 0 : side;
-    if (wanted !== edge.get()) {
-      edge.set(wanted);
-      scheduleOnRN(setEdge, wanted);
-    }
-  }, false);
-  useAnimatedReaction(
-    () => lifted.get(),
-    (on) => frame.setActive(on),
-  );
-
   const overlay = (
     <DragOverlay
       lifted={lifted}
       overCell={overCell}
       gridTop={gridTop}
-      offset={scroll.offset}
+      offset={offset}
       minute={minute}
       firstHour={firstHour}
       weekEnd={weekEnd}

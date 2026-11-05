@@ -46,6 +46,11 @@ export async function applyFeed(db: SQLiteDatabase, calendar: IcsCalendar, today
   const first = !feed?.tookOver;
   const plan = planFeedSync(await storedRows(db), calendar.events, today);
   const now = new Date().toISOString();
+  const nothingToDo = !first && plan.insert.length === 0 && plan.update.length === 0 && plan.remove.length === 0;
+  if (nothingToDo) {
+    if (feed) await setSetting(db, 'feed', { ...feed, name: calendar.name ?? feed.name, syncedAt: now, error: null });
+    return [];
+  }
   await db.withExclusiveTransactionAsync(async (tx) => {
     if (first) await tx.runAsync('DELETE FROM activity_plans WHERE type_id = ?', type.id);
     for (const e of plan.insert) {
