@@ -137,6 +137,34 @@ export function monthGrid(month: MonthKey): DateKey[] {
   return Array.from({ length: 42 }, (_, i) => addDays(monday, i));
 }
 
+/** A month as a number that grows by one each month, to count months with. */
+export function monthNumber(month: MonthKey): number {
+  return Number(month.slice(0, 4)) * 12 + Number(month.slice(5, 7)) - 1;
+}
+
+export function monthAt(number: number): MonthKey {
+  const year = Math.floor(number / 12);
+  return `${String(year).padStart(4, '0')}-${String(number - year * 12 + 1).padStart(2, '0')}`;
+}
+
+/** How many of the six weeks of `monthGrid` hold days of the month: from 4 to 6. Runs on the UI thread too. */
+export function monthWeeks(number: number): number {
+  'worklet';
+  const year = Math.floor(number / 12);
+  const month = number - year * 12;
+  const first = (new Date(year, month, 1).getDay() + 6) % 7;
+  return Math.ceil((first + new Date(year, month + 1, 0).getDate()) / 7);
+}
+
+/** The same day of a month nearby, or its last day when that month is shorter; today in today's month. */
+export function dayInMonth(date: DateKey, direction: number, today: DateKey): DateKey {
+  const month = addMonths(monthOf(date), direction);
+  if (month === monthOf(today)) return today;
+  const { to } = monthRange(month);
+  const day = `${month}-${date.slice(8)}`;
+  return day > to ? to : day;
+}
+
 /** "Ottobre 2026". */
 export function formatMonth(month: MonthKey): string {
   return capitalize(monthYear.format(fromDateKey(`${month}-01`)));

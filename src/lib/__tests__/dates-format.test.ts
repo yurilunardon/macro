@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { addDays, daysBetween, formatDaySubtitle, formatDayTitle, fromDateKey, isDateKey, lastDays, toDateKey, weekdayOf } from '../dates';
+import { addDays, dayInMonth, daysBetween, formatDaySubtitle, formatDayTitle, fromDateKey, isDateKey, lastDays, monthAt, monthGrid, monthNumber, monthOf, monthWeeks, toDateKey, weekdayOf } from '../dates';
 import { formatGrams, formatNumber, numberToInput, parseDecimal, servingPresetLabel } from '../format';
 
 describe('date keys', () => {
@@ -85,5 +85,30 @@ describe('servingPresetLabel', () => {
     expect(servingPresetLabel(10, '1 biscotto (10 g)', 'g')).toBe('1 biscotto · 10 g');
     expect(servingPresetLabel(12.5, null, 'ml')).toBe('1 porzione · 12,5 ml');
     expect(servingPresetLabel(30, 'una porzione molto abbondante di cereali', 'g')).toBe('una porzione molto abbondan… · 30 g');
+  });
+});
+
+describe('months in the calendar', () => {
+  it('counts months with numbers, there and back', () => {
+    expect(monthNumber('2026-11') + 2).toBe(monthNumber('2027-01'));
+    expect(monthAt(monthNumber('2026-12'))).toBe('2026-12');
+    expect(monthAt(monthNumber('2027-01'))).toBe('2027-01');
+  });
+
+  it('gives each month as many weeks as its grid has with days of it', () => {
+    for (let number = monthNumber('2026-01'); number <= monthNumber('2028-12'); number++) {
+      const month = monthAt(number);
+      const days = monthGrid(month);
+      const weeks = Array.from({ length: 6 }, (_, i) => days.slice(i * 7, i * 7 + 7)).filter((week) => week.some((day) => monthOf(day) === month));
+      expect(monthWeeks(number)).toBe(weeks.length);
+    }
+    // February 2027 begins on a Monday: exactly four weeks.
+    expect(monthWeeks(monthNumber('2027-02'))).toBe(4);
+  });
+
+  it('keeps the day when turning the month, the last one if it is shorter, today in today’s month', () => {
+    expect(dayInMonth('2026-11-14', 1, '2026-11-05')).toBe('2026-12-14');
+    expect(dayInMonth('2027-01-31', 1, '2026-11-05')).toBe('2027-02-28');
+    expect(dayInMonth('2026-12-20', -1, '2026-11-05')).toBe('2026-11-05');
   });
 });

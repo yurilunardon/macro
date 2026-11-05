@@ -1,4 +1,3 @@
-import type { SFSymbol } from 'expo-symbols';
 import { Pressable, StyleSheet, View } from 'react-native';
 import { GestureDetector, usePanGesture } from 'react-native-gesture-handler';
 import { useEffect, useRef } from 'react';
@@ -25,8 +24,6 @@ export type DayProgress = {
   /** A slow, even change instead of the quick one, e.g. while the day is emptied. */
   slowMs?: number;
 };
-/** What a day holds, and for VoiceOver its name: a symbol under it in the month. */
-export type DaySymbol = { symbol: SFSymbol; label: string };
 
 type WeekStripProps = {
   selected: DateKey;
@@ -150,10 +147,11 @@ function DayBar({ progress, slowMs }: { progress: number; slowMs?: number }) {
  * The circle behind the selected day, as in Calendar: it does not travel from the old day, it
  * just appears on the new one, growing a touch into place.
  */
-export function DayCircle({ selected, color, pulse }: { selected: boolean; color: string; pulse: number }) {
-  const visible = useSharedValue(selected ? 1 : 0);
-  const scale = useSharedValue(1);
-  const first = useRef(true);
+export function DayCircle({ selected, color, pulse, appear = false }: { selected: boolean; color: string; pulse: number; appear?: boolean }) {
+  // `appear`: mounted only on the day picked, it comes in as it would on a day already there.
+  const visible = useSharedValue(appear ? 0.4 : selected ? 1 : 0);
+  const scale = useSharedValue(appear ? 0.6 : 1);
+  const first = useRef(!appear);
   const lastPulse = useRef(pulse);
   useEffect(() => {
     if (pulse === lastPulse.current) return;
