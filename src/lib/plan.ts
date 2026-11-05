@@ -1,38 +1,20 @@
 /**
- * The day's plan: the moments of the day the supplements and the weigh-in are tied to, and the
- * checklist of one day built from them. Pure, so it is tested without a database.
+ * What one day holds besides its activities: the weigh-in and the doses of the supplements, each at
+ * its own time. Pure, so it is tested without a database.
  */
-import type { ActivityType, AgendaItem } from './calendar';
-import { weekdayOf, type DateKey } from './dates';
-import { dosesDue, type Supplement } from './supplements';
+import { weekdayOf, type DateKey, toDateKey } from './dates';
+import { dosesDue, type DoseChange, type Supplement } from './supplements';
 
-export type Moment = {
-  id: string;
-  name: string;
-  /** "07:00": when it falls; for one tied to the training, when it falls on days without one. */
-  time: string;
-  /** Tied to the day's training: at its start or at its end. */
-  anchor: 'start' | 'end' | null;
-};
-
-export const DEFAULT_MOMENTS: readonly Moment[] = [
-  { id: 'morning', name: 'Mattina', time: '07:00', anchor: null },
-  { id: 'lunch', name: 'Pranzo', time: '13:00', anchor: null },
-  { id: 'training', name: 'Allenamento', time: '21:00', anchor: 'start' },
-  { id: 'after', name: 'Dopo l’allenamento', time: '23:00', anchor: 'end' },
-  { id: 'evening', name: 'Sera', time: '23:30', anchor: null },
-];
-
-/** When to weigh in: every day or on some days of the week, at a moment of the day. */
+/** When to weigh in: every day or on some days of the week, at a time of the day. */
 export type WeighInPlan = {
   enabled: boolean;
   schedule: 'daily' | 'weekdays';
   /** For `weekdays`, as Date.getDay(): 0 is Sunday. */
   weekdays: number[];
-  moment: string;
+  time: string;
 };
 
-export const DEFAULT_WEIGH_IN: WeighInPlan = { enabled: true, schedule: 'daily', weekdays: [], moment: 'morning' };
+export const DEFAULT_WEIGH_IN: WeighInPlan = { enabled: true, schedule: 'daily', weekdays: [], time: '07:05' };
 
 export function weighInDue(plan: WeighInPlan, date: DateKey): boolean {
   if (!plan.enabled) return false;
@@ -52,63 +34,24 @@ export function clockOf(iso: string): string {
   return `${String(at.getHours()).padStart(2, '0')}:${String(at.getMinutes()).padStart(2, '0')}`;
 }
 
-/** The day's training, for the moments tied to it: when it starts and when it ends. */
-export type TrainingTimes = { start: string; end: string } | null;
-
-/**
- * When the day's training starts and ends: the workout logged, else the first activity planned
- * with a time, for as long as it lasts. Null on a day without one.
- */
-export function trainingTimes(items: readonly AgendaItem[], types: ReadonlyMap<number, ActivityType>): TrainingTimes {
-  for (const item of items) {
-    if (item.kind === 'workout') {
-      const start = clockOf(item.workout.startedAt);
-      return { start, end: item.workout.endedAt ? clockOf(item.workout.endedAt) : addMinutes(start, 90) };
-    }
-    const o = item.occurrence;
-    if (item.status === 'skipped' || o.time === null) continue;
-    return { start: o.time, end: addMinutes(o.time, o.minutes ?? types.get(o.typeId)?.minutes ?? 60) };
-  }
-  return null;
-}
-
-export function momentTime(moment: Moment, training: TrainingTimes): string {
-  if (training && moment.anchor === 'start') return training.start;
-  if (training && moment.anchor === 'end') return training.end;
-  return moment.time;
-}
-
-/** The moments in the order they fall on a day. */
-export function sortMoments(moments: readonly Moment[], training: TrainingTimes): Moment[] {
-  return [...moments].sort((a, b) => {
-    const ta = momentTime(a, training);
-    const tb = momentTime(b, training);
-    return ta === tb ? moments.indexOf(a) - moments.indexOf(b) : ta < tb ? -1 : 1;
-  });
-}
-
-/**
- * The moment a supplement goes in: its own; for one taken at a set time, the last moment that
- * falls by then; otherwise the first of the day.
- */
-export function momentOf(supplement: Pick<Supplement, 'moment' | 'reminder'>, sorted: readonly Moment[], training: TrainingTimes): Moment | null {
-  const own = sorted.find((m) => m.id === supplement.moment);
-  if (own) return own;
-  if (supplement.reminder) {
-    const before = sorted.filter((m) => momentTime(m, training) <= (supplement.reminder ?? ''));
-    if (before.length > 0) return before[before.length - 1];
-  }
-  return sorted[0] ?? null;
+/** The ISO date and time of a time on a day, in the phone's time zone. */
+export function isoAt(date: DateKey, time: string): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const [hour, minute] = time.split(':').map(Number);
+  return new Date(year, month - 1, day, hour, minute).toISOString();
 }
 
 export type DayEntry =
   | {
       kind: 'weighIn';
       key: string;
+      /** Where it goes in the day: when it was logged, or when it is planned. */
+      at: string;
       kg: number | null;
       /** ISO date and time it was logged, when it was logged on the day itself. */
       loggedAt: string | null;
       done: boolean;
+      skipped: false;
     }
   | {
       kind: 'supplement';
@@ -116,87 +59,89 @@ export type DayEntry =
       supplement: Supplement;
       /** Which dose of the day, for one taken more than once. */
       index: number;
+      /** Where it goes in the day: when it was taken, or when it is planned. */
+      at: string;
+      /** When it was meant to be taken, moved or not. */
+      planned: string;
       /** ISO date and time it was ticked. */
       takenAt: string | null;
-      /** A set time of its own, when it has one. */
-      time: string | null;
       done: boolean;
+      skipped: boolean;
     };
 
-export type DaySection = { moment: Moment; time: string; entries: DayEntry[] };
+/** The time it was done, if done on that very day: ticks made the day after say nothing about when. */
+function clockOn(date: DateKey, iso: string | null): string | null {
+  return iso !== null && toDateKey(new Date(iso)) === date ? clockOf(iso) : null;
+}
 
 /**
- * One day's checklist: the weigh-in and the supplements due, each in its moment, the moments
- * in the order they fall and only those with something in them.
+ * One day's weigh-in and doses, in the order they fall: what was done where it was done, the rest
+ * at its time, a dose moved for that day where it was moved to. A supplement taken when needed
+ * shows only once taken.
  */
 export function buildDay({
   date,
-  moments,
-  training,
   supplements,
   taken,
+  changes,
   active,
   weighIn,
   weight,
 }: {
   date: DateKey;
-  moments: readonly Moment[];
-  training: TrainingTimes;
   supplements: readonly Supplement[];
   /** "id:index" → when the dose was ticked. */
   taken: ReadonlyMap<string, string>;
+  /** "id:date:index" → how that dose was changed for the day. */
+  changes: ReadonlyMap<string, DoseChange>;
   /** The days with an activity or a workout, for the supplements of training days. */
   active: ReadonlySet<DateKey>;
   weighIn: WeighInPlan;
   weight: { kg: number; loggedAt: string | null } | null;
-}): DaySection[] {
-  const sorted = sortMoments(moments, training);
-  const entries = new Map<string, DayEntry[]>(sorted.map((m) => [m.id, []]));
+}): DayEntry[] {
+  const entries: DayEntry[] = [];
 
   if (weighIn.enabled && (weighInDue(weighIn, date) || weight)) {
-    const moment = sorted.find((m) => m.id === weighIn.moment) ?? sorted[0];
-    entries.get(moment.id)?.push({
-      kind: 'weighIn',
-      key: 'weigh-in',
-      kg: weight?.kg ?? null,
-      loggedAt: weight?.loggedAt ?? null,
-      done: weight !== null,
-    });
+    const at = clockOn(date, weight?.loggedAt ?? null) ?? weighIn.time;
+    entries.push({ kind: 'weighIn', key: 'weigh-in', at, kg: weight?.kg ?? null, loggedAt: weight?.loggedAt ?? null, done: weight !== null, skipped: false });
   }
 
   for (const supplement of supplements) {
-    if (supplement.archived) continue;
-    const due = dosesDue(supplement, date, active);
-    const moment = momentOf(supplement, sorted, training);
-    if (!moment) continue;
-    for (let index = 0; index < due; index++) {
+    const due = supplement.archived ? 0 : dosesDue(supplement, date, active);
+    const indexes = new Set(Array.from({ length: due }, (_, i) => i));
+    for (const key of taken.keys()) {
+      const [id, index] = key.split(':').map(Number);
+      if (id === supplement.id) indexes.add(index);
+    }
+    for (const index of [...indexes].sort((a, b) => a - b)) {
       const takenAt = taken.get(`${supplement.id}:${index}`) ?? null;
-      entries.get(moment.id)?.push({
+      const change = changes.get(`${supplement.id}:${date}:${index}`);
+      const planned = change?.time ?? supplement.times[index] ?? supplement.times[0] ?? '08:00';
+      entries.push({
         kind: 'supplement',
         key: `s${supplement.id}:${index}`,
         supplement,
         index,
+        at: clockOn(date, takenAt) ?? planned,
+        planned,
         takenAt,
-        time: supplement.moment ? null : supplement.reminder,
         done: takenAt !== null,
+        skipped: takenAt === null && change?.skipped === true,
       });
     }
   }
 
-  return sorted
-    .map((moment) => ({ moment, time: momentTime(moment, training), entries: entries.get(moment.id) ?? [] }))
-    .filter((section) => section.entries.length > 0);
+  return entries.sort((a, b) => (a.at === b.at ? (a.key < b.key ? -1 : 1) : a.at < b.at ? -1 : 1));
 }
 
-/** How much of the day is done: the entries plus its activities. */
-export function dayProgress(sections: readonly DaySection[], activities: { done: number; total: number }): { done: number; total: number } {
+/** How much of the day is done: the entries plus its activities. What was skipped does not count. */
+export function dayProgress(entries: readonly DayEntry[], activities: { done: number; total: number }): { done: number; total: number } {
   let done = activities.done;
   let total = activities.total;
-  for (const section of sections) {
-    for (const entry of section.entries) {
-      total += 1;
-      if (entry.done) done += 1;
-    }
+  for (const entry of entries) {
+    if (entry.skipped) continue;
+    total += 1;
+    if (entry.done) done += 1;
   }
   return { done, total };
 }

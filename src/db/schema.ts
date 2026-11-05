@@ -337,6 +337,28 @@ export const MIGRATIONS: readonly Migration[] = [
   // 11: a program day's symbol, picked by hand; none means the one its name suggests.
   `ALTER TABLE program_days ADD COLUMN icon TEXT;`,
   `ALTER TABLE workout_sets ADD COLUMN started_at TEXT;`,
+  // 13: the calendar without moments. A supplement has its own times and how often it repeats, and a
+  // dose can be moved or skipped on a day; a team's matches come from its published calendar.
+  `
+  ALTER TABLE supplements ADD COLUMN times TEXT;
+  ALTER TABLE supplements ADD COLUMN every_days INTEGER;
+  ALTER TABLE supplements ADD COLUMN once_on TEXT;
+  ALTER TABLE supplements ADD COLUMN remind INTEGER;
+  UPDATE supplements SET schedule = 'every', every_days = 2 WHERE schedule = 'alternate';
+  CREATE TABLE supplement_day (
+    supplement_id INTEGER NOT NULL REFERENCES supplements (id) ON DELETE CASCADE,
+    date TEXT NOT NULL,
+    dose_index INTEGER NOT NULL,
+    time TEXT,
+    skipped INTEGER,
+    PRIMARY KEY (supplement_id, date, dose_index)
+  );
+  ALTER TABLE activities ADD COLUMN source_uid TEXT;
+  ALTER TABLE activities ADD COLUMN title TEXT;
+  ALTER TABLE activities ADD COLUMN location TEXT;
+  ALTER TABLE activities ADD COLUMN map_url TEXT;
+  CREATE UNIQUE INDEX activities_source_uid ON activities (source_uid) WHERE source_uid IS NOT NULL;
+  `,
 ];
 
 export const SCHEMA_VERSION = MIGRATIONS.length;

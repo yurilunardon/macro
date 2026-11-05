@@ -2,7 +2,7 @@
  * Supplements: what to take on which days, how much is left and what it costs. Pure, so the
  * counts behind the calendar and the report are tested without a database.
  */
-import { daysBetween, weekdayOf, type DateKey } from './dates';
+import { daysBetween, formatShortDate, weekdayOf, type DateKey } from './dates';
 import { formatNumber } from './format';
 import { formatWeekdays } from './calendar';
 
@@ -27,18 +27,20 @@ export function isDoseUnit(value: unknown): value is DoseUnit {
 
 /**
  * - daily: every day
- * - alternate: every other day, counting from the day it was added
+ * - every: every `everyDays` days, counting from the day it was added
  * - weekdays: on some days of the week
  * - active: on the days with an activity or a workout
+ * - once: on one day only, `onceOn`
  * - asNeeded: never due, ticked when taken
  */
-export type SupplementSchedule = 'daily' | 'alternate' | 'weekdays' | 'active' | 'asNeeded';
+export type SupplementSchedule = 'daily' | 'every' | 'weekdays' | 'active' | 'once' | 'asNeeded';
 
 export const SCHEDULES: readonly { key: SupplementSchedule; label: string }[] = [
   { key: 'daily', label: 'Ogni giorno' },
-  { key: 'alternate', label: 'A giorni alterni' },
-  { key: 'weekdays', label: 'Alcuni giorni' },
-  { key: 'active', label: 'Nei giorni di attività' },
+  { key: 'every', label: 'Ogni tot giorni' },
+  { key: 'weekdays', label: 'Alcuni giorni della settimana' },
+  { key: 'active', label: 'Quando mi alleno' },
+  { key: 'once', label: 'Una volta sola' },
   { key: 'asNeeded', label: 'Al bisogno' },
 ];
 
@@ -52,14 +54,19 @@ export type Supplement = {
   /** Taken each time, in `unit`. */
   dose: number;
   unit: DoseUnit;
+  /** How many doses a day: one for each of `times`. */
   timesPerDay: number;
   schedule: SupplementSchedule;
   /** For `weekdays`, as Date.getDay(): 0 is Sunday. */
   weekdays: number[];
-  /** The moment of the day it is taken at (see lib/plan), e.g. "lunch". */
-  moment: string | null;
-  /** "08:00": taken at that time instead of a moment, with a reminder. */
-  reminder: string | null;
+  /** For `every`: 2 is every other day. */
+  everyDays: number | null;
+  /** For `once`: the day. */
+  onceOn: DateKey | null;
+  /** When it is meant to be taken, in order: "07:30". */
+  times: string[];
+  /** Whether a notification comes at those times. */
+  remind: boolean;
   /** What a dose holds, e.g. "100 µg D3 · 100 µg K2". */
   contents: string | null;
   /** How to take it, e.g. "Con un pasto che contiene grassi". */
@@ -77,13 +84,19 @@ export type Supplement = {
 export type Purchase = { id: number; supplementId: number; date: DateKey; amount: number; price: number };
 
 /** Doses due on a day: none before the supplement was added, nor for "Al bisogno". */
-export function dosesDue(s: Pick<Supplement, 'schedule' | 'weekdays' | 'timesPerDay' | 'startedOn'>, date: DateKey, active: ReadonlySet<DateKey>): number {
+export function dosesDue(
+  s: Pick<Supplement, 'schedule' | 'weekdays' | 'timesPerDay' | 'startedOn' | 'everyDays' | 'onceOn'>,
+  date: DateKey,
+  active: ReadonlySet<DateKey>,
+): number {
   if (date < s.startedOn) return 0;
   switch (s.schedule) {
     case 'daily':
       return s.timesPerDay;
-    case 'alternate':
-      return daysBetween(s.startedOn, date) % 2 === 0 ? s.timesPerDay : 0;
+    case 'every':
+      return daysBetween(s.startedOn, date) % Math.max(1, s.everyDays ?? 1) === 0 ? s.timesPerDay : 0;
+    case 'once':
+      return date === s.onceOn ? s.timesPerDay : 0;
     case 'weekdays':
       return s.weekdays.includes(weekdayOf(date)) ? s.timesPerDay : 0;
     case 'active':
@@ -99,20 +112,24 @@ export function formatDose(dose: number, unit: DoseUnit): string {
   return `${formatNumber(dose, 2)} ${dose === 1 ? names.one : names.many}`;
 }
 
-/** "Ogni giorno", "2 volte al giorno", "Lun, Mer, Ven", "Nei giorni di attività", "Al bisogno". */
-export function formatSchedule(s: Pick<Supplement, 'schedule' | 'weekdays' | 'timesPerDay'>): string {
+/** "Ogni giorno", "2 volte al giorno", "Ogni 2 giorni", "Lun, Mer, Ven", "Quando ti alleni", "Al bisogno". */
+export function formatSchedule(s: Pick<Supplement, 'schedule' | 'weekdays' | 'timesPerDay' | 'everyDays' | 'onceOn'>): string {
   const times = s.timesPerDay > 1 ? `${s.timesPerDay} volte` : null;
   switch (s.schedule) {
     case 'daily':
       return times ? `${times} al giorno` : 'Ogni giorno';
-    case 'alternate':
-      return times ? `A giorni alterni, ${times}` : 'A giorni alterni';
+    case 'every': {
+      const every = `Ogni ${Math.max(1, s.everyDays ?? 1)} giorni`;
+      return times ? `${every}, ${times}` : every;
+    }
+    case 'once':
+      return s.onceOn ? `Una volta sola, ${formatShortDate(s.onceOn)}` : 'Una volta sola';
     case 'weekdays': {
       const days = s.weekdays.length > 0 ? formatWeekdays(s.weekdays) : 'Nessun giorno';
       return times ? `${days}, ${times}` : days;
     }
     case 'active':
-      return times ? `Nei giorni di attività, ${times}` : 'Nei giorni di attività';
+      return times ? `Quando ti alleni, ${times}` : 'Quando ti alleni';
     case 'asNeeded':
       return 'Al bisogno';
   }
@@ -143,12 +160,14 @@ export function costPerDose(s: Pick<Supplement, 'dose' | 'packageAmount' | 'pack
 }
 
 /** Doses taken on an average day, from the schedule, or from the last weeks when it has none. */
-export function dosesPerDay(s: Pick<Supplement, 'schedule' | 'weekdays' | 'timesPerDay'>, recent: { doses: number; days: number }): number {
+export function dosesPerDay(s: Pick<Supplement, 'schedule' | 'weekdays' | 'timesPerDay' | 'everyDays'>, recent: { doses: number; days: number }): number {
   switch (s.schedule) {
     case 'daily':
       return s.timesPerDay;
-    case 'alternate':
-      return s.timesPerDay / 2;
+    case 'every':
+      return s.timesPerDay / Math.max(1, s.everyDays ?? 1);
+    case 'once':
+      return 0;
     case 'weekdays':
       return (s.timesPerDay * s.weekdays.length) / 7;
     default:
@@ -186,7 +205,7 @@ export type Adherence = { due: number; taken: number };
  * what was due on a day do not make up for another day.
  */
 export function adherence(
-  s: Pick<Supplement, 'id' | 'schedule' | 'weekdays' | 'timesPerDay' | 'startedOn'>,
+  s: Pick<Supplement, 'id' | 'schedule' | 'weekdays' | 'timesPerDay' | 'startedOn' | 'everyDays' | 'onceOn'>,
   taken: ReadonlyMap<string, number>,
   dates: readonly DateKey[],
   active: ReadonlySet<DateKey>,
@@ -235,11 +254,14 @@ export function formatEuro(value: number): string {
 
 export type SupplementReminder = {
   date: DateKey;
+  /** "08:00" */
   time: string;
   title: string;
   body: string;
-  /** The supplements it is about, to mark them as taken from the notification. */
-  ids: number[];
+  /** The doses it is about, to mark them as taken from the notification. */
+  doses: { id: number; index: number }[];
+  /** The evening's, about what was not taken: "Fatti tutti", no "Tra 30 minuti". */
+  evening: boolean;
 };
 
 /** "A", "A e B", "A, B e C". */
@@ -247,15 +269,19 @@ function joinNames(names: readonly string[]): string {
   return names.length <= 1 ? (names[0] ?? '') : `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
 }
 
+/** A dose changed for one day only: moved to another time, or skipped. */
+export type DoseChange = { time: string | null; skipped: boolean };
+
 /**
- * The reminders of the next days: one per time of day set on the supplements, naming the ones
- * due then and not ticked yet; and, at `evening`, one with every supplement of the day still
- * not ticked, which also stands in for the reminders set at that time or later. Times already
- * gone are left out.
+ * The reminders of the next days: one per time of day, naming what is due then and not ticked yet,
+ * for the supplements that ask for it; and, at `evening`, one with what should have been taken by
+ * then and was not. What falls later that evening has its own and is not nagged about before it.
+ * Times already gone are left out.
  */
 export function supplementReminders(
   supplements: readonly Supplement[],
-  taken: ReadonlyMap<string, number>,
+  taken: ReadonlySet<string>,
+  changes: ReadonlyMap<string, DoseChange>,
   busy: ReadonlySet<DateKey>,
   dates: readonly DateKey[],
   now: { date: DateKey; time: string },
@@ -263,36 +289,43 @@ export function supplementReminders(
 ): SupplementReminder[] {
   const reminders: SupplementReminder[] = [];
   for (const date of dates) {
-    const missing = supplements.filter((s) => {
-      if (s.archived) return false;
-      const due = dosesDue(s, date, busy);
-      return due > 0 && (taken.get(`${s.id}:${date}`) ?? 0) < due;
-    });
     const gone = (time: string) => date === now.date && time <= now.time;
-    const byTime = new Map<string, Supplement[]>();
-    for (const s of missing) {
-      // The evening reminder, when still to come, covers the ones set at its time or later.
-      if (s.reminder === null || gone(s.reminder) || (evening !== null && !gone(evening) && s.reminder >= evening)) continue;
-      byTime.set(s.reminder, [...(byTime.get(s.reminder) ?? []), s]);
+    const byTime = new Map<string, { supplement: Supplement; index: number }[]>();
+    const late: { supplement: Supplement; index: number }[] = [];
+    for (const supplement of supplements) {
+      if (supplement.archived || !supplement.remind) continue;
+      const due = dosesDue(supplement, date, busy);
+      for (let index = 0; index < due; index++) {
+        const key = `${supplement.id}:${date}:${index}`;
+        const change = changes.get(key);
+        if (taken.has(key) || change?.skipped) continue;
+        const time = change?.time ?? supplement.times[index] ?? supplement.times[0];
+        if (!time) continue;
+        if (!gone(time)) byTime.set(time, [...(byTime.get(time) ?? []), { supplement, index }]);
+        if (evening !== null && time < evening) late.push({ supplement, index });
+      }
     }
     for (const [time, list] of [...byTime.entries()].sort()) {
+      const single = list.length === 1 ? list[0].supplement : null;
       reminders.push({
         date,
         time,
-        title: 'Integratori',
-        body: list.map((s) => `${s.name} ${formatDose(s.dose, s.unit)}`).join(' · '),
-        ids: list.map((s) => s.id),
+        title: single ? single.name : 'Integratori',
+        body: single ? formatDose(single.dose, single.unit) : list.map((d) => `${d.supplement.name} ${formatDose(d.supplement.dose, d.supplement.unit)}`).join(' · '),
+        doses: list.map((d) => ({ id: d.supplement.id, index: d.index })),
+        evening: false,
       });
     }
-    if (evening !== null && missing.length > 0 && !gone(evening)) {
+    if (evening !== null && late.length > 0 && !gone(evening)) {
       reminders.push({
         date,
         time: evening,
-        title: 'Integratori',
-        body: `Oggi non hai ancora preso ${joinNames(missing.map((s) => s.name))}.`,
-        ids: missing.map((s) => s.id),
+        title: 'Non hai ancora preso',
+        body: joinNames([...new Set(late.map((d) => d.supplement.name))]),
+        doses: late.map((d) => ({ id: d.supplement.id, index: d.index })),
+        evening: true,
       });
     }
   }
-  return reminders;
+  return reminders.sort((a, b) => (a.date === b.date ? (a.time < b.time ? -1 : a.time > b.time ? 1 : 0) : a.date < b.date ? -1 : 1));
 }

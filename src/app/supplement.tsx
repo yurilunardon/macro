@@ -1,10 +1,11 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import { ActivityIndicator, Alert, Platform, ScrollView, StyleSheet, Switch, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
+import { DatePicker } from '@/components/date-picker';
 import { ActionRow, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Chip, FieldRow } from '@/components/form';
 import { Icon } from '@/components/icon';
@@ -16,7 +17,6 @@ import { toast } from '@/components/toast';
 import { WeekdayPicker } from '@/components/weekday-picker';
 import { Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
-import { getMoments } from '@/db/plan';
 import {
   addPurchase,
   addSupplement,
@@ -31,7 +31,7 @@ import {
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { parseTimeKey, timeKey } from '@/lib/calendar';
-import { formatShortDate } from '@/lib/dates';
+import { formatShortDate, type DateKey } from '@/lib/dates';
 import { formatNumber, numberToInput, parseDecimal } from '@/lib/format';
 import {
   costPerDose,
@@ -91,14 +91,16 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
   const [name, setName] = useState(supplement?.name ?? '');
   const [dose, setDose] = useState(numberToInput(supplement?.dose ?? null, 2));
   const [unit, setUnit] = useState<DoseUnit>(supplement?.unit ?? 'g');
-  const [times, setTimes] = useState(supplement?.timesPerDay ?? 1);
+  const [times, setTimes] = useState<string[]>(supplement && supplement.times.length > 0 ? supplement.times : ['08:00']);
   const [schedule, setSchedule] = useState<SupplementSchedule>(supplement?.schedule ?? 'daily');
   const [weekdays, setWeekdays] = useState<number[]>(supplement?.weekdays ?? []);
-  const [moment, setMoment] = useState<string | null>(supplement ? supplement.moment : 'morning');
-  const [reminder, setReminder] = useState<string | null>(supplement?.reminder ?? null);
+  const [everyDays, setEveryDays] = useState(supplement?.everyDays ?? 2);
+  const [onceOn, setOnceOn] = useState<DateKey>(supplement?.onceOn ?? today);
+  const [remind, setRemind] = useState(supplement?.remind ?? true);
+  // Name, dose, how often and when: the rest stays out of the way until wanted.
+  const [details, setDetails] = useState(false);
   const [contents, setContents] = useState(supplement?.contents ?? '');
   const [note, setNote] = useState(supplement?.note ?? '');
-  const { data: moments } = useLiveQuery('moments', getMoments, ['settings']);
   const [packageAmount, setPackageAmount] = useState(numberToInput(supplement?.packageAmount ?? null, 2));
   // Prices keep their cents: 24,90, not 24,9.
   const [packagePrice, setPackagePrice] = useState(
@@ -142,12 +144,12 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
       name,
       dose: doseValue,
       unit,
-      timesPerDay: times,
       schedule,
       weekdays: schedule === 'weekdays' ? weekdays : [],
-      // A moment, or a time of its own: never both.
-      moment: schedule === 'asNeeded' ? null : moment,
-      reminder: schedule === 'asNeeded' || moment !== null ? null : (reminder ?? '08:00'),
+      everyDays: schedule === 'every' ? everyDays : null,
+      onceOn: schedule === 'once' ? onceOn : null,
+      times: schedule === 'asNeeded' ? [] : times,
+      remind: schedule !== 'asNeeded' && remind,
       contents,
       note,
       packageAmount: amountValue,
@@ -157,8 +159,8 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
     else await addSupplement(db, input, today);
     haptics.success();
     router.back();
-    // The evening reminder of the ones not taken is on from the start: ask once to send it.
-    if (!supplement && schedule !== 'asNeeded' && Platform.OS === 'ios') void ensureNotificationPermission().catch(() => {});
+    // The reminder is on from the start: ask once to send it.
+    if (schedule !== 'asNeeded' && remind && Platform.OS === 'ios') void ensureNotificationPermission().catch(() => {});
   };
 
   const buy = async () => {
@@ -229,14 +231,6 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
             </View>
           </MenuButton>
         </View>
-        <View style={styles.row}>
-          <AppText style={styles.flex}>Volte al giorno</AppText>
-          <StepButton symbol="minus" label="Una volta in meno" disabled={times <= 1} onPress={() => setTimes(Math.max(1, times - 1))} />
-          <AppText variant="headline" numeric style={styles.count}>
-            {times}
-          </AppText>
-          <StepButton symbol="plus" label="Una volta in più" disabled={times >= 4} onPress={() => setTimes(Math.min(4, times + 1))} />
-        </View>
       </ListGroup>
 
       <SectionTitle>Quando</SectionTitle>
@@ -267,69 +261,62 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
           }
         />
         {schedule === 'weekdays' ? <WeekdayPicker value={weekdays} onChange={setWeekdays} /> : null}
+        {schedule === 'every' ? (
+          <View style={styles.row}>
+            <AppText style={styles.flex}>Ogni</AppText>
+            <StepButton symbol="minus" label="Un giorno in meno" disabled={everyDays <= 2} onPress={() => setEveryDays(Math.max(2, everyDays - 1))} />
+            <AppText variant="headline" numeric style={styles.count}>
+              {everyDays}
+            </AppText>
+            <StepButton symbol="plus" label="Un giorno in più" disabled={everyDays >= 30} onPress={() => setEveryDays(Math.min(30, everyDays + 1))} />
+            <AppText tone="textSecondary">giorni</AppText>
+          </View>
+        ) : null}
+        {schedule === 'once' ? <Row title="Giorno" chevron={false} detail={<DatePicker value={onceOn} onChange={setOnceOn} accessibilityLabel="Giorno" />} /> : null}
+        {schedule !== 'asNeeded'
+          ? times.map((time, index) => (
+              <Row
+                key={index}
+                title={times.length > 1 ? `Ora ${index + 1}` : 'Ora'}
+                chevron={false}
+                detail={
+                  <View style={styles.time}>
+                    <TimePicker
+                      {...parseTimeKey(time)}
+                      accessibilityLabel={`Ora ${index + 1}`}
+                      onChange={(t) => setTimes(times.map((x, i) => (i === index ? timeKey(t.hour, t.minute) : x)))}
+                    />
+                    {times.length > 1 ? <StepButton symbol="minus" label={`Elimina ora ${index + 1}`} onPress={() => setTimes(times.filter((_, i) => i !== index))} /> : null}
+                  </View>
+                }
+              />
+            ))
+          : null}
+        {schedule !== 'asNeeded' && times.length < 4 ? <ActionRow label="Aggiungi un’altra ora" symbol="plus" onPress={() => setTimes([...times, nextTime(times)])} /> : null}
         {schedule !== 'asNeeded' ? (
           <Row
-            title="Momento"
+            title="Ricordamelo"
             chevron={false}
-            detail={
-              <MenuButton
-                icon="clock"
-                accessibilityLabel="Momento della giornata"
-                groups={[
-                  {
-                    actions: (moments ?? []).map((m) => ({
-                      label: m.name,
-                      checked: m.id === moment,
-                      onPress: () => setMoment(m.id),
-                    })),
-                  },
-                  {
-                    actions: [
-                      {
-                        label: 'Un orario preciso',
-                        checked: moment === null,
-                        onPress: () => {
-                          setMoment(null);
-                          setReminder((r) => r ?? '08:00');
-                        },
-                      },
-                    ],
-                  },
-                ]}>
-                <View style={styles.pick}>
-                  <AppText tone="accent" numberOfLines={1}>
-                    {moment === null ? 'Un orario preciso' : ((moments ?? []).find((m) => m.id === moment)?.name ?? 'Mattina')}
-                  </AppText>
-                  <Icon name="chevron.up.chevron.down" size={12} tone="accent" />
-                </View>
-              </MenuButton>
-            }
-          />
-        ) : null}
-        {schedule !== 'asNeeded' && moment === null ? (
-          <Row
-            title="Ora"
-            chevron={false}
-            detail={
-              <TimePicker
-                {...parseTimeKey(reminder ?? '08:00')}
-                accessibilityLabel="Ora in cui si prende"
-                onChange={(t) => setReminder(timeKey(t.hour, t.minute))}
-              />
-            }
+            detail={<Switch value={remind} onValueChange={setRemind} trackColor={{ true: theme.accent }} accessibilityLabel="Ricordamelo" />}
           />
         ) : null}
       </ListGroup>
       <SectionFooter>
-        {schedule === 'active'
-          ? 'Nei giorni con un allenamento o un’attività in calendario.'
-          : schedule === 'alternate'
-            ? 'Un giorno sì e uno no, a partire da quando l’hai aggiunto.'
-            : schedule === 'asNeeded'
-              ? 'Non è mai dovuto: lo spunti quando lo prendi.'
-              : 'Lo trovi da spuntare nel calendario, nel suo momento della giornata.'}
+        {schedule === 'asNeeded'
+          ? 'Lo segni quando lo prendi: tieni premuta un’ora nel calendario.'
+          : schedule === 'active'
+            ? 'Nei giorni con un allenamento o un’attività in calendario.'
+            : remind
+              ? `Alle ${times[0]}. Se non l’hai preso, di nuovo la sera.`
+              : 'Lo trovi nel calendario, senza notifica.'}
       </SectionFooter>
 
+      <ListGroup style={styles.details}>
+        <Row title="Dettagli" subtitle={details ? undefined : 'Nota, confezione, scorte'} detail={<Icon name={details ? 'chevron.up' : 'chevron.down'} size={14} tone="textSecondary" />} chevron={false} onPress={() => setDetails(!details)} />
+      </ListGroup>
+
+      {details ? (
+      <>
       <SectionTitle>Come prenderlo</SectionTitle>
       <ListGroup>
         <FieldRow label="Contiene" value={contents} onChangeText={setContents} placeholder="Es. 100 µg D3" autoCapitalize="none" />
@@ -359,7 +346,7 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
       </ListGroup>
       <SectionFooter>
         {each !== null
-          ? `${formatEuro(each)} a dose${schedule === 'daily' ? ` · circa ${formatEuro(each * times * 30)} al mese` : ''}.`
+          ? `${formatEuro(each)} a dose${schedule === 'daily' ? ` · circa ${formatEuro(each * times.length * 30)} al mese` : ''}.`
           : 'Con quantità e prezzo sai quanto spendi e quando finisce.'}
       </SectionFooter>
 
@@ -398,14 +385,24 @@ function SupplementForm({ supplement }: { supplement: Supplement | null }) {
             <ActionRow label="Ho comprato una confezione" symbol="cart.badge.plus" onPress={() => void buy()} />
           </ListGroup>
           <SectionFooter>Ogni dose spuntata scala dalle scorte. Gli acquisti fanno la spesa nel report.</SectionFooter>
-
-          <View style={styles.actions}>
-            <Button title="Elimina integratore" variant="destructive" onPress={remove} />
-          </View>
         </>
+      ) : null}
+      </>
+      ) : null}
+
+      {supplement ? (
+        <View style={styles.actions}>
+          <Button title="Elimina integratore" variant="destructive" onPress={remove} />
+        </View>
       ) : null}
     </ScrollView>
   );
+}
+
+/** The time offered for one more dose: some hours after the last, within the day. */
+function nextTime(times: readonly string[]): string {
+  const last = parseTimeKey(times[times.length - 1] ?? '08:00');
+  return timeKey(Math.min(last.hour + 6, 23), last.minute);
 }
 
 /** The amount, typed in the row before its unit. */
@@ -426,6 +423,8 @@ function FieldInline({ value, onChangeText, invalid }: { value: string; onChange
 }
 
 const styles = StyleSheet.create({
+  time: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  details: { marginTop: Spacing.lg },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   content: { padding: Spacing.lg, paddingBottom: Spacing.xxl * 2 },
   flex: { flex: 1 },

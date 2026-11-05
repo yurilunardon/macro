@@ -165,6 +165,12 @@ export function dayInMonth(date: DateKey, direction: number, today: DateKey): Da
   return day > to ? to : day;
 }
 
+/** The weeks of `monthGrid` with days of the month, as the month draws them. */
+export function monthGridWeeks(month: MonthKey): DateKey[][] {
+  const days = monthGrid(month);
+  return Array.from({ length: 6 }, (_, i) => days.slice(i * 7, i * 7 + 7)).filter((week) => week.some((day) => monthOf(day) === month));
+}
+
 /** "Ottobre 2026". */
 export function formatMonth(month: MonthKey): string {
   return capitalize(monthYear.format(fromDateKey(`${month}-01`)));

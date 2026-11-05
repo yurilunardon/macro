@@ -6,27 +6,21 @@ import { ListGroup, Row, SectionFooter } from '@/components/card';
 import { Icon } from '@/components/icon';
 import { MenuButton } from '@/components/menu-button';
 import { ScreenScroll } from '@/components/screen';
+import { TimePicker } from '@/components/time-picker';
 import { WeekdayPicker } from '@/components/weekday-picker';
 import { useLiveQuery } from '@/db/live';
-import { getMoments, getWeighInPlan } from '@/db/plan';
+import { getWeighInPlan } from '@/db/plan';
 import { setSetting } from '@/db/settings';
 import { useTheme } from '@/hooks/use-theme';
+import { parseTimeKey, timeKey } from '@/lib/calendar';
 import type { WeighInPlan } from '@/lib/plan';
 
-/** When the weigh-in is in the day's checklist: every day or some days, at a moment of the day. */
+/** When the weigh-in is in the day: every day or some days, at a time. */
 export default function WeighInScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
-  const { data } = useLiveQuery(
-    'weigh-in-plan',
-    async (database) => {
-      const [plan, moments] = await Promise.all([getWeighInPlan(database), getMoments(database)]);
-      return { plan, moments };
-    },
-    ['settings'],
-  );
-  if (!data) return <ScreenScroll>{null}</ScreenScroll>;
-  const { plan, moments } = data;
+  const { data: plan } = useLiveQuery('weigh-in-plan', getWeighInPlan, ['settings']);
+  if (!plan) return <ScreenScroll>{null}</ScreenScroll>;
   const save = (fields: Partial<WeighInPlan>) => void setSetting(db, 'weighInPlan', { ...plan, ...fields });
 
   return (
@@ -64,19 +58,9 @@ export default function WeighInScreen() {
         {plan.enabled && plan.schedule === 'weekdays' ? <WeekdayPicker value={plan.weekdays} onChange={(weekdays) => save({ weekdays })} /> : null}
         {plan.enabled ? (
           <Row
-            title="Momento"
+            title="Ora"
             chevron={false}
-            detail={
-              <MenuButton
-                icon="clock"
-                accessibilityLabel="Momento della pesata"
-                groups={[{ actions: moments.map((m) => ({ label: m.name, checked: m.id === plan.moment, onPress: () => save({ moment: m.id }) })) }]}>
-                <View style={styles.pick}>
-                  <AppText tone="accent">{moments.find((m) => m.id === plan.moment)?.name ?? moments[0]?.name}</AppText>
-                  <Icon name="chevron.up.chevron.down" size={12} tone="accent" />
-                </View>
-              </MenuButton>
-            }
+            detail={<TimePicker {...parseTimeKey(plan.time)} accessibilityLabel="Ora della pesata" onChange={(t) => save({ time: timeKey(t.hour, t.minute) })} />}
           />
         ) : null}
       </ListGroup>

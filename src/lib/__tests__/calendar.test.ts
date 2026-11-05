@@ -3,13 +3,20 @@ import { describe, expect, it } from 'vitest';
 import {
   activeDates,
   buildAgenda,
+  DEFAULT_WORK_HOURS,
+  describeVolley,
+  duringWork,
   expandActivities,
   formatMinutes,
   formatWeekdays,
+  moveChoices,
   rotateGymDays,
   startWarning,
   summarizeActivity,
+  volleyClashes,
+  volleyInTheWay,
   weekStreak,
+  workSpan,
   type ActivityPlan,
   type ActivityRecord,
   type ActivityType,
@@ -270,8 +277,10 @@ const supplement = (fields: Partial<Supplement>): Supplement => ({
   timesPerDay: 1,
   schedule: 'daily',
   weekdays: [],
-  moment: null,
-  reminder: null,
+  everyDays: null,
+  onceOn: null,
+  times: ['08:00'],
+  remind: true,
   contents: null,
   note: null,
   packageAmount: 500,
@@ -363,38 +372,123 @@ describe('supplementReminders', () => {
     const { supplementReminders } = await import('../supplements');
     const omega = supplement({ id: 2, name: 'Omega 3', dose: 2, unit: 'capsule' });
     const list = supplementReminders(
-      [supplement({ reminder: '08:00' }), { ...omega, reminder: '08:00' }, supplement({ id: 3, name: 'Caffeina', schedule: 'active', reminder: '17:00', unit: 'tablet', dose: 1 })],
-      new Map([['1:2026-10-29', 1]]),
+      [supplement({}), omega, supplement({ id: 3, name: 'Caffeina', schedule: 'active', times: ['17:00'], unit: 'tablet', dose: 1 })],
+      new Set(['1:2026-10-29:0']),
+      new Map(),
       new Set(['2026-10-29']),
       ['2026-10-28', '2026-10-29'],
       { date: '2026-10-28', time: '09:30' },
     );
     expect(list).toEqual([
-      { date: '2026-10-29', time: '08:00', title: 'Integratori', body: 'Omega 3 2 capsule', ids: [2] },
-      { date: '2026-10-29', time: '17:00', title: 'Integratori', body: 'Caffeina 1 compressa', ids: [3] },
+      { date: '2026-10-29', time: '08:00', title: 'Omega 3', body: '2 capsule', doses: [{ id: 2, index: 0 }], evening: false },
+      { date: '2026-10-29', time: '17:00', title: 'Caffeina', body: '1 compressa', doses: [{ id: 3, index: 0 }], evening: false },
     ]);
   });
 
-  it('lists in the evening every supplement of the day not ticked yet', async () => {
+  it('names them together when they fall at the same time', async () => {
+    const { supplementReminders } = await import('../supplements');
+    const list = supplementReminders([supplement({}), supplement({ id: 2, name: 'Omega 3', dose: 2, unit: 'capsule' })], new Set(), new Map(), new Set(), ['2026-10-29'], { date: '2026-10-28', time: '09:30' });
+    expect(list).toEqual([{ date: '2026-10-29', time: '08:00', title: 'Integratori', body: 'Creatina 5 g · Omega 3 2 capsule', doses: [{ id: 1, index: 0 }, { id: 2, index: 0 }], evening: false }]);
+  });
+
+  it('says in the evening what should have been taken by then, not what is still to come', async () => {
     const { supplementReminders } = await import('../supplements');
     const creatine = supplement({ id: 1, name: 'Creatina' });
-    const omega = supplement({ id: 2, name: 'Omega 3', reminder: '08:00' });
-    const vitaminC = supplement({ id: 3, name: 'Vitamina C', reminder: '22:00' });
-    const protein = supplement({ id: 4, name: 'Proteine', schedule: 'asNeeded' });
-    const list = supplementReminders(
-      [creatine, omega, vitaminC, protein],
-      new Map([['1:2026-10-29', 1]]),
-      new Set(),
-      ['2026-10-28', '2026-10-29'],
-      { date: '2026-10-28', time: '21:45' },
-      '21:30',
-    );
-    // Today's evening reminder is gone, so the one at 22:00 stays; tomorrow the evening covers it.
+    const omega = supplement({ id: 2, name: 'Omega 3', times: ['13:00'] });
+    const magnesium = supplement({ id: 3, name: 'Magnesio', times: ['23:30'] });
+    const protein = supplement({ id: 4, name: 'Proteine', schedule: 'asNeeded', times: [] });
+    const list = supplementReminders([creatine, omega, magnesium, protein], new Set(['1:2026-10-29:0']), new Map(), new Set(), ['2026-10-29'], { date: '2026-10-28', time: '21:45' }, '21:30');
     expect(list).toEqual([
-      { date: '2026-10-28', time: '22:00', title: 'Integratori', body: 'Vitamina C 5 g', ids: [3] },
-      { date: '2026-10-29', time: '08:00', title: 'Integratori', body: 'Omega 3 5 g', ids: [2] },
-      { date: '2026-10-29', time: '21:30', title: 'Integratori', body: 'Oggi non hai ancora preso Omega 3 e Vitamina C.', ids: [2, 3] },
+      { date: '2026-10-29', time: '13:00', title: 'Omega 3', body: '5 g', doses: [{ id: 2, index: 0 }], evening: false },
+      { date: '2026-10-29', time: '21:30', title: 'Non hai ancora preso', body: 'Omega 3', doses: [{ id: 2, index: 0 }], evening: true },
+      { date: '2026-10-29', time: '23:30', title: 'Magnesio', body: '5 g', doses: [{ id: 3, index: 0 }], evening: false },
     ]);
+  });
+
+  it('leaves out times gone, doses skipped, and those that asked for no reminder; follows a dose moved', async () => {
+    const { supplementReminders } = await import('../supplements');
+    const list = supplementReminders(
+      [supplement({ id: 1 }), supplement({ id: 2, name: 'Zinco', times: ['20:00'] }), supplement({ id: 3, name: 'Muto', remind: false }), supplement({ id: 4, name: 'Spostato', times: ['09:00'] })],
+      new Set(),
+      new Map([
+        ['2:2026-10-28:0', { time: null, skipped: true }],
+        ['4:2026-10-28:0', { time: '12:00', skipped: false }],
+      ]),
+      new Set(),
+      ['2026-10-28'],
+      { date: '2026-10-28', time: '09:30' },
+    );
+    expect(list.map((r) => [r.time, r.title])).toEqual([['12:00', 'Spostato']]);
+  });
+});
+
+describe('the rules of volleyball', () => {
+  const kinds = { gym: 1, match: 2, practice: 3 };
+  const types = new Map([
+    [1, { id: 1, ref: 'gym', name: 'Palestra', symbol: 's', color: 'green' as const, minutes: 90, archived: false }],
+    [2, { id: 2, ref: 'match', name: 'Partita', symbol: 's', color: 'red' as const, minutes: 120, archived: false }],
+    [3, { id: 3, ref: 'volleyball', name: 'Pallavolo', symbol: 's', color: 'orange' as const, minutes: 120, archived: false }],
+  ]);
+  const occ = (typeId: number, date: string, time: string | null, minutes = 90): Occurrence => ({ key: `${typeId}:${date}:${time}`, recordId: null, planId: 1, typeId, date, time, minutes, dayId: null, note: null, status: 'planned' });
+  const agendaOf = (occurrences: Occurrence[], today = '2026-11-05') => buildAgenda({ occurrences, workouts: [], gymTypeId: 1, today, rotation: null, kinds });
+
+  it('takes the practice off a day with a match, wherever it is', () => {
+    const agenda = agendaOf([occ(3, '2026-11-12', '21:00'), occ(2, '2026-11-12', '21:00'), occ(3, '2026-11-10', '21:00')]);
+    expect(agenda.get('2026-11-12')?.map((i) => (i.kind === 'activity' ? i.occurrence.typeId : 0))).toEqual([2]);
+    expect(agenda.get('2026-11-10')).toHaveLength(1);
+  });
+
+  it('finds a workout on a match day, at any time, and one at the same time as a practice', () => {
+    const agenda = agendaOf([occ(1, '2026-11-27', '21:00'), occ(2, '2026-11-27', '21:00'), occ(1, '2026-12-05', '10:00'), occ(2, '2026-12-05', '19:30'), occ(1, '2026-11-17', '21:00'), occ(3, '2026-11-17', '21:00', 120), occ(1, '2026-11-19', '18:30'), occ(3, '2026-11-19', '21:00', 120), occ(1, '2026-11-20', '21:00')]);
+    const clashes = volleyClashes(agenda, kinds, '2026-11-05', types);
+    expect(clashes.map((c) => [c.date, c.match])).toEqual([
+      ['2026-11-17', false],
+      ['2026-11-27', true],
+      ['2026-12-05', true],
+    ]);
+  });
+
+  it('forgets what is past or skipped', () => {
+    const skipped = { ...occ(1, '2026-11-27', '21:00'), status: 'skipped' as const };
+    const agenda = agendaOf([skipped, occ(2, '2026-11-27', '21:00'), occ(1, '2026-10-23', '21:00'), occ(2, '2026-10-23', '21:00')]);
+    expect(volleyClashes(agenda, kinds, '2026-11-05', types)).toEqual([]);
+  });
+
+  it('says what is in the way of a time', () => {
+    const items = agendaOf([occ(3, '2026-11-19', '21:00', 120)]).get('2026-11-19') ?? [];
+    expect(volleyInTheWay(items, kinds, 21 * 60 + 30, 90)?.match).toBe(false);
+    expect(volleyInTheWay(items, kinds, 18 * 60 + 30, 90)).toBeNull();
+    expect(describeVolley('2026-11-19', { occurrence: occ(3, '2026-11-19', '21:00'), match: false })).toBe('Giovedì 19 c’è pallavolo alle 21:00');
+  });
+
+  it('offers free days first, the first after it before those before it, volleyball last', () => {
+    const gym = occ(1, '2026-11-27', '21:00');
+    const agenda = agendaOf(
+      [gym, occ(2, '2026-11-27', '21:00'), occ(3, '2026-11-24', '21:00', 120), occ(1, '2026-11-25', '21:00'), occ(3, '2026-11-26', '21:00', 120), occ(1, '2026-11-29', '17:00'), occ(2, '2026-12-01', '21:00')],
+      '2026-11-23',
+    );
+    const choices = moveChoices({ agenda, kinds, types, dayNames: new Map(), workHours: DEFAULT_WORK_HOURS, from: '2026-11-27', today: '2026-11-23', time: '21:00', minutes: 90, ignore: gym.key, span: 4 });
+    expect(choices.map((c) => [c.date, c.label, c.blocked])).toEqual([
+      ['2026-11-28', 'Libero', false],
+      ['2026-11-30', 'Libero', false],
+      ['2026-11-23', 'Libero', false],
+      ['2026-11-29', 'Palestra alle 17:00', false],
+      ['2026-11-25', 'Palestra alle 21:00', false],
+      ['2026-11-26', 'Pallavolo alle 21:00', true],
+      ['2026-11-24', 'Pallavolo alle 21:00', true],
+      ['2026-12-01', 'Partita alle 21:00', true],
+    ]);
+  });
+});
+
+describe('work', () => {
+  it('knows the hours at work, on working days', () => {
+    expect(workSpan(DEFAULT_WORK_HOURS, '2026-11-06')).toEqual({ from: 540, to: 1080 });
+    expect(workSpan(DEFAULT_WORK_HOURS, '2026-11-07')).toBeNull();
+    expect(workSpan({ ...DEFAULT_WORK_HOURS, enabled: false }, '2026-11-06')).toBeNull();
+    expect(duringWork(DEFAULT_WORK_HOURS, '2026-11-06', 17 * 60, 90)).toBe(true);
+    expect(duringWork(DEFAULT_WORK_HOURS, '2026-11-06', 18 * 60, 90)).toBe(false);
+    expect(duringWork(DEFAULT_WORK_HOURS, '2026-11-07', 10 * 60, 90)).toBe(false);
   });
 });
 

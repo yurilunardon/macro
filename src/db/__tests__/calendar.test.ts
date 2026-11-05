@@ -59,10 +59,9 @@ const creatine: SupplementInput = {
   name: 'Creatina',
   dose: 5,
   unit: 'g',
-  timesPerDay: 1,
   schedule: 'daily',
   weekdays: [],
-  reminder: '08:00',
+  times: ['08:00'],
   packageAmount: 500,
   packagePrice: 25,
 };
@@ -192,7 +191,7 @@ describe('calendar data', () => {
 
 describe('supplements', () => {
   it('ticks doses and knows what was taken', async () => {
-    const id = await addSupplement(db, { ...creatine, timesPerDay: 2 }, '2026-10-20');
+    const id = await addSupplement(db, { ...creatine, times: ['08:00', '20:00'] }, '2026-10-20');
     await setDoseTaken(db, id, '2026-10-27', 0, true);
     await setDoseTaken(db, id, '2026-10-27', 1, true);
     await setDoseTaken(db, id, '2026-10-27', 1, true);
@@ -200,7 +199,7 @@ describe('supplements', () => {
     await setDoseTaken(db, id, '2026-10-28', 0, false);
     expect(await getDosesTaken(db, '2026-10-01', '2026-10-31')).toEqual(new Map([[`${id}:2026-10-27`, 2]]));
     expect(await getDosesOn(db, '2026-10-27')).toEqual(new Map([[id, new Set([0, 1])]]));
-    expect((await getSupplements(db))[0]).toMatchObject({ name: 'Creatina', timesPerDay: 2, startedOn: '2026-10-20', reminder: '08:00' });
+    expect((await getSupplements(db))[0]).toMatchObject({ name: 'Creatina', timesPerDay: 2, startedOn: '2026-10-20', times: ['08:00', '20:00'] });
   });
 
   it('counts what is left and what a month costs', async () => {
@@ -219,7 +218,7 @@ describe('supplements', () => {
     await deleteSupplement(db, unused);
     await deleteSupplement(db, used);
     expect(await getSupplements(db)).toEqual([]);
-    expect((await getSupplements(db, { archived: true })).map((s) => [s.name, s.archived, s.reminder])).toEqual([['Creatina', true, null]]);
+    expect((await getSupplements(db, { archived: true })).map((s) => [s.name, s.archived, s.remind])).toEqual([['Creatina', true, false]]);
   });
 });
 

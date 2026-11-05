@@ -8,9 +8,12 @@ import type { SupplementReminder } from '@/lib/supplements';
 /** Every notification this app schedules starts with this, so it can replace only its own. */
 const PREFIX = 'macro-';
 
-/** The supplements' notifications carry a "Segna come presi" button, handled in NotificationSync. */
-export const SUPPLEMENTS_CATEGORY = 'supplements';
+/** The supplements' notifications carry buttons, handled in NotificationSync. */
+export const SUPPLEMENTS_CATEGORY = 'supplements-dose';
+export const EVENING_CATEGORY = 'supplements-evening';
 export const TAKEN_ACTION = 'taken';
+export const SNOOZE_ACTION = 'snooze';
+const SNOOZE_MINUTES = 30;
 
 /**
  * iOS keeps at most 64 notifications waiting: the supplements' days ahead take what the daily
@@ -71,10 +74,17 @@ export async function syncNotifications(input: {
   }
 
   if (input.supplements.length > 0) {
-    await Notifications.setNotificationCategoryAsync(SUPPLEMENTS_CATEGORY, [
-      { identifier: TAKEN_ACTION, buttonTitle: 'Segna come presi', options: { opensAppToForeground: true } },
+    // They open the app: with it closed, nothing would run to act on the button.
+    await Promise.all([
+      Notifications.setNotificationCategoryAsync(SUPPLEMENTS_CATEGORY, [
+        { identifier: TAKEN_ACTION, buttonTitle: 'Fatto', options: { opensAppToForeground: true } },
+        { identifier: SNOOZE_ACTION, buttonTitle: `Tra ${SNOOZE_MINUTES} minuti`, options: { opensAppToForeground: true } },
+      ]),
+      Notifications.setNotificationCategoryAsync(EVENING_CATEGORY, [
+        { identifier: TAKEN_ACTION, buttonTitle: 'Fatti tutti', options: { opensAppToForeground: true } },
+      ]),
     ]).catch(() => {
-      // Without the button the notification still opens the calendar.
+      // Without the buttons the notification still opens the calendar.
     });
   }
   for (const r of input.supplements.slice(0, SUPPLEMENT_LIMIT)) {
@@ -83,12 +93,12 @@ export async function syncNotifications(input: {
     at.setHours(hour, minute, 0, 0);
     if (at.getTime() <= Date.now()) continue;
     await Notifications.scheduleNotificationAsync({
-      identifier: `${PREFIX}supplements-${r.date}-${r.time}`,
+      identifier: `${PREFIX}supplements-${r.date}-${r.time}${r.evening ? '-evening' : ''}`,
       content: {
         title: r.title,
         body: r.body,
-        categoryIdentifier: SUPPLEMENTS_CATEGORY,
-        data: { url: '/calendar', date: r.date, supplements: r.ids },
+        categoryIdentifier: r.evening ? EVENING_CATEGORY : SUPPLEMENTS_CATEGORY,
+        data: { url: '/calendar', date: r.date, doses: r.doses },
       },
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: at },
     });
@@ -119,4 +129,12 @@ export async function syncNotifications(input: {
       trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: expiryAt },
     });
   }
+}
+
+/** The same notification again in half an hour. */
+export async function snoozeNotification(content: Notifications.NotificationContent): Promise<void> {
+  await Notifications.scheduleNotificationAsync({
+    content: { title: content.title, body: content.body, categoryIdentifier: SUPPLEMENTS_CATEGORY, data: content.data },
+    trigger: { type: Notifications.SchedulableTriggerInputTypes.TIME_INTERVAL, seconds: SNOOZE_MINUTES * 60 },
+  });
 }

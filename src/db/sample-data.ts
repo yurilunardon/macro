@@ -106,14 +106,14 @@ async function seedCalendar(db: SQLiteDatabase, today: DateKey): Promise<void> {
   }
 
   const supplements = [
-    { name: 'Creatina', dose: 5, unit: 'g', packageAmount: 500, packagePrice: 24.9, reminder: '08:00', bought: [-60, -10] },
-    { name: 'Omega 3', dose: 2, unit: 'capsule', packageAmount: 120, packagePrice: 19.9, reminder: '08:00', bought: [-45] },
-    { name: 'Vitamina C', dose: 1, unit: 'tablet', packageAmount: 60, packagePrice: 7.5, reminder: null, bought: [-50] },
+    { name: 'Creatina', dose: 5, unit: 'g', packageAmount: 500, packagePrice: 24.9, reminder: '07:30', bought: [-60, -10] },
+    { name: 'Omega 3', dose: 2, unit: 'capsule', packageAmount: 120, packagePrice: 19.9, reminder: '13:00', bought: [-45] },
+    { name: 'Vitamina C', dose: 1, unit: 'tablet', packageAmount: 60, packagePrice: 7.5, reminder: '13:00', bought: [-50] },
   ] as const;
   for (const [n, s] of supplements.entries()) {
     const sid = await addSupplement(
       db,
-      { name: s.name, dose: s.dose, unit: s.unit, timesPerDay: 1, schedule: 'daily', weekdays: [], reminder: s.reminder, packageAmount: s.packageAmount, packagePrice: s.packagePrice },
+      { name: s.name, dose: s.dose, unit: s.unit, schedule: 'daily', weekdays: [], times: [s.reminder], packageAmount: s.packageAmount, packagePrice: s.packagePrice },
       addDays(today, -60),
     );
     await db.runAsync('UPDATE supplements SET started_on = ? WHERE id = ?', addDays(today, -60), sid);
@@ -123,7 +123,7 @@ async function seedCalendar(db: SQLiteDatabase, today: DateKey): Promise<void> {
   }
   const protein = await addSupplement(
     db,
-    { name: 'Proteine in polvere', dose: 30, unit: 'g', timesPerDay: 1, schedule: 'asNeeded', weekdays: [], reminder: null, packageAmount: 1000, packagePrice: 34.9 },
+    { name: 'Proteine in polvere', dose: 30, unit: 'g', schedule: 'asNeeded', weekdays: [], times: [], packageAmount: 1000, packagePrice: 34.9 },
     addDays(today, -60),
   );
   await addPurchase(db, { supplementId: protein, date: addDays(today, -20), amount: 1000, price: 34.9 });

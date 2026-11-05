@@ -3,7 +3,8 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { DEFAULT_TARGETS, type Profile, type Targets } from '@/lib/goals';
 import type { DateKey } from '@/lib/dates';
 import { resolveLimits, type NutrientLimits } from '@/lib/limits';
-import type { Moment, WeighInPlan } from '@/lib/plan';
+import type { WorkHours } from '@/lib/calendar';
+import type { WeighInPlan } from '@/lib/plan';
 import type { ReminderSettings } from '@/lib/reminders';
 
 import { notifyChange } from './live';
@@ -32,24 +33,35 @@ type SettingsMap = {
   nextDay: { dayId: number; chosenAt: string };
   /** The month whose report was opened or dismissed from the calendar, "YYYY-MM". */
   reportSeen: string;
-  /** How the calendar shows the days: a week with the times, or the month. */
-  calendarView: 'week' | 'month';
   /** Meals folded in the diary. */
   collapsedMeals: ('breakfast' | 'lunch' | 'dinner' | 'snack')[];
-  /** The moments of the day, when changed from the usual ones. */
-  moments: Moment[];
   /** When to weigh in, when changed from every morning. */
   weighInPlan: WeighInPlan;
+  /** When the user is at work, when changed from the usual hours. */
+  workHours: WorkHours;
+  /** The team's published calendar the matches come from. */
+  feed: Feed;
   /** Which version of the starting plan was put in the calendar. */
   planSeeded: number;
   /** The day the calendar asks to look the plan over again. */
   planReviewOn: DateKey;
-  /** The agreed gym days were tied to their days of the program, which is done only once. */
-  gymDaysPinned: boolean;
   /** How many times the offer of a warm-up was turned down in a row: it stops asking after a few. */
   warmUpSkips: number;
   /** The daily ceilings on sugars, saturated fat and salt, when changed from the usual ones. */
   nutrientLimits: Partial<NutrientLimits>;
+};
+
+/** A published calendar followed, and how the last reading went. */
+export type Feed = {
+  url: string;
+  /** The calendar's own name, e.g. the team's. */
+  name: string | null;
+  /** ISO date and time of the last good reading. */
+  syncedAt: string | null;
+  /** Why the last reading failed; null if it went well. */
+  error: string | null;
+  /** The weekly plan of the matches gave way to this calendar. */
+  tookOver: boolean;
 };
 
 export type SettingKey = keyof SettingsMap;

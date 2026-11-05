@@ -67,7 +67,7 @@ export default function SupplementsScreen() {
                   <Row
                     icon={<ActivityBadge symbol={supplementSymbol(s.unit)} color="indigo" />}
                     title={s.name}
-                    subtitle={[formatDose(s.dose, s.unit), formatSchedule(s), s.reminder].filter(Boolean).join(' · ')}
+                    subtitle={[formatDose(s.dose, s.unit), formatSchedule(s), s.schedule === 'asNeeded' ? null : s.times.join(', ')].filter(Boolean).join(' · ')}
                     detail={
                       days !== null ? (
                         <AppText variant="subhead" tone={days <= 7 ? 'warning' : 'textSecondary'} numeric>
@@ -87,11 +87,11 @@ export default function SupplementsScreen() {
               : 'Con quantità e prezzo della confezione vedi quanto spendi al mese e quando finiscono.'}
           </SectionFooter>
 
-          <SectionTitle>Promemoria</SectionTitle>
+          <SectionTitle>Se non li hai presi</SectionTitle>
           <ListGroup>
             <SupplementRecapRow />
           </ListGroup>
-          <SectionFooter>Ogni integratore può avere anche un suo orario, nella sua scheda.</SectionFooter>
+          <SectionFooter>Una volta sola, con quelli che mancano.</SectionFooter>
         </>
       ) : null}
     </ScreenScroll>

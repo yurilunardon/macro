@@ -56,7 +56,7 @@ async function agreesWithPlan(db: SQLiteDatabase): Promise<boolean> {
   const warning = startWarning({
     today,
     time: clockOf(new Date().toISOString()),
-    agenda: buildAgenda({ occurrences: expandActivities(data.plans, data.records, today, to), workouts: data.workouts, gymTypeId: data.gymTypeId, today, rotation: data.rotation }),
+    agenda: buildAgenda({ occurrences: expandActivities(data.plans, data.records, today, to), workouts: data.workouts, gymTypeId: data.gymTypeId, today, rotation: data.rotation, kinds: data.kinds }),
     gymTypeId: data.gymTypeId,
     hasGymDays: data.plans.some((p) => p.typeId === data.gymTypeId),
   });

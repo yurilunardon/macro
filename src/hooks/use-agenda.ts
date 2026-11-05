@@ -31,6 +31,7 @@ export function useAgenda(from: DateKey, to: DateKey, today: DateKey): Agenda {
             gymTypeId: data.gymTypeId,
             today,
             rotation: data.rotation,
+            kinds: data.kinds,
           })
         : new Map<DateKey, AgendaItem[]>(),
     [data, start, to, today],

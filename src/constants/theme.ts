@@ -20,6 +20,8 @@ export const Colors = {
     accentSoft: '#DCF5E3',
     danger: '#D70015',
     warning: '#B25000',
+    /** Behind a warning that takes room, as a banner. */
+    warningSoft: '#FFF1DB',
     protein: '#D9480F',
     carbs: '#0B7285',
     fat: '#9C36B5',
@@ -47,6 +49,7 @@ export const Colors = {
     accentSoft: '#0E2E18',
     danger: '#FF6961',
     warning: '#FFB340',
+    warningSoft: '#33260D',
     protein: '#FF9F0A',
     carbs: '#3BC9DB',
     fat: '#DA8FFF',

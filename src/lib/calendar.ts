@@ -28,6 +28,9 @@ export function isActivityColor(value: unknown): value is ActivityColor {
 
 /** The built-in kind of the gym: done when a workout is logged in the app. */
 export const GYM_REF = 'gym';
+/** The built-in kinds of volleyball, which comes before the gym. */
+export const PRACTICE_REF = 'volleyball';
+export const MATCH_REF = 'match';
 
 export type ActivityType = {
   id: number;
@@ -99,6 +102,11 @@ export type ActivityRecord = {
   dayId: number | null;
   note: string | null;
   status: StoredStatus;
+  /** From a published calendar: its id there, the event's title and place. */
+  sourceUid?: string | null;
+  title?: string | null;
+  location?: string | null;
+  mapUrl?: string | null;
 };
 
 /** One activity on one date, from a single record or from a plan. */
@@ -114,6 +122,10 @@ export type Occurrence = {
   dayId: number | null;
   note: string | null;
   status: ActivityStatus;
+  sourceUid?: string | null;
+  title?: string | null;
+  location?: string | null;
+  mapUrl?: string | null;
 };
 
 export function planCovers(plan: Pick<ActivityPlan, 'weekdays' | 'startDate' | 'endDate'>, date: DateKey): boolean {
@@ -132,6 +144,10 @@ function occurrenceOf(record: ActivityRecord): Occurrence {
     dayId: record.dayId,
     note: record.note,
     status: record.status === 'cancelled' ? 'skipped' : record.status,
+    sourceUid: record.sourceUid ?? null,
+    title: record.title ?? null,
+    location: record.location ?? null,
+    mapUrl: record.mapUrl ?? null,
   };
 }
 
@@ -217,6 +233,9 @@ export type AgendaItem =
       dayId: number | null;
     };
 
+/** The kinds the rules of volleyball are about. */
+export type VolleyKinds = { gym: number | null; match: number | null; practice: number | null };
+
 /** The active program's days in order and the one to do next, for the gym days to come. */
 export type Rotation = { dayIds: readonly number[]; next: number | null };
 
@@ -232,12 +251,15 @@ export function buildAgenda({
   gymTypeId,
   today,
   rotation,
+  kinds,
 }: {
   occurrences: readonly Occurrence[];
   workouts: readonly WorkoutBrief[];
   gymTypeId: number | null;
   today: DateKey;
   rotation: Rotation | null;
+  /** With these, a day with a match has no practice: the match takes its place. */
+  kinds?: Pick<VolleyKinds, 'match' | 'practice'>;
 }): Map<DateKey, AgendaItem[]> {
   const agenda = new Map<DateKey, AgendaItem[]>();
   const push = (date: DateKey, item: AgendaItem) => {
@@ -253,8 +275,10 @@ export function buildAgenda({
     else workoutsByDate.set(w.date, [w]);
   }
 
+  const matchDays = new Set(occurrences.filter((o) => o.typeId === kinds?.match && o.status !== 'skipped').map((o) => o.date));
   const gymByDate = new Map<DateKey, Occurrence[]>();
   for (const o of occurrences) {
+    if (o.typeId === kinds?.practice && matchDays.has(o.date) && o.status !== 'done') continue;
     if (o.typeId === gymTypeId) {
       const list = gymByDate.get(o.date);
       if (list) list.push(o);
@@ -505,4 +529,155 @@ export function startWarning({
   const nearest = times.reduce((best, t) => (Math.abs(minutesOf(t) - now) < Math.abs(minutesOf(best) - now) ? t : best));
   if (Math.abs(minutesOf(nearest) - now) <= START_MARGIN_MINUTES) return null;
   return { title: `È previsto alle ${nearest}`, message: `Sono le ${time}. Vuoi iniziarlo lo stesso?` };
+}
+
+/** When the user is at work: what falls then is an exception, a day of leave. */
+export type WorkHours = { enabled: boolean; weekdays: number[]; from: string; to: string };
+
+export const DEFAULT_WORK_HOURS: WorkHours = { enabled: true, weekdays: [1, 2, 3, 4, 5], from: '09:00', to: '18:00' };
+
+/** The stretch at work on a day, in minutes from midnight; null on a day off. */
+export function workSpan(hours: WorkHours, date: DateKey): { from: number; to: number } | null {
+  if (!hours.enabled || !hours.weekdays.includes(weekdayOf(date))) return null;
+  const from = minutesOf(hours.from);
+  const to = minutesOf(hours.to);
+  return to > from ? { from, to } : null;
+}
+
+/** Whether this stretch of a day falls at work. */
+export function duringWork(hours: WorkHours, date: DateKey, start: number, minutes: number): boolean {
+  const span = workSpan(hours, date);
+  return span !== null && start < span.to && span.from < start + minutes;
+}
+
+const VOLLEY_DAY_NAME = new Intl.DateTimeFormat('it-IT', { weekday: 'long', day: 'numeric' });
+
+/** "Venerdì 27". */
+export function formatDayName(date: DateKey): string {
+  const [year, month, day] = date.split('-').map(Number);
+  const text = VOLLEY_DAY_NAME.format(new Date(year, month - 1, day));
+  return text.charAt(0).toUpperCase() + text.slice(1);
+}
+
+function planned(item: AgendaItem): item is Extract<AgendaItem, { kind: 'activity' }> {
+  return item.kind === 'activity' && item.status !== 'skipped';
+}
+
+/**
+ * What stops a workout from being at this time on this day, as volleyball comes first: a match
+ * that day, whatever its time, or a practice at the same time. A practice earlier or later that
+ * day leaves room for it. `ignore` is the item being moved.
+ */
+export function volleyInTheWay(
+  items: readonly AgendaItem[],
+  kinds: VolleyKinds,
+  start: number | null,
+  minutes: number,
+  ignore: string | null = null,
+): { occurrence: Occurrence; match: boolean } | null {
+  for (const item of items) {
+    if (!planned(item) || item.key === ignore) continue;
+    const o = item.occurrence;
+    if (o.typeId === kinds.match) return { occurrence: o, match: true };
+    if (o.typeId !== kinds.practice || o.time === null || start === null) continue;
+    const from = minutesOf(o.time);
+    if (start < from + (o.minutes ?? 120) && from < start + minutes) return { occurrence: o, match: false };
+  }
+  return null;
+}
+
+/** "Sabato 7 c'è la partita alle 21:00". */
+export function describeVolley(date: DateKey, volley: { occurrence: Occurrence; match: boolean }): string {
+  const at = volley.occurrence.time ? ` alle ${volley.occurrence.time}` : '';
+  return `${formatDayName(date)} c’è ${volley.match ? 'la partita' : 'pallavolo'}${at}`;
+}
+
+export type VolleyClash = {
+  date: DateKey;
+  gym: Extract<AgendaItem, { kind: 'activity' }>;
+  occurrence: Occurrence;
+  match: boolean;
+};
+
+/** The workouts to come that cannot be, because of volleyball: the nearest first. */
+export function volleyClashes(agenda: ReadonlyMap<DateKey, readonly AgendaItem[]>, kinds: VolleyKinds, today: DateKey, types: ReadonlyMap<number, ActivityType>): VolleyClash[] {
+  const clashes: VolleyClash[] = [];
+  for (const [date, items] of agenda) {
+    if (date < today) continue;
+    for (const item of items) {
+      if (!planned(item) || item.occurrence.typeId !== kinds.gym || item.status !== 'planned') continue;
+      const o = item.occurrence;
+      const volley = volleyInTheWay(items, kinds, o.time === null ? null : minutesOf(o.time), o.minutes ?? types.get(o.typeId)?.minutes ?? 60, item.key);
+      if (volley) clashes.push({ date, gym: item, occurrence: volley.occurrence, match: volley.match });
+    }
+  }
+  return clashes.sort((a, b) => (a.date < b.date ? -1 : a.date > b.date ? 1 : 0));
+}
+
+export type MoveChoice = {
+  date: DateKey;
+  /** "Libero", "Push alle 21:00", "Pallavolo alle 21:00". */
+  label: string;
+  free: boolean;
+  /** Volleyball is in the way at this time: it cannot go there. */
+  blocked: boolean;
+  /** It would fall during work: an exception, a day of leave. */
+  atWork: boolean;
+};
+
+/**
+ * The days a workout could go to, around the one it is on: free days first, the nearest before the
+ * others, then those with something on them, those with volleyball in the way last.
+ */
+export function moveChoices({
+  agenda,
+  kinds,
+  types,
+  dayNames,
+  workHours,
+  from,
+  today,
+  time,
+  minutes,
+  ignore,
+  span = 7,
+}: {
+  agenda: ReadonlyMap<DateKey, readonly AgendaItem[]>;
+  kinds: VolleyKinds;
+  types: ReadonlyMap<number, ActivityType>;
+  dayNames: ReadonlyMap<number, string>;
+  workHours: WorkHours;
+  from: DateKey;
+  today: DateKey;
+  time: string | null;
+  minutes: number;
+  ignore: string | null;
+  span?: number;
+}): MoveChoice[] {
+  const start = time === null ? null : minutesOf(time);
+  const choices: (MoveChoice & { rank: number })[] = [];
+  for (let offset = -span; offset <= span; offset++) {
+    const date = addDays(from, offset);
+    if (offset === 0 || date < today) continue;
+    const items = (agenda.get(date) ?? []).filter((i) => i.key !== ignore && (i.kind === 'workout' || i.status !== 'skipped'));
+    const volley = volleyInTheWay(items, kinds, start, minutes);
+    const first = items[0];
+    const name = (item: AgendaItem) => {
+      if (item.kind === 'workout') return item.workout.name;
+      const o = item.occurrence;
+      if (o.typeId === kinds.gym) return (item.dayId !== null ? dayNames.get(item.dayId) : null) ?? o.note ?? types.get(o.typeId)?.name ?? 'Palestra';
+      return types.get(o.typeId)?.name ?? 'Attività';
+    };
+    const label = first ? `${name(first)}${first.kind === 'activity' && first.occurrence.time ? ` alle ${first.occurrence.time}` : ''}` : 'Libero';
+    choices.push({
+      date,
+      label,
+      free: !first,
+      blocked: volley !== null,
+      atWork: start !== null && duringWork(workHours, date, start, minutes),
+      // Later days before earlier ones at the same distance: the workout goes on rather than back.
+      rank: Math.abs(offset) * 2 + (offset < 0 ? 1 : 0) + (volley ? 2000 : first ? 1000 : 0),
+    });
+  }
+  return choices.sort((a, b) => a.rank - b.rank).map(({ rank: _rank, ...choice }) => choice);
 }

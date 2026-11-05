@@ -10,8 +10,9 @@ import { haptics } from './haptics';
 /**
  * Asks for a day's weight and saves it, in place of the one already there: from the calendar's
  * day, the weight page and the list of weigh-ins. Starts from the day's weight, or the last one.
+ * `at` when it was done at another time than now.
  */
-export function logWeight(db: SQLiteDatabase, date: DateKey, current: { kg: number } | null, today: DateKey = todayKey()): void {
+export function logWeight(db: SQLiteDatabase, date: DateKey, current: { kg: number } | null, today: DateKey = todayKey(), at?: string): void {
   promptNumber({
     title: date === today ? 'Peso di oggi' : `Peso · ${formatDayTitle(date, today)}`,
     message: 'In chilogrammi.',
@@ -19,7 +20,7 @@ export function logWeight(db: SQLiteDatabase, date: DateKey, current: { kg: numb
     min: 20,
     max: 400,
     onSubmit: (kg) => {
-      void setWeight(db, date, kg, date === today ? new Date().toISOString() : null);
+      void setWeight(db, date, kg, at ?? (date === today ? new Date().toISOString() : null));
       haptics.success();
     },
   });

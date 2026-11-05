@@ -4,11 +4,13 @@ import { Suspense } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { FeedSync } from '@/components/feed-sync';
 import { NotificationSync } from '@/components/notification-sync';
 import { ToastHost } from '@/components/toast';
 import { UpdateCheck } from '@/components/update-check';
 import { TAB_STACK_OPTIONS } from '@/constants/navigation';
-import { pinGymDays, seedStartingPlan } from '@/db/plan';
+import { seedFeed } from '@/db/feed';
+import { giveSupplementsTheirTimes, seedStartingPlan } from '@/db/plan';
 import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
@@ -21,8 +23,9 @@ export const unstable_settings = { anchor: '(tabs)' };
 /** Brings the database up to date, then puts the agreed plan in the calendar the first time. */
 async function openDatabase(db: SQLiteDatabase): Promise<void> {
   await migrateDatabase(db);
+  await giveSupplementsTheirTimes(db);
   await seedStartingPlan(db, todayKey());
-  await pinGymDays(db, todayKey());
+  await seedFeed(db);
 }
 
 function Loading() {
@@ -112,6 +115,22 @@ export default function RootLayout() {
                 }}
               />
               <Stack.Screen
+                name="calendar-new"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.62, 1], sheetGrabberVisible: true, headerShown: false }}
+              />
+              <Stack.Screen
+                name="calendar-item"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.55, 1], sheetGrabberVisible: true, headerShown: false }}
+              />
+              <Stack.Screen
+                name="move-workout"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.75, 1], sheetGrabberVisible: true, headerShown: false }}
+              />
+              <Stack.Screen
+                name="link-program"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, headerShown: false }}
+              />
+              <Stack.Screen
                 name="limits"
                 options={{
                   presentation: 'formSheet',
@@ -131,6 +150,7 @@ export default function RootLayout() {
               />
             </Stack>
             <NotificationSync />
+            <FeedSync />
             <UpdateCheck />
             <ToastHost />
           </SQLiteProvider>

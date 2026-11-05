@@ -12,7 +12,7 @@ import { AppText } from './app-text';
 import { Icon } from './icon';
 
 type ToastAction = { label: string; onPress: () => void };
-type ToastMessage = { id: number; title: string; icon: SFSymbol; action?: ToastAction };
+type ToastMessage = { id: number; title: string; icon: SFSymbol; action?: ToastAction; second?: ToastAction };
 
 const VISIBLE_MS = 1800;
 /** Long enough to read the message and reach the button. */
@@ -44,9 +44,9 @@ function subscribe(listener: () => void): () => void {
  * dismissed.
  */
 export const toast = {
-  show(title: string, icon: SFSymbol = 'checkmark.circle.fill', action?: ToastAction): void {
+  show(title: string, icon: SFSymbol = 'checkmark.circle.fill', action?: ToastAction, second?: ToastAction): void {
     const id = nextId++;
-    current = { id, title, icon, action };
+    current = { id, title, icon, action, second };
     emit();
     AccessibilityInfo.announceForAccessibility(title);
     clearTimeout(timer);
@@ -91,27 +91,30 @@ export function ToastHost() {
 }
 
 function ToastContent({ message }: { message: ToastMessage }) {
-  const { action } = message;
+  const { action, second } = message;
   return (
     <>
       <Icon name={message.icon} size={18} tone="accent" />
-      <AppText variant="subhead" weight="600" numberOfLines={1} style={styles.title}>
+      <AppText variant="subhead" weight="600" numberOfLines={second ? 2 : 1} style={styles.title}>
         {message.title}
       </AppText>
-      {action ? (
-        <Pressable
-          onPress={() => {
-            toast.hide(message.id);
-            action.onPress();
-          }}
-          hitSlop={12}
-          accessibilityRole="button"
-          style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
-          <AppText variant="subhead" weight="700" tone="accent">
-            {action.label}
-          </AppText>
-        </Pressable>
-      ) : null}
+      {[second, action].map((a) =>
+        a ? (
+          <Pressable
+            key={a.label}
+            onPress={() => {
+              toast.hide(message.id);
+              a.onPress();
+            }}
+            hitSlop={12}
+            accessibilityRole="button"
+            style={({ pressed }) => [styles.action, pressed && styles.pressed]}>
+            <AppText variant="subhead" weight="700" tone="accent">
+              {a.label}
+            </AppText>
+          </Pressable>
+        ) : null,
+      )}
     </>
   );
 }

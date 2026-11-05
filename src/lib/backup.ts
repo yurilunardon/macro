@@ -9,9 +9,10 @@ export const BACKUP_APP = 'macro';
  * 2 added `ref` and `category` to foods. 3 added recipes, saved meals and day types, and
  * dropped water. 4 added measurements and fasts, 5 dropped fasts, 6 added training, 7 the
  * calendar and supplements, 8 the moments of the supplements and the time of a weigh-in, 9 the
- * symbol of a program day. Older files are still accepted.
+ * symbol of a program day, 11 the times of the supplements and the matches of a published calendar.
+ * Older files are still accepted.
  */
-export const BACKUP_VERSION = 10;
+export const BACKUP_VERSION = 11;
 
 export type FoodRow = {
   id: number;
@@ -203,6 +204,10 @@ export type ActivityRow = {
   note: string | null;
   status: string;
   created_at: string;
+  source_uid?: string | null;
+  title?: string | null;
+  location?: string | null;
+  map_url?: string | null;
 };
 export type SupplementRow = {
   id: number;
@@ -214,6 +219,10 @@ export type SupplementRow = {
   weekdays: string;
   moment?: string | null;
   reminder: string | null;
+  times?: string | null;
+  every_days?: number | null;
+  once_on?: string | null;
+  remind?: number | null;
   contents?: string | null;
   note?: string | null;
   package_amount: number | null;
@@ -224,6 +233,7 @@ export type SupplementRow = {
   created_at: string;
 };
 export type SupplementDoseRow = { supplement_id: number; date: string; dose_index: number; taken_at: string };
+export type SupplementDayRow = { supplement_id: number; date: string; dose_index: number; time: string | null; skipped: number | null };
 export type SupplementPurchaseRow = { id: number; supplement_id: number; date: string; amount: number; price: number; created_at: string };
 
 export type BackupData = {
@@ -252,6 +262,7 @@ export type BackupData = {
   activities: ActivityRow[];
   supplements: SupplementRow[];
   supplement_doses: SupplementDoseRow[];
+  supplement_day: SupplementDayRow[];
   supplement_purchases: SupplementPurchaseRow[];
 };
 
@@ -461,6 +472,10 @@ const ACTIVITY_COLUMNS: Record<keyof ActivityRow, Check> = {
   note: 'string?',
   status: 'string',
   created_at: 'string',
+  source_uid: 'string?',
+  title: 'string?',
+  location: 'string?',
+  map_url: 'string?',
 };
 const SUPPLEMENT_COLUMNS: Record<keyof SupplementRow, Check> = {
   id: 'number',
@@ -472,6 +487,10 @@ const SUPPLEMENT_COLUMNS: Record<keyof SupplementRow, Check> = {
   weekdays: 'string',
   moment: 'string?',
   reminder: 'string?',
+  times: 'string?',
+  every_days: 'number?',
+  once_on: 'string?',
+  remind: 'number?',
   contents: 'string?',
   note: 'string?',
   package_amount: 'number?',
@@ -486,6 +505,13 @@ const SUPPLEMENT_DOSE_COLUMNS: Record<keyof SupplementDoseRow, Check> = {
   date: 'string',
   dose_index: 'number',
   taken_at: 'string',
+};
+const SUPPLEMENT_DAY_COLUMNS: Record<keyof SupplementDayRow, Check> = {
+  supplement_id: 'number',
+  date: 'string',
+  dose_index: 'number',
+  time: 'string?',
+  skipped: 'number?',
 };
 const SUPPLEMENT_PURCHASE_COLUMNS: Record<keyof SupplementPurchaseRow, Check> = {
   id: 'number',
@@ -562,6 +588,7 @@ export function parseBackup(json: unknown): BackupData {
     activities: readRows<ActivityRow>(data, 'activities', ACTIVITY_COLUMNS, 7),
     supplements: readRows<SupplementRow>(data, 'supplements', SUPPLEMENT_COLUMNS, 7),
     supplement_doses: readRows<SupplementDoseRow>(data, 'supplement_doses', SUPPLEMENT_DOSE_COLUMNS, 7),
+    supplement_day: readRows<SupplementDayRow>(data, 'supplement_day', SUPPLEMENT_DAY_COLUMNS, 11),
     supplement_purchases: readRows<SupplementPurchaseRow>(data, 'supplement_purchases', SUPPLEMENT_PURCHASE_COLUMNS, 7),
   };
   for (const row of [...backup.entries, ...backup.weights, ...backup.day_types, ...backup.measurements]) {
@@ -612,6 +639,7 @@ export function parseBackup(json: unknown): BackupData {
   for (const row of [...backup.activity_plans, ...backup.activities]) if (row.day_id !== null && !dayIds.has(row.day_id)) row.day_id = null;
   const supplementIds = new Set(backup.supplements.map((s) => s.id));
   backup.supplement_doses = backup.supplement_doses.filter((d) => supplementIds.has(d.supplement_id));
+  backup.supplement_day = backup.supplement_day.filter((d) => supplementIds.has(d.supplement_id));
   backup.supplement_purchases = backup.supplement_purchases.filter((p) => supplementIds.has(p.supplement_id));
   const dated = [
     ...backup.activity_plans.flatMap((p) => (p.end_date === null ? [p.start_date] : [p.start_date, p.end_date])),

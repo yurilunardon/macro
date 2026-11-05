@@ -1,10 +1,10 @@
 import { getWeightOn } from '@/db/body';
 import { useLiveQuery } from '@/db/live';
-import { getMoments, getWeighInPlan } from '@/db/plan';
-import { getDoseTimes, getSupplements } from '@/db/supplements';
-import { busyDates, type ActivityType, type AgendaItem } from '@/lib/calendar';
+import { getWeighInPlan, getWorkHours } from '@/db/plan';
+import { getDoseChanges, getDoseTimes, getSupplements } from '@/db/supplements';
+import { busyDates, type ActivityType, type AgendaItem, type WorkHours } from '@/lib/calendar';
 import { weekOf, type DateKey } from '@/lib/dates';
-import { buildDay, dayProgress, trainingTimes, type DaySection, type TrainingTimes } from '@/lib/plan';
+import { buildDay, dayProgress, type DayEntry } from '@/lib/plan';
 
 import { useAgenda, type Agenda } from './use-agenda';
 
@@ -16,8 +16,10 @@ export type DayPlan = {
   types: Map<number, ActivityType>;
   /** The day's activities and workouts. */
   items: AgendaItem[];
-  training: TrainingTimes;
-  sections: DaySection[];
+  /** The weigh-in and the doses of the day, in the order they fall. */
+  entries: DayEntry[];
+  /** When the user is at work, drawn behind the hours. */
+  workHours: WorkHours | null;
   progress: { done: number; total: number };
   /** False until the day's plan is loaded. */
   ready: boolean;
@@ -30,36 +32,35 @@ export function useDayPlan(date: DateKey, today: DateKey): DayPlan {
   const { data } = useLiveQuery(
     `day-plan:${date}`,
     async (database) => {
-      const [moments, weighIn, supplements, taken, weight] = await Promise.all([
-        getMoments(database),
+      const [weighIn, workHours, supplements, taken, changes, weight] = await Promise.all([
         getWeighInPlan(database),
+        getWorkHours(database),
         getSupplements(database),
         getDoseTimes(database, date),
+        getDoseChanges(database, date, date),
         getWeightOn(database, date),
       ]);
-      return { moments, weighIn, supplements, taken, weight };
+      return { weighIn, workHours, supplements, taken, changes, weight };
     },
     ['settings', 'calendar', 'body'],
   );
 
   const items = agenda.get(date) ?? [];
-  const training = trainingTimes(items, types);
-  const sections = data
+  const entries = data
     ? buildDay({
         date,
-        moments: data.moments,
-        training,
         supplements: data.supplements,
         taken: data.taken,
+        changes: data.changes,
         active: busyDates(agenda),
         weighIn: data.weighIn,
         weight: data.weight ? { kg: data.weight.kg, loggedAt: data.weight.logged_at ?? null } : null,
       })
     : [];
   const activities = items.filter((i) => i.kind === 'workout' || i.status !== 'skipped');
-  const progress = dayProgress(sections, {
+  const progress = dayProgress(entries, {
     done: activities.filter((i) => i.kind === 'workout' || i.status === 'done').length,
     total: activities.length,
   });
-  return { week, agenda, calendar, types, items, training, sections, progress, ready: data !== undefined && calendar !== undefined };
+  return { week, agenda, calendar, types, items, entries, workHours: data?.workHours ?? null, progress, ready: data !== undefined && calendar !== undefined };
 }

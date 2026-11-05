@@ -27,6 +27,7 @@ import {
   type ActivityPlanRow,
   type ActivityRow,
   type ActivityTypeRow,
+  type SupplementDayRow,
   type SupplementDoseRow,
   type SupplementPurchaseRow,
   type SupplementRow,
@@ -36,6 +37,7 @@ import {
 } from '@/lib/backup';
 
 import { seedActivityTypes } from './calendar';
+import { giveSupplementsTheirTimes } from './plan';
 import { refreshExerciseSearchText, seedExercises } from './exercises';
 import { refreshSearchText } from './foods';
 import { seedGenericFoods } from './generic';
@@ -95,12 +97,21 @@ const ACTIVITY_PLAN_COLUMNS = [
 ] as const satisfies readonly (keyof ActivityPlanRow)[];
 const ACTIVITY_COLUMNS = [
   'id', 'type_id', 'plan_id', 'date', 'time', 'minutes', 'day_id', 'note', 'status', 'created_at',
+  'source_uid',
+  'title',
+  'location',
+  'map_url',
 ] as const satisfies readonly (keyof ActivityRow)[];
 const SUPPLEMENT_COLUMNS = [
   'id', 'name', 'dose', 'unit', 'times_per_day', 'schedule', 'weekdays', 'moment', 'reminder', 'contents', 'note',
   'package_amount', 'package_price', 'position', 'archived', 'started_on', 'created_at',
+  'times',
+  'every_days',
+  'once_on',
+  'remind',
 ] as const satisfies readonly (keyof SupplementRow)[];
 const SUPPLEMENT_DOSE_COLUMNS = ['supplement_id', 'date', 'dose_index', 'taken_at'] as const satisfies readonly (keyof SupplementDoseRow)[];
+const SUPPLEMENT_DAY_COLUMNS = ['supplement_id', 'date', 'dose_index', 'time', 'skipped'] as const satisfies readonly (keyof SupplementDayRow)[];
 const SUPPLEMENT_PURCHASE_COLUMNS = [
   'id', 'supplement_id', 'date', 'amount', 'price', 'created_at',
 ] as const satisfies readonly (keyof SupplementPurchaseRow)[];
@@ -144,6 +155,7 @@ export async function readBackup(db: SQLiteDatabase): Promise<BackupData> {
     activities: await db.getAllAsync<ActivityRow>(select(ACTIVITY_COLUMNS, 'activities', 'id')),
     supplements: await db.getAllAsync<SupplementRow>(select(SUPPLEMENT_COLUMNS, 'supplements', 'id')),
     supplement_doses: await db.getAllAsync<SupplementDoseRow>(select(SUPPLEMENT_DOSE_COLUMNS, 'supplement_doses', 'date, supplement_id, dose_index')),
+    supplement_day: await db.getAllAsync<SupplementDayRow>(select(SUPPLEMENT_DAY_COLUMNS, 'supplement_day', 'date, supplement_id, dose_index')),
     supplement_purchases: await db.getAllAsync<SupplementPurchaseRow>(select(SUPPLEMENT_PURCHASE_COLUMNS, 'supplement_purchases', 'id')),
   };
 }
@@ -188,7 +200,7 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
   await db.withExclusiveTransactionAsync(async (tx) => {
     // Children before parents, so foreign keys never point at a missing row.
     await tx.execAsync(`
-      DELETE FROM supplement_doses; DELETE FROM supplement_purchases; DELETE FROM supplements;
+      DELETE FROM supplement_doses; DELETE FROM supplement_day; DELETE FROM supplement_purchases; DELETE FROM supplements;
       DELETE FROM activities; DELETE FROM activity_plans; DELETE FROM activity_types;
       DELETE FROM saved_meal_items; DELETE FROM saved_meals;
       DELETE FROM recipe_ingredients; DELETE FROM recipes;
@@ -219,6 +231,7 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
     await insertRows<ActivityRow>(tx, 'activities', ACTIVITY_COLUMNS, backup.activities);
     await insertRows<SupplementRow>(tx, 'supplements', SUPPLEMENT_COLUMNS, backup.supplements);
     await insertRows<SupplementDoseRow>(tx, 'supplement_doses', SUPPLEMENT_DOSE_COLUMNS, backup.supplement_doses);
+    await insertRows<SupplementDayRow>(tx, 'supplement_day', SUPPLEMENT_DAY_COLUMNS, backup.supplement_day);
     await insertRows<SupplementPurchaseRow>(tx, 'supplement_purchases', SUPPLEMENT_PURCHASE_COLUMNS, backup.supplement_purchases);
     await insertRows<SettingRow>(tx, 'settings', ['key', 'value'], backup.settings);
     await refreshSearchText(tx);
@@ -227,6 +240,7 @@ export async function restoreBackup(db: SQLiteDatabase, backup: BackupData): Pro
   await seedGenericFoods(db, { force: true });
   await seedExercises(db, { force: true });
   await seedActivityTypes(db);
+  await giveSupplementsTheirTimes(db);
   notifyChange();
 }
 

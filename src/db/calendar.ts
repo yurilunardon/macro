@@ -6,12 +6,15 @@ import {
   expandActivities,
   GYM_REF,
   isActivityColor,
+  MATCH_REF,
+  PRACTICE_REF,
   type ActivityPlan,
   type ActivityRecord,
   type ActivityType,
   type Occurrence,
   type Rotation,
   type StoredStatus,
+  type VolleyKinds,
   type WorkoutBrief,
 } from '@/lib/calendar';
 import { addDays, type DateKey } from '@/lib/dates';
@@ -51,13 +54,17 @@ type RecordRow = {
   day_id: number | null;
   note: string | null;
   status: string;
+  source_uid: string | null;
+  title: string | null;
+  location: string | null;
+  map_url: string | null;
 };
 
 /** The kinds every calendar starts with. The gym cannot be deleted: it is where the workouts go. */
 const BUILT_IN_TYPES = [
   { ref: GYM_REF, name: 'Palestra', symbol: 'dumbbell.fill', color: 'green', minutes: 60 },
-  { ref: 'volleyball', name: 'Pallavolo', symbol: 'figure.volleyball', color: 'orange', minutes: 90 },
-  { ref: 'match', name: 'Partita', symbol: 'trophy.fill', color: 'red', minutes: 120 },
+  { ref: PRACTICE_REF, name: 'Pallavolo', symbol: 'figure.volleyball', color: 'orange', minutes: 90 },
+  { ref: MATCH_REF, name: 'Partita', symbol: 'trophy.fill', color: 'red', minutes: 120 },
 ] as const;
 
 /** Adds the built-in kinds missing, e.g. after restoring a backup made before the calendar. */
@@ -127,6 +134,10 @@ function recordFromRow(row: RecordRow): ActivityRecord {
     dayId: row.day_id,
     note: row.note,
     status: isStoredStatus(row.status) ? row.status : 'planned',
+    sourceUid: row.source_uid,
+    title: row.title,
+    location: row.location,
+    mapUrl: row.map_url,
   };
 }
 
@@ -203,6 +214,7 @@ export async function deleteActivityType(db: SQLiteDatabase, id: number, today: 
 export type CalendarData = {
   types: ActivityType[];
   gymTypeId: number | null;
+  kinds: VolleyKinds;
   plans: ActivityPlan[];
   records: ActivityRecord[];
   workouts: WorkoutBrief[];
@@ -257,6 +269,11 @@ export async function getCalendar(db: SQLiteDatabase, from: DateKey, to: DateKey
   return {
     types,
     gymTypeId: types.find((t) => t.ref === GYM_REF)?.id ?? null,
+    kinds: {
+      gym: types.find((t) => t.ref === GYM_REF)?.id ?? null,
+      match: types.find((t) => t.ref === MATCH_REF)?.id ?? null,
+      practice: types.find((t) => t.ref === PRACTICE_REF)?.id ?? null,
+    },
     plans: plans.map(planFromRow),
     records: records.map(recordFromRow),
     workouts,
@@ -414,13 +431,13 @@ export async function updatePlan(db: SQLiteDatabase, id: number, input: PlanInpu
   return planId;
 }
 
-/** Stops a plan from `from` on; one that had not started yet is deleted. */
 /** Ties a plan to a day of the program, or back to the rotation; the dates changed by hand stay as they are. */
 export async function setPlanProgramDay(db: SQLiteDatabase, id: number, dayId: number | null): Promise<void> {
   await db.runAsync('UPDATE activity_plans SET day_id = ? WHERE id = ?', dayId, id);
   changed();
 }
 
+/** Stops a plan from `from` on; one that had not started yet is deleted. */
 export async function endPlan(db: SQLiteDatabase, id: number, from: DateKey): Promise<void> {
   const plan = await getPlan(db, id);
   if (!plan) return;
@@ -481,4 +498,56 @@ export async function setOccurrenceDay(
   if (occurrence.recordId === null) return;
   await db.runAsync('UPDATE activities SET day_id = ? WHERE id = ?', dayId, occurrence.recordId);
   changed();
+}
+
+export type MoveTo = { date: DateKey; time: string | null; minutes: number | null };
+
+/**
+ * Moves one activity, this time only: a day of a plan to another time stays that day of the plan;
+ * to another date it leaves the plan and stands on its own there, keeping its day of the program.
+ * Gives back what undoes it.
+ */
+export async function moveOccurrence(db: SQLiteDatabase, o: Occurrence, to: MoveTo, dayId: number | null = o.dayId): Promise<() => Promise<void>> {
+  if (o.planId !== null) {
+    const planId = o.planId;
+    const before = await getPlanDay(db, planId, o.date);
+    const restore = async () => {
+      if (before) await setPlanDay(db, planId, o.date, { time: before.time, minutes: before.minutes, dayId: before.dayId, note: before.note, status: before.status });
+      else {
+        await db.runAsync('DELETE FROM activities WHERE plan_id = ? AND date = ?', planId, o.date);
+        changed();
+      }
+    };
+    if (to.date === o.date) {
+      await setPlanDay(db, planId, o.date, { time: to.time, minutes: to.minutes });
+      return restore;
+    }
+    await setPlanDay(db, planId, o.date, { status: 'cancelled' });
+    const id = await addActivity(db, { typeId: o.typeId, date: to.date, time: to.time, minutes: to.minutes, dayId, note: o.note });
+    return async () => {
+      await deleteActivity(db, id);
+      await restore();
+    };
+  }
+  if (o.recordId === null) return async () => {};
+  const id = o.recordId;
+  await db.runAsync('UPDATE activities SET date = ?, time = ?, minutes = ? WHERE id = ?', to.date, to.time, to.minutes, id);
+  changed();
+  return async () => {
+    await db.runAsync('UPDATE activities SET date = ?, time = ?, minutes = ? WHERE id = ?', o.date, o.time, o.minutes, id);
+    changed();
+  };
+}
+
+/** Takes one activity off its day, skipped; gives back what undoes it. */
+export async function skipOccurrence(db: SQLiteDatabase, o: Occurrence): Promise<() => Promise<void>> {
+  if (o.planId !== null) {
+    await setPlanDay(db, o.planId, o.date, { status: 'skipped' });
+    const planId = o.planId;
+    return () => setPlanDay(db, planId, o.date, { status: 'planned' });
+  }
+  if (o.recordId === null) return async () => {};
+  const id = o.recordId;
+  await setActivityStatus(db, id, 'skipped');
+  return () => setActivityStatus(db, id, 'planned');
 }

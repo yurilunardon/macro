@@ -121,6 +121,7 @@ describe('migrations', () => {
       'saved_meal_items',
       'saved_meals',
       'settings',
+      'supplement_day',
       'supplement_doses',
       'supplement_purchases',
       'supplements',

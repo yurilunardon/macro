@@ -1,22 +1,12 @@
 import { useEffect } from 'react';
-import { Pressable, StyleSheet, useColorScheme, View } from 'react-native';
+import { StyleSheet, View } from 'react-native';
 import Animated, { Easing, useAnimatedProps, useSharedValue, withTiming } from 'react-native-reanimated';
 import Svg, { Circle } from 'react-native-svg';
 
-import { Radius, Spacing } from '@/constants/theme';
-import { useActivityColors } from '@/hooks/use-activity-colors';
 import { useTheme } from '@/hooks/use-theme';
 import type { ActivityType, AgendaItem } from '@/lib/calendar';
-import type { DateKey } from '@/lib/dates';
-import { formatNumber } from '@/lib/format';
-import { addMinutes, clockOf, type DayEntry, type DaySection } from '@/lib/plan';
-import { formatDose } from '@/lib/supplements';
 
 import { AppText } from './app-text';
-import { Icon } from './icon';
-import { MenuButton } from './menu-button';
-import type { MenuGroup } from './menu-button.types';
-import { PressableScale } from './pressable-scale';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
@@ -69,203 +59,10 @@ export function activityName(item: AgendaItem, types: ReadonlyMap<number, Activi
     const day = item.dayId === null ? null : dayNames.get(item.dayId);
     return day ?? o.note ?? types.get(o.typeId)?.name ?? 'Palestra';
   }
-  return types.get(o.typeId)?.name ?? 'Attività';
-}
-
-/**
- * One of the day's activities, in the colour of its kind: what it is and when, "Inizia" on a
- * gym day still to do today, and a menu to change, move or skip it.
- */
-export function ActivityCard({
-  item,
-  name,
-  type,
-  date,
-  today,
-  interactive = true,
-  onStart,
-  onOpen,
-  menu,
-}: {
-  item: AgendaItem;
-  name: string;
-  type: ActivityType | undefined;
-  date: DateKey;
-  today: DateKey;
-  /** False on the pages kept ready beside the one on screen: the same look, without a real menu. */
-  interactive?: boolean;
-  /** Shown on a gym day still to do, on the day itself. */
-  onStart?: () => void;
-  onOpen: () => void;
-  menu: MenuGroup[];
-}) {
-  const theme = useTheme();
-  const colors = useActivityColors();
-  const scheme = useColorScheme();
-  const color = colors[type?.color ?? 'green'];
-  // On the light tint the bright hue is under 2:1; a deeper shade of it reads at 5:1 or more.
-  const ink = scheme === 'dark' ? color : shade(color, 0.55);
-  const { kicker, line, done, skipped } = describeActivity(item, type, date, today);
-  // Only the text opens it: the menu and "Inizia" beside it are buttons of their own.
-  return (
-    <View style={[styles.activity, { backgroundColor: tint(color, skipped ? 0.08 : 0.16) }]}>
-      <Pressable onPress={onOpen} accessibilityRole="button" accessibilityLabel={`${name}, ${kicker}`} style={({ pressed }) => [styles.activityText, pressed && styles.pressed]}>
-        <AppText variant="footnote" weight="600" style={{ color: skipped ? theme.textSecondary : ink }}>
-          {kicker}
-        </AppText>
-        <AppText variant="title2" style={skipped ? { color: theme.textSecondary, textDecorationLine: 'line-through' } : undefined}>
-          {name}
-        </AppText>
-        {line ? (
-          <AppText variant="subhead" tone="textSecondary" numeric>
-            {line}
-          </AppText>
-        ) : null}
-      </Pressable>
-      {done ? <Icon name="checkmark.circle.fill" size={26} color={ink} /> : null}
-      {onStart && !done && !skipped ? (
-        <PressableScale onPress={onStart} accessibilityRole="button" accessibilityLabel={`Inizia ${name}`} style={[styles.start, { backgroundColor: theme.accent }]}>
-          <AppText weight="600" style={{ color: theme.onAccent }}>
-            Inizia
-          </AppText>
-        </PressableScale>
-      ) : null}
-      <MenuButton inert={!interactive} icon="ellipsis" accessibilityLabel={`Altro su ${name}`} groups={menu} />
-    </View>
-  );
-}
-
-/** The colour mixed with black: 0.55 takes the system hues from under 2:1 to over 5:1 on their light tint. */
-function shade(hex: string, amount: number): string {
-  const channel = (i: number) => Math.round(parseInt(hex.slice(i, i + 2), 16) * (1 - amount)).toString(16).padStart(2, '0');
-  return `#${channel(1)}${channel(3)}${channel(5)}`;
-}
-
-/** "#30D158" at 16% over the background. */
-function tint(hex: string, alpha: number): string {
-  return `${hex}${Math.round(alpha * 255)
-    .toString(16)
-    .padStart(2, '0')}`;
-}
-
-function describeActivity(
-  item: AgendaItem,
-  type: ActivityType | undefined,
-  date: DateKey,
-  today: DateKey,
-): { kicker: string; line: string | null; done: boolean; skipped: boolean } {
-  if (item.kind === 'workout') {
-    const start = clockOf(item.workout.startedAt);
-    if (!item.workout.endedAt) return { kicker: `In corso dalle ${start}`, line: null, done: false, skipped: false };
-    return { kicker: 'Fatto', line: `${start} – ${clockOf(item.workout.endedAt)}`, done: true, skipped: false };
-  }
-  const o = item.occurrence;
-  const minutes = o.minutes ?? type?.minutes ?? null;
-  const span = o.time ? (minutes ? `${o.time} – ${addMinutes(o.time, minutes)}` : o.time) : null;
-  if (item.status === 'skipped') return { kicker: 'Saltato', line: span, done: false, skipped: true };
-  if (item.status === 'done') return { kicker: 'Fatto', line: span, done: true, skipped: false };
-  if (date === today) {
-    const evening = o.time !== null && o.time >= '18:00';
-    return { kicker: o.time ? `${evening ? 'Stasera' : 'Oggi'} alle ${o.time}` : 'Oggi', line: minutes && o.time ? `Fino alle ${addMinutes(o.time, minutes)}` : null, done: false, skipped: false };
-  }
-  return { kicker: o.time ? `Alle ${o.time}` : 'In programma', line: minutes && o.time ? `Fino alle ${addMinutes(o.time, minutes)}` : null, done: false, skipped: false };
-}
-
-/**
- * A moment of the day and what is due in it, one line each: ticked by a tap, with the time it
- * was done; what is left over once the moment has gone by stands out in orange.
- */
-export function ChecklistSection({
-  section,
-  late,
-  onPress,
-  onLongPress,
-}: {
-  section: DaySection;
-  /** Whether what is still to do in it is late. */
-  late: boolean;
-  onPress: (entry: DayEntry) => void;
-  onLongPress: (entry: DayEntry) => void;
-}) {
-  const theme = useTheme();
-  return (
-    <View style={[styles.group, { backgroundColor: theme.card }]}>
-      <View style={styles.sectionHead}>
-        <AppText variant="footnote" weight="600" tone="textSecondary">
-          {section.moment.name}
-        </AppText>
-        <AppText variant="footnote" tone="textSecondary" numeric>
-          {section.time}
-        </AppText>
-      </View>
-      {section.entries.map((entry) => {
-        const missed = late && !entry.done;
-        const { name, amount, side } = describeEntry(entry, missed);
-        return (
-          <Pressable
-            key={entry.key}
-            onPress={() => onPress(entry)}
-            onLongPress={() => onLongPress(entry)}
-            accessibilityRole="checkbox"
-            accessibilityState={{ checked: entry.done }}
-            accessibilityLabel={[name, amount, side].filter(Boolean).join(', ')}
-            style={({ pressed }) => [styles.entry, { borderTopColor: theme.separator }, pressed && { backgroundColor: theme.cardPressed }]}>
-            <Icon name={entry.done ? 'checkmark.circle.fill' : 'circle'} size={22} color={entry.done ? theme.accent : missed ? theme.warning : theme.textSecondary} />
-            <AppText style={[styles.name, { color: entry.done ? theme.textSecondary : theme.text }]} numberOfLines={2}>
-              {name}
-            </AppText>
-            {amount ? (
-              <AppText tone="textSecondary" numberOfLines={1} style={styles.amount}>
-                {amount}
-              </AppText>
-            ) : null}
-            <AppText numeric numberOfLines={1} style={[styles.side, { color: missed ? theme.warning : theme.textSecondary }]}>
-              {side}
-            </AppText>
-          </Pressable>
-        );
-      })}
-    </View>
-  );
-}
-
-function describeEntry(entry: DayEntry, missed: boolean): { name: string; amount: string | null; side: string } {
-  if (entry.kind === 'weighIn') {
-    const at = entry.loggedAt ? clockOf(entry.loggedAt) : null;
-    return {
-      name: 'Pesata',
-      amount: null,
-      side: entry.kg !== null ? [`${formatNumber(entry.kg, 1)} kg`, at].filter(Boolean).join(' · ') : missed ? 'Da fare' : '',
-    };
-  }
-  const s = entry.supplement;
-  const times = s.timesPerDay > 1 ? ` (${entry.index + 1}/${s.timesPerDay})` : '';
-  return {
-    name: `${s.name}${times}`,
-    amount: formatDose(s.dose, s.unit),
-    side: entry.takenAt ? clockOf(entry.takenAt) : missed ? 'Da prendere' : (entry.time ?? ''),
-  };
+  return o.title ?? types.get(o.typeId)?.name ?? 'Attività';
 }
 
 const styles = StyleSheet.create({
-  pressed: { opacity: 0.6 },
   ringCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   ringText: { fontSize: 15, lineHeight: 18 },
-  activity: {
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    padding: Spacing.lg,
-    borderRadius: Radius.lg,
-    borderCurve: 'continuous',
-  },
-  activityText: { flex: 1, gap: 2 },
-  start: { height: 44, paddingHorizontal: Spacing.lg, borderRadius: 22, alignItems: 'center', justifyContent: 'center' },
-  sectionHead: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'baseline', paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm },
-  group: { borderRadius: Radius.lg, borderCurve: 'continuous', overflow: 'hidden' },
-  entry: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, minHeight: 46, paddingHorizontal: Spacing.lg, borderTopWidth: StyleSheet.hairlineWidth },
-  // The amount gives way first when the line is short of room, then the name.
-  name: { flexShrink: 1 },
-  amount: { flexShrink: 100 },
-  side: { marginLeft: 'auto', flexShrink: 0 },
 });

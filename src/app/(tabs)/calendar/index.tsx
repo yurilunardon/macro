@@ -1,13 +1,19 @@
-import { Stack, useRouter } from 'expo-router';
+import { Stack, useFocusEffect, useRouter } from 'expo-router';
+import { useCallback, useRef, type ComponentRef } from 'react';
+import type { View } from 'react-native';
+import { GestureDetector } from 'react-native-gesture-handler';
 import Animated, { useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
 
 import { CalendarDay } from '@/components/calendar-day';
+import { useCalendarDrag } from '@/components/calendar-drag';
 import { DayPager, useDayPager } from '@/components/day-pager';
 import { MonthGrid, monthGridLift } from '@/components/month-grid';
 import { ScreenScroll } from '@/components/screen';
+import { VolleyBanner } from '@/components/volley-banner';
 import { useScrollTop } from '@/hooks/use-scroll-top';
 import { useToday } from '@/hooks/use-today';
 import { dayInMonth, monthOf } from '@/lib/dates';
+import { calendarDrag } from '@/services/calendar-drag';
 
 /**
  * The calendar, the tab behind the round button between the other two: the month, and under it one
@@ -24,7 +30,19 @@ export default function CalendarScreen() {
   const lift = useSharedValue(monthGridLift(monthOf(date)));
   const below = useAnimatedStyle(() => ({ transform: [{ translateY: lift.get() }] }));
 
+  const geometry = { pinnedRow: useSharedValue(0), weeks: useSharedValue(5), gridTop: useSharedValue(0) };
+  const monthView = useRef<ComponentRef<typeof View>>(null);
+  const drag = useCalendarDrag({ scroll, date, today, goTo: pager.goTo, month: geometry, monthView });
+
+  // Back from the sheet that asks what "Nuovo" is: it was either made into something, or nothing.
+  useFocusEffect(
+    useCallback(() => {
+      calendarDrag.set({ draft: null });
+    }, []),
+  );
+
   return (
+    <>
     <ScreenScroll scroll={scroll}>
       <Stack.Toolbar placement="left">
         {/* As in Calendar and in Alimentazione: always in the bar. */}
@@ -57,7 +75,11 @@ export default function CalendarScreen() {
         </Stack.Toolbar.Menu>
       </Stack.Toolbar>
 
+      <VolleyBanner today={today} />
+
       <MonthGrid
+        view={monthView}
+        geometry={geometry}
         selected={date}
         today={today}
         scroll={scroll}
@@ -67,9 +89,13 @@ export default function CalendarScreen() {
         onChangeMonth={(direction) => pager.goTo(dayInMonth(date, direction, today))}
       />
 
-      <Animated.View style={below}>
-        <DayPager pager={pager} today={today} renderDay={(day, page) => <CalendarDay date={day} today={today} {...page} />} />
-      </Animated.View>
+      <GestureDetector gesture={drag.gesture} userSelect="none">
+        <Animated.View style={below}>
+          <DayPager pager={pager} today={today} renderDay={(day, page) => <CalendarDay date={day} today={today} {...page} />} />
+        </Animated.View>
+      </GestureDetector>
     </ScreenScroll>
+    {drag.overlay}
+    </>
   );
 }

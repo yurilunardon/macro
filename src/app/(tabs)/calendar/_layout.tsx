@@ -11,8 +11,9 @@ export default function CalendarLayout() {
       {/* The day draws its own title, with how much of it is done beside it. */}
       <Stack.Screen name="index" options={{ title: '' }} />
       <Stack.Screen name="plan" options={{ title: 'Il piano' }} />
-      <Stack.Screen name="plan-day" options={{ title: '' }} />
-      <Stack.Screen name="moments" options={{ title: 'Orari della giornata' }} />
+      <Stack.Screen name="activity-week" options={{ title: '' }} />
+      <Stack.Screen name="work" options={{ title: 'Lavoro' }} />
+      <Stack.Screen name="feed" options={{ title: 'Partite' }} />
       <Stack.Screen name="weigh-in" options={{ title: 'Pesata' }} />
       <Stack.Screen name="supplements" options={{ title: 'Integratori' }} />
       <Stack.Screen name="activity-types" options={{ title: 'Tipi di attività' }} />
@@ -20,7 +21,6 @@ export default function CalendarLayout() {
       <Stack.Screen name="weight" options={{ title: 'Peso' }} />
       <Stack.Screen name="weights" options={{ title: 'Pesate' }} />
       <Stack.Screen name="measurements" options={{ title: 'Misure' }} />
-      <Stack.Screen name="day" options={{ title: '' }} />
       <Stack.Screen name="session" options={{ title: 'Allenamento' }} />
       <Stack.Screen name="history" options={{ title: 'Storico' }} />
     </Stack>
