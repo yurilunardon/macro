@@ -18,7 +18,7 @@ import { NOTCHED_TAB_BAR_BUTTON, NOTCHED_TAB_BAR_HEIGHT, NotchedTabBarView } fro
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
-import { WorkoutPill } from './workout-pill';
+import { WORKOUT_BAR_GAP, WORKOUT_BAR_HEIGHT, WorkoutPill } from './workout-pill';
 
 const glass = isLiquidGlassAvailable();
 
@@ -55,8 +55,9 @@ function barBottom(safeBottom: number): number {
  * How much of the page the bar covers above the safe area, which iOS already keeps clear: the
  * scroll views inside the tabs add it at the bottom so their end can scroll out from under it.
  */
-export function tabBarInset(safeBottom: number): number {
-  const top = barBottom(safeBottom) + HEIGHT + Spacing.sm;
+export function tabBarInset(safeBottom: number, workoutBar = false): number {
+  // With a workout running, its bar sits on top of ours: the pages' ends scroll out from under both.
+  const top = barBottom(safeBottom) + HEIGHT + Spacing.sm + (workoutBar ? WORKOUT_BAR_HEIGHT + WORKOUT_BAR_GAP : 0);
   return Platform.OS === 'web' ? top : top - safeBottom;
 }
 
@@ -88,7 +89,7 @@ type TabBarProps = BottomTabBarProps & {
  * tabs and runs on under the button, which sits on its own in a cradle cut into the capsule and
  * is the third tab, the calendar's. Holding and sliding along the capsule moves its lens from one
  * tab to the other, under the button, and picks the tab on release. While a workout runs, the other
- * tabs' first pages show it in a pill at the top; in its own tab it is on the page.
+ * tabs' first pages show it in a bar just above this one; in its own tab it is on the page.
  */
 export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left, right, center, tabs }: TabBarProps) {
   const width = Math.min(screen - 2 * Spacing.xl, BAR_WIDTH);
@@ -113,7 +114,7 @@ export function TabBar({ state, emitter, navigateToTab, screen, safeBottom, left
 
   return (
     <>
-      {focused !== 'right' && onFirstPage ? <WorkoutPill /> : null}
+      {focused !== 'right' && onFirstPage ? <WorkoutPill bottom={barBottom(safeBottom) + HEIGHT + WORKOUT_BAR_GAP} /> : null}
       <View pointerEvents="box-none" style={[styles.root, { bottom: barBottom(safeBottom) }]}>
         {NotchedTabBarView ? <SwiftUIBar {...bar} /> : <ReactBar {...bar} />}
       </View>
