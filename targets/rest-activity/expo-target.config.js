@@ -7,7 +7,9 @@
  */
 module.exports = {
   type: 'widget',
-  name: 'RestActivity',
+  // Not RestActivity: that is the app's module (modules/rest-activity), and two Swift modules of one
+  // name in the build clash.
+  name: 'RestWidget',
   displayName: 'Fuel',
   bundleIdentifier: '.restactivity',
   deploymentTarget: '17.0',
