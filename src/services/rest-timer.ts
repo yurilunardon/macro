@@ -2,6 +2,9 @@ import * as Notifications from 'expo-notifications';
 import { useSyncExternalStore } from 'react';
 import { Vibration } from 'react-native';
 
+import type { RestAlert } from '@/db/settings';
+
+import { RestActivity } from '../../modules/rest-activity';
 import { ensureNotificationPermission } from './reminders';
 
 /** Outside the "macro-" prefix, so the reminders' rescheduling never cancels a running rest. */
@@ -13,12 +16,17 @@ export type RestState = {
   total: number;
   /** What the rest is for, e.g. "Panca piana · serie 2". */
   label: string;
+  /** The workout's name, for the Lock Screen. */
+  title: string;
 };
+
+/** A sound of silence bundled with the app (see app.json): iOS plays it as its vibration. */
+const VIBRATE_SOUND = 'rest-vibrate.wav';
 
 let state: RestState | null = null;
 /** When the last rest was ended by hand: "Vai" or "Salta". */
 let endedByHand: number | null = null;
-let sound = false;
+let alert: RestAlert = 'vibrate';
 let finishTimer: ReturnType<typeof setTimeout> | undefined;
 const listeners = new Set<() => void>();
 
@@ -42,8 +50,8 @@ async function schedule(): Promise<void> {
     content: {
       title: 'Recupero finito',
       body: state.label,
-      // Silent by default: a banner on the lock screen and nothing else, so the gym is not disturbed.
-      sound: sound ? 'default' : false,
+      // A vibration by default: felt in the pocket with the phone locked, nobody else hears it.
+      sound: alert === 'sound' ? 'default' : alert === 'vibrate' ? VIBRATE_SOUND : false,
     },
     trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(state.endsAt) },
   }).catch(() => {});
@@ -79,10 +87,32 @@ function armFinish(): void {
   }, Math.max(0, ending.endsAt - Date.now()));
 }
 
+/**
+ * The rest on the Lock Screen and in the Dynamic Island: its countdown and bar run there by
+ * themselves; once over it says so until the next set, when it goes.
+ */
+function showActivity(): void {
+  if (!RestActivity) return;
+  try {
+    if (state) RestActivity.show(state.title, state.label, state.endsAt - state.total * 1000, state.endsAt);
+    else RestActivity.hide();
+  } catch {
+    // Live Activities turned off for the app: the notification is still there.
+  }
+}
+
+// The rest lives in memory: one left on the Lock Screen by an app closed since has nothing behind it.
+try {
+  RestActivity?.hide();
+} catch {
+  // Nothing to end.
+}
+
 function set(next: RestState | null): void {
   state = next;
   emit();
   armFinish();
+  showActivity();
   void schedule();
 }
 
@@ -91,10 +121,10 @@ function set(next: RestState | null): void {
  * end is a timestamp plus a scheduled notification) and can be stretched or skipped.
  */
 export const restTimer = {
-  start(seconds: number, label: string, options: { sound: boolean }): void {
-    sound = options.sound;
+  start(seconds: number, label: string, options: { alert: RestAlert; title: string }): void {
+    alert = options.alert;
     endedByHand = null;
-    set({ endsAt: Date.now() + seconds * 1000, total: seconds, label });
+    set({ endsAt: Date.now() + seconds * 1000, total: seconds, label, title: options.title });
   },
   /**
    * Adds or takes away time. The bar keeps the length of the whole rest, so taking 15 s away

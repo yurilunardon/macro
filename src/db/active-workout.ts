@@ -11,5 +11,5 @@ export const ACTIVE_WORKOUT_TOPICS: readonly Topic[] = ['training', 'settings'];
 export async function loadActiveWorkout(db: SQLiteDatabase) {
   const active = await getActiveWorkout(db);
   const [workout, restAlert, warmUpSkips] = await Promise.all([active ? getWorkout(db, active.id) : Promise.resolve(null), getSetting(db, 'restAlert'), getSetting(db, 'warmUpSkips')]);
-  return { workout, sound: restAlert === 'sound', warmUpSkips: warmUpSkips ?? 0 };
+  return { workout, alert: restAlert ?? ('vibrate' as const), warmUpSkips: warmUpSkips ?? 0 };
 }

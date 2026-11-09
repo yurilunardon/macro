@@ -197,7 +197,7 @@ export default function WorkoutScreen() {
     // Even after the last set: one more may be added before the exercise is concluded, and
     // concluding the last one stops it.
     latest.onSetDone = workoutNow
-      ? (setId, rest) => restTimer.start(rest, nextLabel(workoutNow, setId, (e) => names(e.exercise).title), { sound: data?.sound ?? false })
+      ? (setId, rest) => restTimer.start(rest, nextLabel(workoutNow, setId, (e) => names(e.exercise).title), { alert: data?.alert ?? 'vibrate', title: workoutNow.name })
       : null;
   });
 

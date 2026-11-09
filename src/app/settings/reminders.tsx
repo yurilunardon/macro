@@ -128,13 +128,14 @@ export default function RemindersScreen() {
       <Segmented
         options={[
           { key: 'silent', label: 'Solo avviso' },
-          { key: 'sound', label: 'Suono o vibrazione' },
+          { key: 'vibrate', label: 'Vibrazione' },
+          { key: 'sound', label: 'Suono' },
         ]}
-        value={restAlert ?? 'silent'}
+        value={restAlert ?? 'vibrate'}
         onChange={(value) => void setSetting(db, 'restAlert', value)}
       />
       <SectionFooter>
-        A telefono bloccato «Solo avviso» non vibra; in silenzioso il suono diventa vibrazione. Ad app aperta vibra sempre.
+        A telefono bloccato: «Vibrazione» vibra senza suono, «Suono» suona e in silenzioso vibra, «Solo avviso» mostra solo la notifica. Ad app aperta vibra sempre. Il recupero si vede anche nella schermata di blocco.
       </SectionFooter>
     </ScreenScroll>
   );

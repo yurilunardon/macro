@@ -9,6 +9,8 @@ import type { ReminderSettings } from '@/lib/reminders';
 
 import { notifyChange } from './live';
 
+export type RestAlert = 'silent' | 'vibrate' | 'sound';
+
 /** Settings are stored as JSON values under these keys. */
 type SettingsMap = {
   targets: Targets;
@@ -25,8 +27,11 @@ type SettingsMap = {
   genericFoodsVersion: number;
   /** Which version of the shipped exercise library has been added to this phone. */
   exercisesVersion: number;
-  /** End of a rest: a silent banner, or with the system sound (only a vibration in silent mode). */
-  restAlert: 'silent' | 'sound';
+  /**
+   * End of a rest with the phone locked: a banner only, a vibration (the banner with a sound of
+   * silence, which iOS plays as its vibration), or the system sound. Missing means a vibration.
+   */
+  restAlert: RestAlert;
   /** Which name of the exercises comes first. */
   exerciseNames: 'en' | 'it';
   /** The day picked as the next workout, until a workout starts after `chosenAt`. */

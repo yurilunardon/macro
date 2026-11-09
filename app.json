@@ -2,7 +2,7 @@
   "expo": {
     "name": "Macro",
     "slug": "macro",
-    "version": "1.8.11",
+    "version": "1.8.12",
     "orientation": "portrait",
     "icon": "./assets/images/icon.png",
     "scheme": "macro",
@@ -19,7 +19,8 @@
       },
       "infoPlist": {
         "CADisableMinimumFrameDurationOnPhone": true,
-        "CFBundleDisplayName": "Fuel"
+        "CFBundleDisplayName": "Fuel",
+        "NSSupportsLiveActivities": true
       }
     },
     "android": {
@@ -57,9 +58,13 @@
       [
         "expo-notifications",
         {
-          "enableRemoteNotifications": false
+          "enableRemoteNotifications": false,
+          "sounds": [
+            "./assets/sounds/rest-vibrate.wav"
+          ]
         }
-      ]
+      ],
+      "@bacons/apple-targets"
     ],
     "experiments": {
       "typedRoutes": true,
