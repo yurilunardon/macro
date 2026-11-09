@@ -50,7 +50,7 @@ export function LabelScanner({ onDone }: { onDone: () => void }) {
           Non disponibile qui
         </AppText>
         <AppText tone="textSecondary" align="center">
-          La lettura delle etichette funziona nell’app installata con AltStore, non in Expo Go.
+          La lettura delle etichette funziona nell’app installata con SideStore, non in Expo Go.
         </AppText>
       </View>
     );

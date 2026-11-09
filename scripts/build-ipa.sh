@@ -1,5 +1,5 @@
 #!/usr/bin/env bash
-# Builds an unsigned build/Macro.ipa on a Mac. AltStore signs it with your Apple ID when it
+# Builds an unsigned build/Macro.ipa on a Mac. SideStore signs it with your Apple ID when it
 # installs it, so no paid developer account is needed.
 # Requirements: macOS, Xcode (opened once to accept the licence), CocoaPods, Node.js.
 set -euo pipefail

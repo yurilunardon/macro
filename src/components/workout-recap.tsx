@@ -12,10 +12,11 @@ import { useTheme } from '@/hooks/use-theme';
 import { formatLongDate } from '@/lib/dates';
 import { isWarmUp } from '@/lib/exercises';
 import { clockOf } from '@/lib/plan';
-import { compareWorkouts, exerciseChange, formatDuration, formatLifted, formatSetShort, formatWorkoutLengthShort, isWorkSet, setTimes, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
+import { compareWorkouts, exerciseChange, formatDuration, formatLifted, formatWorkoutLengthShort, isWorkSet, setTimes, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
+import { SetLines } from './set-lines';
 
 type Records = Awaited<ReturnType<typeof getRecords>>;
 
@@ -58,15 +59,15 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
   const compared = previous && !arriving ? compareWorkouts(numbers, numbersOf(previous)) : null;
   const rows: { label: string; value: number; format: (value: number) => string; compare?: string; tone: 'textSecondary' | 'accent' | 'warning' }[] = [
     { label: 'Durata', value: numbers.seconds, format: formatWorkoutLengthShort, compare: compared?.duration, tone: 'textSecondary' as const },
-    { label: 'Serie', value: numbers.sets, format: String, compare: compared?.sets, tone: 'textSecondary' as const },
-    {
-      label: 'Sollevati',
-      value: numbers.lifted,
-      format: formatLifted,
-      compare: compared?.lifted,
-      tone: compared?.liftedTrend === 'up' ? ('accent' as const) : compared?.liftedTrend === 'down' ? ('warning' as const) : ('textSecondary' as const),
-    },
   ];
+  // At its end, how much was done, counting up. Looked at later, only the times: the sets and the
+  // load are with each exercise below.
+  if (arriving) {
+    rows.push(
+      { label: 'Serie', value: numbers.sets, format: String, tone: 'textSecondary' as const },
+      { label: 'Sollevati', value: numbers.lifted, format: formatLifted, tone: 'textSecondary' as const },
+    );
+  }
   // Reopened later, also how the time went: known for the sets ticked since it is kept.
   const times = arriving ? null : setTimes(workout.exercises.flatMap((e) => e.sets));
   if (times?.between != null) rows.push({ label: 'Tra una serie e l’altra', value: times.between, format: formatDuration, compare: 'in media', tone: 'textSecondary' as const });
@@ -143,9 +144,14 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
                 <AppText numberOfLines={2} tone={work.length > 0 ? 'text' : 'textSecondary'}>
                   {names(exercise.exercise).title}
                 </AppText>
-                <AppText variant="footnote" tone="textSecondary" numeric>
-                  {work.length > 0 ? work.map((set) => formatSetShort(set, exercise.exercise.kind)).join(' · ') : 'Saltato'}
-                </AppText>
+                {work.length > 0 ? (
+                  // Warm-up sets too, said as such: they count in no total, but they were done.
+                  <SetLines sets={exercise.sets.filter((set) => set.done)} kind={exercise.exercise.kind} size="regular" />
+                ) : (
+                  <AppText variant="footnote" tone="textSecondary">
+                    Saltato
+                  </AppText>
+                )}
                 {work.length > 0 ? <Change change={change} record={recordOf(exercise)} withWas={!arriving} /> : null}
               </View>
             </Step>
@@ -275,7 +281,7 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   tick: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, minWidth: 0, paddingBottom: Spacing.sm },
-  exercise: { gap: 2, minHeight: 56, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, borderRadius: Radius.md, borderCurve: 'continuous' },
+  exercise: { gap: 4, minHeight: 56, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, borderRadius: Radius.md, borderCurve: 'continuous' },
   change: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.xs, marginTop: 2 },
   // Set apart from the app's own words: the book's voice, with the opening quote hanging on its left.
   note: { paddingLeft: 28 },

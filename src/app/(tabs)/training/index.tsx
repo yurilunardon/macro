@@ -4,8 +4,6 @@ import { useEffect, useState } from 'react';
 import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, {
   Easing,
-  FadeIn,
-  LinearTransition,
   type SharedValue,
   useAnimatedStyle,
   useReducedMotion,
@@ -22,7 +20,9 @@ import { MenuButton } from '@/components/menu-button';
 import { ProgressBar } from '@/components/progress';
 import { ScreenScroll } from '@/components/screen';
 import { Radius, Spacing } from '@/constants/theme';
+import { Fold } from '@/components/fold';
 import { FoldChevron } from '@/components/fold-chevron';
+import { SetLines } from '@/components/set-lines';
 import { restFor } from '@/db/exercises';
 import { prefetch, useLiveQuery } from '@/db/live';
 import { getDay, getNextDay, getPrograms, setActiveProgram, type DaySummary, type ProgramDay } from '@/db/programs';
@@ -38,7 +38,8 @@ import { addDays, daysBetween, daysFrom, formatMonthName, formatRecent, formatSh
 import { isWarmUp, muscleLabel } from '@/lib/exercises';
 import { countLabel } from '@/lib/format';
 import { periodRange, totalsOf, workoutsBetween } from '@/lib/progress';
-import { formatLifted, formatSetShort, formatWorkoutLength, formatWorkoutLengthShort, isWorkSet } from '@/lib/training';
+import { clockOf } from '@/lib/plan';
+import { formatLifted, formatWorkoutLength, isWorkSet } from '@/lib/training';
 import { buildTrainingLine, PAST_SHOWN, type LineRow } from '@/lib/training-line';
 import { haptics } from '@/services/haptics';
 import { openActiveWorkout, startAndOpenWorkout, useWorkoutStarting } from '@/services/start-workout';
@@ -115,7 +116,7 @@ export default function TrainingScreen() {
 
       {/* 1 · The program. */}
       {next ? (
-        <Animated.View layout={LAYOUT}>
+        <View>
           <MenuButton
             icon="chevron.down"
             accessibilityLabel={`Scheda in uso: ${next.program.name}. Cambia o gestisci le schede`}
@@ -181,7 +182,7 @@ export default function TrainingScreen() {
               />
             </ListGroup>
           ) : null}
-        </Animated.View>
+        </View>
       ) : data ? (
         <Card style={styles.hero}>
           <Icon name="list.bullet.rectangle.portrait" size={28} tone="accent" />
@@ -198,17 +199,17 @@ export default function TrainingScreen() {
 
       {/* 2 · How it is going: the numbers are on their own page. */}
       {data ? (
-        <Animated.View layout={LAYOUT}>
+        <View>
           <AppText variant="title3" style={styles.sectionTitle}>
             Progressi
           </AppText>
           <ProgressCard history={history} today={today} onPress={() => router.push('/training/progress')} />
-        </Animated.View>
+        </View>
       ) : null}
 
       {/* 3 · The archive, as tiles: not rows that look like the program's days. */}
       {data ? (
-        <Animated.View layout={LAYOUT}>
+        <View>
           <AppText variant="title3" style={styles.sectionTitle}>
             Archivio
           </AppText>
@@ -227,7 +228,7 @@ export default function TrainingScreen() {
             />
             <Tile symbol="books.vertical" label="Esercizi" detail="La libreria" onPress={() => router.push('/training/exercises')} />
           </View>
-        </Animated.View>
+        </View>
       ) : null}
     </ScreenScroll>
   );
@@ -274,7 +275,7 @@ function TrainingLine({ rows, days, details, past, today, canStart, names, onOpe
         const open = isOpen(row);
         const day = row.kind === 'past' || row.kind === 'active' ? null : days.find((d) => d.id === row.dayId);
         return (
-          <Animated.View key={row.key} layout={LAYOUT} style={styles.step}>
+          <View key={row.key} style={styles.step}>
             <View style={styles.rail}>
               {rows.length > 1 ? (
                 <View style={[styles.lineSegment, { backgroundColor: theme.separator }, first ? { top: dotY } : { top: 0 }, last ? { height: dotY } : { bottom: 0 }]} />
@@ -324,7 +325,7 @@ function TrainingLine({ rows, days, details, past, today, canStart, names, onOpe
                 ) : null}
               </View>
             </View>
-          </Animated.View>
+          </View>
         );
       })}
     </View>
@@ -386,11 +387,6 @@ function PastDay({
   const theme = useTheme();
   const when = formatRecent(workout.date, today) ?? formatShortDate(workout.date);
   const seconds = (new Date(workout.endedAt).getTime() - new Date(workout.startedAt).getTime()) / 1000;
-  const metrics = [
-    { label: 'durata', value: formatWorkoutLengthShort(seconds) },
-    { label: 'serie', value: String(workout.workSets) },
-    { label: 'sollevati', value: formatLifted(workout.tonnage) },
-  ];
   return (
     <>
       <Pressable
@@ -407,31 +403,41 @@ function PastDay({
         </View>
         <FoldChevron open={open} />
       </Pressable>
-      {open ? (
-        <Animated.View entering={DAY_IN} style={styles.dayOpen}>
-          <View style={styles.metrics}>
-            {metrics.map((m) => (
-              <View key={m.label} style={styles.metric}>
-                <AppText variant="headline" numeric numberOfLines={1}>
-                  {m.value}
-                </AppText>
-                <AppText variant="caption" tone="textSecondary">
-                  {m.label}
-                </AppText>
-              </View>
-            ))}
+      <Fold open={open}>
+        <View style={styles.dayOpen}>
+          {/* Only how long it took: the sets and the load are with each exercise below. */}
+          <View style={styles.length}>
+            <AppText variant="headline" numeric numberOfLines={1}>
+              {formatWorkoutLength(seconds)}
+            </AppText>
+            <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1} style={styles.flex}>
+              {`dalle ${clockOf(workout.startedAt)} alle ${clockOf(workout.endedAt)}`}
+            </AppText>
           </View>
           <View style={[styles.rule, { backgroundColor: theme.separator }]} />
           {(detail?.exercises ?? []).map((exercise) => {
+            if (isWarmUp(exercise.exercise)) {
+              const warm = exercise.sets[0];
+              return warm?.done ? (
+                <View key={exercise.id} style={styles.pastExercise}>
+                  <AppText variant="subhead" numberOfLines={1}>
+                    Riscaldamento
+                  </AppText>
+                  {warm.seconds !== null ? (
+                    <AppText variant="footnote" weight="600" numeric>
+                      {formatWorkoutLength(warm.seconds)}
+                    </AppText>
+                  ) : null}
+                </View>
+              ) : null;
+            }
             const sets = exercise.sets.filter(isWorkSet);
             return sets.length > 0 ? (
-              <View key={exercise.id}>
+              <View key={exercise.id} style={styles.pastExercise}>
                 <AppText variant="subhead" numberOfLines={1}>
                   {names(exercise.exercise).title}
                 </AppText>
-                <AppText variant="footnote" tone="textSecondary" numeric>
-                  {sets.map((set) => formatSetShort(set, exercise.exercise.kind)).join(' · ')}
-                </AppText>
+                <SetLines sets={exercise.sets.filter((set) => set.done)} kind={exercise.exercise.kind} />
               </View>
             ) : null;
           })}
@@ -440,8 +446,8 @@ function PastDay({
               Apri allenamento
             </AppText>
           </Pressable>
-        </Animated.View>
-      ) : null}
+        </View>
+      </Fold>
     </>
   );
 }
@@ -498,8 +504,8 @@ function ComingDay({
         </View>
         <FoldChevron open={open} />
       </Pressable>
-      {open ? (
-        <Animated.View entering={DAY_IN} style={styles.dayOpen}>
+      <Fold open={open}>
+        <View style={styles.dayOpen}>
           {exercises.length > 0 ? (
             <View style={styles.exercises}>
               {exercises.map((planned) => (
@@ -509,7 +515,7 @@ function ComingDay({
                   </AppText>
                   {isWarmUp(planned.exercise) ? null : (
                     <AppText variant="subhead" tone="textSecondary" numeric>
-                      {`${planned.sets} × ${planned.repMin}–${planned.repMax}`}
+                      {`${planned.sets === 1 ? '1 serie' : `${planned.sets} serie`} · ${planned.repMin}–${planned.repMax} ${planned.exercise.kind === 'time' ? 's' : 'rip'}`}
                     </AppText>
                   )}
                 </View>
@@ -527,8 +533,8 @@ function ComingDay({
             </Pressable>
           </View>
           {canStart && exercises.length > 0 ? <Button title={`Inizia ${day.name}`} variant={isNext ? 'filled' : 'tinted'} onPress={onStart} /> : null}
-        </Animated.View>
-      ) : null}
+        </View>
+      </Fold>
     </>
   );
 }
@@ -620,8 +626,8 @@ const styles = StyleSheet.create({
   dayHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 58, paddingHorizontal: Spacing.lg, paddingVertical: Spacing.sm + 2 },
   activeDay: { gap: Spacing.md, padding: Spacing.lg },
   dayOpen: { gap: Spacing.md, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
-  metrics: { flexDirection: 'row', gap: Spacing.sm },
-  metric: { flex: 1, gap: 1 },
+  length: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.sm },
+  pastExercise: { gap: 3 },
   rule: { height: StyleSheet.hairlineWidth },
   dayMeta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   dayLink: { alignSelf: 'flex-start', paddingVertical: Spacing.xs },
@@ -636,9 +642,6 @@ const styles = StyleSheet.create({
   tile: { flex: 1, gap: Spacing.sm, padding: Spacing.md, borderRadius: Radius.lg, borderCurve: 'continuous', minHeight: 104 },
 });
 
-// What is below slides to its new place instead of jumping, and an open day fades in.
-const LAYOUT = LinearTransition.duration(280).easing(Easing.out(Easing.cubic));
-const DAY_IN = FadeIn.duration(200);
 
 /** One beat shared by the card and its dot, so they breathe together: 0 → 1 → 0, about once a second each way. */
 function useBreath(running: boolean): SharedValue<number> {

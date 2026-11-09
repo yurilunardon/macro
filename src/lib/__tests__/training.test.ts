@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { defaultRestSeconds, exerciseNames, exerciseSearchText, loadIncrement } from '../exercises';
 import {
+  groupSets,
   bestOneRepMax,
   dayIcon,
   allSetsDone,
@@ -122,6 +123,34 @@ describe('formatting', () => {
     expect(formatDuration(3725)).toBe('1:02:05');
     expect(formatWorkoutLength(48 * 60)).toBe('48 min');
     expect(formatWorkoutLength(65 * 60)).toBe('1 h 05 min');
+  });
+});
+
+describe('groupSets', () => {
+  const set = (weight: number | null, reps: number | null, type: 'normal' | 'drop' = 'normal', seconds: number | null = null) => ({ type, weight, reps, seconds });
+
+  it('puts identical sets one after the other on one line, each number with its unit', () => {
+    expect(groupSets([set(80, 8), set(80, 8), set(75, 10)], 'weight')).toEqual([
+      { count: 2, weight: '80 kg', reps: '8 rip', time: null, type: null },
+      { count: 1, weight: '75 kg', reps: '10 rip', time: null, type: null },
+    ]);
+  });
+
+  it('keeps a drop set apart, and only joins sets next to each other', () => {
+    expect(groupSets([set(80, 8), set(60, 12, 'drop'), set(80, 8)], 'weight').map((l) => [l.count, l.type])).toEqual([
+      [1, null],
+      [1, 'Drop set'],
+      [1, null],
+    ]);
+  });
+
+  it('says which sets were warm-ups', () => {
+    expect(groupSets([{ type: 'warmup' as const, weight: 40, reps: 10, seconds: null }, set(80, 8)], 'weight').map((l) => l.type)).toEqual(['Riscaldamento', null]);
+  });
+
+  it('writes added load on bodyweight work, nothing without, and holds as times', () => {
+    expect(groupSets([set(0, 12), set(10, 8)], 'bodyweight').map((l) => l.weight)).toEqual([null, '+10 kg']);
+    expect(groupSets([set(null, null, 'normal', 45), set(null, null, 'normal', 90)], 'time').map((l) => l.time)).toEqual(['45 s', '1:30']);
   });
 });
 

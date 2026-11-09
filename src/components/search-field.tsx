@@ -46,5 +46,7 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.md,
     marginBottom: Spacing.lg,
   },
-  input: { flex: 1, fontSize: 17, paddingVertical: Spacing.md - 2 },
+  // A fixed height, as UISearchBar's, with no padding: iOS centres a single line in it by itself.
+  // Sized by padding, the text sat low in the box on the phone.
+  input: { flex: 1, height: 40, paddingVertical: 0, fontSize: 17 },
 });

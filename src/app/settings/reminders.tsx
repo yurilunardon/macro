@@ -69,12 +69,6 @@ export default function RemindersScreen() {
     else apply();
   };
 
-  const toggleExpiry = (expiry: boolean) => {
-    const apply = () => save({ ...settings, expiry });
-    if (expiry) void enable(apply);
-    else apply();
-  };
-
   const switchFor = (value: boolean, onChange: (v: boolean) => void, label: string) => (
     <Switch value={value} onValueChange={onChange} trackColor={{ true: theme.accent }} accessibilityLabel={label} />
   );
@@ -129,19 +123,6 @@ export default function RemindersScreen() {
         />
       </ListGroup>
       <SectionFooter>L’avviso serale elenca gli integratori del giorno non ancora spuntati. Ogni integratore può avere anche un suo orario.</SectionFooter>
-
-      <SectionTitle>AltStore</SectionTitle>
-      <ListGroup>
-        <Row
-          title="Avviso prima della scadenza"
-          subtitle="La sera prima che l’app scada, per ricordarti il Refresh"
-          chevron={false}
-          detail={switchFor(effective(settings.expiry), toggleExpiry, 'Avviso prima della scadenza')}
-        />
-      </ListGroup>
-      <SectionFooter>
-        Notifiche solo locali, senza server.
-      </SectionFooter>
 
       <SectionTitle>Allenamento · fine del recupero</SectionTitle>
       <Segmented

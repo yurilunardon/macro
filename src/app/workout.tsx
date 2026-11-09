@@ -22,6 +22,7 @@ import Animated, {
   withTiming,
   type ExitAnimationsValues,
   type LayoutAnimation,
+  type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 import {
@@ -89,6 +90,7 @@ import {
   type LoggedSet,
   type Progression,
 } from '@/lib/training';
+import { clockOf } from '@/lib/plan';
 import { haptics } from '@/services/haptics';
 import { endFromSheet, endWorkout } from '@/services/end-workout';
 import { restTimer, useRestTimer } from '@/services/rest-timer';
@@ -159,9 +161,12 @@ export default function WorkoutScreen() {
   // dragged or removed. Only the exercises change; sets are deleted with a swipe at any time.
   const [editing, setEditing] = useState(false);
   const scroll = useScrollTop();
+  /** Where the big time at the top of the page ends: scrolled past it, the time shows in the bar. */
+  const timeBottom = useSharedValue(Number.POSITIVE_INFINITY);
   // The order just dragged into, shown until the saved order comes back from the database.
   const [localOrder, setLocalOrder] = useState<number[] | null>(null);
   const [foldedIds, setFoldedIds] = useState<ReadonlySet<number>>(() => new Set(folded));
+  const [concludedIds, setConcludedIds] = useState<ReadonlySet<number>>(() => new Set(concluded));
   const { data } = useLiveQuery(ACTIVE_WORKOUT_KEY, loadActiveWorkout, ACTIVE_WORKOUT_TOPICS);
   // Ending or cancelling it, the sheet keeps showing the workout while the summary covers it or
   // it slides away, instead of flashing "Nessun allenamento in corso".
@@ -189,22 +194,10 @@ export default function WorkoutScreen() {
   useEffect(() => {
     current.current = data?.workout;
     const workoutNow = data?.workout;
+    // Even after the last set: one more may be added before the exercise is concluded, and
+    // concluding the last one stops it.
     latest.onSetDone = workoutNow
-      ? (setId, rest) => {
-          // With a day of the program, nothing left means it is over: no rest, the offer to end it.
-          // A free workout goes on as long as exercises are added.
-          const others = workoutNow.exercises.filter((ex) => !isWarmUp(ex.exercise)).map((ex) => ({ sets: ex.sets.filter((set) => set.id !== setId) }));
-          if (workoutNow.dayId === null || !others.every((ex) => ex.sets.every((set) => set.done || isSetHidden(set.id)))) {
-            restTimer.start(rest, nextLabel(workoutNow, setId, (e) => names(e.exercise).title), { sound: data?.sound ?? false });
-            return;
-          }
-          restTimer.stop();
-          clearTimeout(offerTimer.current);
-          offerTimer.current = setTimeout(() => {
-            // Still so, and still here: a set may have been opened again, or the sheet closed.
-            if (current.current && allSetsDone(current.current.exercises.filter((ex) => !isWarmUp(ex.exercise)), isSetHidden) && navigation.isFocused()) router.push('/workout-done');
-          }, OFFER_END_AFTER_MS);
-        }
+      ? (setId, rest) => restTimer.start(rest, nextLabel(workoutNow, setId, (e) => names(e.exercise).title), { sound: data?.sound ?? false })
       : null;
   });
 
@@ -223,6 +216,8 @@ export default function WorkoutScreen() {
   }, [count, scroll.ref]);
 
   const workout = data?.workout ?? (closing ? shown : null);
+  // A workout opened again after the app was closed: what was all done then counts as concluded.
+  if (workout && seedConcluded(workout)) setConcludedIds(new Set(concluded));
   const allExercises = workout?.exercises ?? [];
   const exercises =
     localOrder && localOrder.length === allExercises.length
@@ -243,6 +238,9 @@ export default function WorkoutScreen() {
   const title = (e: WorkoutExercise) => names(e.exercise).title;
   // The set to do now is picked out, so the eye finds it at once after a rest.
   const progress = workoutProgress(exercises);
+  const counted = workoutProgress(exercises.filter((ex) => !isWarmUp(ex.exercise)));
+  const setsDone = counted.done;
+  const setsTotal = counted.total;
   const currentSetId = progress.current ? exercises[progress.current.exercise].sets[progress.current.set].id : null;
 
   /** Folds and unfolds exercises; kept in `folded` while the sheet is closed and reopened. */
@@ -267,6 +265,29 @@ export default function WorkoutScreen() {
     const todo = (ex: WorkoutExercise) => ex.sets.some((set) => !set.done);
     const next = exercises.slice(at + 1).find(todo) ?? exercises.slice(0, at).find(todo);
     fold(next ? [[id, true], [next.id, false]] : [[id, true]]);
+  });
+
+  /**
+   * "Concludi" on an exercise with all its sets done: it folds away with its wave. With every
+   * exercise concluded the rest stops, and on a day of the program the offer to end comes up; a
+   * free workout goes on as long as exercises are added.
+   */
+  const conclude = useStableCallback((id: number, value: boolean) => {
+    if (value) concluded.add(id);
+    else concluded.delete(id);
+    setConcludedIds(new Set(concluded));
+    if (!value) return;
+    const done = (ex: WorkoutExercise) => ex.sets.every((set) => set.done || isSetHidden(set.id));
+    const all = exercises.filter((ex) => !isWarmUp(ex.exercise));
+    if (!all.every((ex) => concluded.has(ex.id) && done(ex))) return;
+    restTimer.stop();
+    if (workout?.dayId == null) return;
+    clearTimeout(offerTimer.current);
+    offerTimer.current = setTimeout(() => {
+      // Still so, and still here: a set may have been opened again, or the sheet closed.
+      const now = current.current?.exercises.filter((ex) => !isWarmUp(ex.exercise));
+      if (now && allSetsDone(now, isSetHidden) && now.every((ex) => concluded.has(ex.id)) && navigation.isFocused()) router.push('/workout-done');
+    }, OFFER_END_AFTER_MS);
   });
 
   const removeExercise = useStableCallback(async (id: number) => {
@@ -388,7 +409,10 @@ export default function WorkoutScreen() {
       <ScreenScroll scroll={scroll} scrollToOverflowEnabled={false} keyboardDismissMode="on-drag">
         {/* While editing, a tap anywhere outside the exercises ends it, as on the Home Screen. */}
         <View onStartShouldSetResponder={() => editing} onResponderRelease={() => setEditing(false)}>
-        {/* The time, big in the bar at the top, with the name of the workout above it. */}
+        {/*
+          The name and the time are at the top of the page, with room for a long name. Once the big
+          time has gone under the bar, it comes into the bar, as a large title does.
+        */}
         <Stack.Screen
           options={{
             title: workout?.name ?? startingTitle ?? 'Allenamento',
@@ -396,6 +420,8 @@ export default function WorkoutScreen() {
               <WorkoutTitle
                 name={workout?.name ?? startingTitle ?? 'Allenamento'}
                 startedAt={workout?.startedAt ?? openedAt}
+                offset={scroll.offset}
+                after={timeBottom}
                 onPress={editing ? () => setEditing(false) : undefined}
               />
             ),
@@ -443,8 +469,14 @@ export default function WorkoutScreen() {
           )}
         </Stack.Toolbar>
 
-        {/* Keeps the first exercise's buttons out of the reach of the bar's own, which take touches a good way below it. */}
-        <View style={styles.topSpace} />
+        {/* Also keeps the first exercise's buttons out of the reach of the bar's own, which take touches a good way below it. */}
+        <WorkoutHead
+          name={workout?.name ?? startingTitle ?? 'Allenamento'}
+          startedAt={workout?.startedAt ?? openedAt}
+          done={setsDone}
+          total={setsTotal}
+          onTimeLayout={(bottom) => timeBottom.set(bottom)}
+        />
 
         {offersWarmUp && workout ? <WarmUpOffer dayName={workout.name} onTake={takeWarmUp} onTurnDown={turnDownWarmUp} /> : null}
 
@@ -493,8 +525,10 @@ export default function WorkoutScreen() {
                   settled={settled && index < built}
                   editing={editing}
                   collapsed={foldedIds.has(ex.id)}
+                  concluded={concludedIds.has(ex.id)}
                   onEdit={startEditing}
                   onFold={foldOne}
+                  onConclude={conclude}
                   onCompleted={onCompleted}
                   onRemove={removeExercise}
                 />
@@ -651,20 +685,35 @@ type ExerciseBlockProps = {
   /** The sheet is up: native menus and pickers can be built. */
   settled: boolean;
   collapsed: boolean;
+  /** "Concludi" was pressed: with its sets all done, it is over. */
+  concluded: boolean;
   /** Held on its name: edit mode starts. */
   onEdit: () => void;
   onFold: (id: number, collapsed: boolean) => void;
-  /** Its last set was just ticked. */
+  onConclude: (id: number, concluded: boolean) => void;
+  /** It was just concluded, and has had its wave. */
   onCompleted: (id: number) => void;
   onRemove: (id: number) => void;
 };
 
 /** Exercises folded by hand or once done, kept while the workout is closed and reopened. */
 const folded = new Set<number>();
+/** Exercises concluded, of the workout in `concludedFor`, kept the same way. */
+const concluded = new Set<number>();
+const concludedFor: { id: number | null } = { id: null };
+
+/** For a workout not seen since the app opened, counts what is all done as concluded. Says whether it did. */
+function seedConcluded(workout: Workout): boolean {
+  if (concludedFor.id === workout.id) return false;
+  concludedFor.id = workout.id;
+  concluded.clear();
+  for (const ex of workout.exercises) if (ex.sets.length > 0 && ex.sets.every((set) => set.done)) concluded.add(ex.id);
+  return true;
+}
 /** The load suggested from last time, once taken, by exercise of the workout. */
 const taken = new Map<number, number>();
 
-const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, title, subtitle, editing, settled, collapsed, onEdit, onFold, onCompleted, onRemove }: ExerciseBlockProps) {
+const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, title, subtitle, editing, settled, collapsed, concluded: isConcluded, onEdit, onFold, onConclude, onCompleted, onRemove }: ExerciseBlockProps) {
   const db = useSQLiteContext();
   const names = { title, subtitle };
   // A set deleted is gone at once, with "Annulla" for a few seconds, as every row in the app.
@@ -673,9 +722,15 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
   const theme = useTheme();
   const router = useRouter();
   const { exercise } = item;
-  const complete = item.sets.length > 0 && item.sets.every((set) => set.done);
-  // The last set ticked: its bar fills, then the exercise folds away; reopening one of its sets
-  // opens it again. Until it folds it stays as it is, or everything under what changed would jump.
+  const allDone = item.sets.length > 0 && item.sets.every((set) => set.done);
+  // With the last set ticked it asks: conclude it, or add a set; the values can still be changed
+  // until "Concludi". Concluded, its bars fill with a wave and it folds away; reopening one of its
+  // sets opens it again. Until it folds it stays as it is, or everything under it would jump.
+  const complete = allDone && isConcluded;
+  const asking = allDone && !isConcluded;
+  useEffect(() => {
+    if (isConcluded && !allDone) onConclude(item.id, false);
+  }, [isConcluded, allDone, onConclude, item.id]);
   const [wasComplete, setWasComplete] = useState(complete);
   const [change, setChange] = useState<'completed' | 'reopened' | null>(null);
   if (complete !== wasComplete) {
@@ -770,7 +825,7 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
                   ? `Ora: serie ${currentIndex + 1} di ${item.sets.length}`
                   : shownComplete && best
                   ? `${item.sets.length === 1 ? '1 serie' : `${item.sets.length} serie`} · migliore ${formatSet(best, exercise.kind)}`
-                  : [names.subtitle, range ? `${item.sets.length} × ${range}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
+                  : [names.subtitle, plan ? `${item.sets.length === 1 ? '1 serie' : `${item.sets.length} serie`} · ${plan.min}–${plan.max} ${timed ? 's' : 'rip'}` : muscleLabel(exercise.muscle)].filter(Boolean).join(' · ')}
               </AppText>
             </Animated.View>
           </Pressable>
@@ -899,13 +954,45 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
             />
           );
         })}
-        {/* Adding a set and the rest after each one: what is changed most while training. */}
-        <Animated.View layout={BLOCK_LAYOUT} style={styles.exerciseFooter}>
-          <View style={styles.flex}>
-            <ActionRow label="Aggiungi serie" symbol="plus" onPress={() => void addSet(db, item.id)} />
-          </View>
-          <RestPicker inert={!settled} value={rest} onChange={(seconds) => void setWorkoutExerciseRest(db, item.id, seconds)} />
-        </Animated.View>
+        {asking ? (
+          // The sets planned are done: one more, or it is over. Until then the values can still be changed.
+          <Animated.View entering={ASK_IN} layout={BLOCK_LAYOUT} style={[styles.ask, { borderTopColor: theme.separator }]}>
+            <View style={styles.askText}>
+              <AppText variant="subhead" weight="600">
+                Tutte le serie fatte
+              </AppText>
+              <AppText variant="footnote" tone="textSecondary">
+                Puoi ancora correggere i dati, poi tocca Concludi.
+              </AppText>
+            </View>
+            <View style={styles.askButtons}>
+              <View style={styles.flex}>
+                <Button
+                  title="Aggiungi serie"
+                  variant="tinted"
+                  onPress={() => {
+                    haptics.light();
+                    void addSet(db, item.id);
+                  }}
+                />
+              </View>
+              <View style={styles.flex}>
+                <Button
+                  title="Concludi"
+                  onPress={() => onConclude(item.id, true)}
+                />
+              </View>
+            </View>
+          </Animated.View>
+        ) : (
+          // Adding a set and the rest after each one: what is changed most while training.
+          <Animated.View layout={BLOCK_LAYOUT} style={styles.exerciseFooter}>
+            <View style={styles.flex}>
+              <ActionRow label="Aggiungi serie" symbol="plus" onPress={() => void addSet(db, item.id)} />
+            </View>
+            <RestPicker inert={!settled} value={rest} onChange={(seconds) => void setWorkoutExerciseRest(db, item.id, seconds)} />
+          </Animated.View>
+        )}
         </Animated.View>
         )}
       </ListGroup>
@@ -1306,13 +1393,30 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
 });
 
 /**
- * The time of the workout, big in the bar at the top, with its name small above it. It ticks on
- * its own: the rest of the screen does not redraw every second, which got in the way of dragging.
+ * The time of the workout in the bar, shown once the big one at the top of the page has scrolled
+ * under it. It ticks on its own: the rest of the screen does not redraw every second, which got in
+ * the way of dragging.
  */
-function WorkoutTitle({ name, startedAt, onPress }: { name: string; startedAt: string; onPress?: () => void }) {
+function WorkoutTitle({
+  name,
+  startedAt,
+  offset,
+  after,
+  onPress,
+}: {
+  name: string;
+  startedAt: string;
+  offset: SharedValue<number>;
+  after: SharedValue<number>;
+  onPress?: () => void;
+}) {
   const theme = useTheme();
   const now = useClock(1000);
   const elapsed = formatDuration((now - new Date(startedAt).getTime()) / 1000);
+  const style = useAnimatedStyle(() => {
+    const t = Math.min(1, Math.max(0, (offset.get() - after.get() + 8) / 16));
+    return { opacity: t, transform: [{ translateY: (1 - t) * 6 }] };
+  });
   return (
     // While editing, a tap here ends it too, as a tap anywhere else on the page does.
     <Pressable
@@ -1322,13 +1426,57 @@ function WorkoutTitle({ name, startedAt, onPress }: { name: string; startedAt: s
       accessible
       accessibilityRole="header"
       accessibilityLabel={`${name}, ${elapsed}`}>
-      <AppText variant="caption" weight="600" tone="textSecondary" numberOfLines={1}>
-        {name.toUpperCase()}
-      </AppText>
-      <AppText numeric style={[styles.titleTime, { color: theme.accent }]}>
-        {elapsed}
-      </AppText>
+      <Animated.View style={style}>
+        <AppText numeric style={[styles.titleTime, { color: theme.accent }]}>
+          {elapsed}
+        </AppText>
+      </Animated.View>
     </Pressable>
+  );
+}
+
+/**
+ * The top of the page: the workout's name, with room for two lines, then its time, big, with the
+ * sets done and a bar of how far along it is.
+ */
+function WorkoutHead({
+  name,
+  startedAt,
+  done,
+  total,
+  onTimeLayout,
+}: {
+  name: string;
+  startedAt: string;
+  done: number;
+  total: number;
+  onTimeLayout: (bottom: number) => void;
+}) {
+  const theme = useTheme();
+  const now = useClock(1000);
+  const elapsed = formatDuration((now - new Date(startedAt).getTime()) / 1000);
+  // The head is the first thing in the page, so its own measures are the page's.
+  const [top, setTop] = useState(0);
+  return (
+    <View style={styles.head} onLayout={(event) => setTop(event.nativeEvent.layout.y)}>
+      <AppText variant="title" numberOfLines={2}>
+        {name}
+      </AppText>
+      <View style={styles.headTime} onLayout={(event) => onTimeLayout(top + event.nativeEvent.layout.y + event.nativeEvent.layout.height)}>
+        <AppText numeric accessibilityLabel={`In corso da ${elapsed}`} style={[styles.headClock, { color: theme.accent }]}>
+          {elapsed}
+        </AppText>
+        <View style={styles.headCount}>
+          <AppText variant="subhead" weight="600" numeric numberOfLines={1}>
+            {`${done} di ${total} serie`}
+          </AppText>
+          <AppText variant="footnote" tone="textSecondary" numeric numberOfLines={1}>
+            {`dalle ${clockOf(startedAt)}`}
+          </AppText>
+        </View>
+      </View>
+      <ProgressBar value={done} target={Math.max(total, 1)} color={theme.accent} height={6} />
+    </View>
   );
 }
 
@@ -1510,6 +1658,7 @@ const COLLAPSE = { duration: 300, easing: Easing.inOut(Easing.quad) };
  * red of the swipe shrinks away instead of lingering under the rows sliding over it.
  */
 const SET_IN = FadeIn.duration(200);
+const ASK_IN = FadeIn.duration(240);
 const SET_OUT = (values: ExitAnimationsValues): LayoutAnimation => {
   'worklet';
   return {
@@ -1587,14 +1736,20 @@ const styles = StyleSheet.create({
   // Narrow enough to leave room for ⌄ on the left and the note, ⋯ and "Termina" on the right: a
   // wider title makes iOS fold them away into an overflow menu.
   title: { alignItems: 'center', maxWidth: 110 },
-  titleTime: { fontSize: 22, lineHeight: 26, fontWeight: '700', fontVariant: ['tabular-nums'] },
-  topSpace: { height: Spacing.xl },
+  titleTime: { fontSize: 20, lineHeight: 24, fontWeight: '700', fontVariant: ['tabular-nums'] },
+  head: { gap: Spacing.sm, paddingTop: Spacing.lg, paddingBottom: Spacing.xl, paddingHorizontal: Spacing.xs },
+  headTime: { flexDirection: 'row', alignItems: 'flex-end', gap: Spacing.md },
+  headClock: { flex: 1, fontSize: 48, lineHeight: 54, fontWeight: '700', fontVariant: ['tabular-nums'], letterSpacing: -0.5 },
+  headCount: { alignItems: 'flex-end', paddingBottom: 6, gap: 1 },
   exercise: {},
   setBars: { flexDirection: 'row', gap: 3, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md },
   setBar: { flex: 1, height: 4, borderRadius: 2, overflow: 'hidden' },
   setBarFill: { width: '100%', height: '100%', borderRadius: 2, transformOrigin: 'left center' },
   setBarLight: { backgroundColor: '#FFFFFF' },
   exerciseFooter: { flexDirection: 'row', alignItems: 'center', paddingRight: Spacing.md },
+  ask: { gap: Spacing.md, padding: Spacing.lg, borderTopWidth: StyleSheet.hairlineWidth },
+  askText: { gap: 2 },
+  askButtons: { flexDirection: 'row', gap: Spacing.sm },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.sm },
   adviceText: { flex: 1, gap: 2 },
   adviceTitle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2 },

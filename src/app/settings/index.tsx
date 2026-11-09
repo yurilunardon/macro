@@ -13,9 +13,7 @@ import { pickBackup, restoreBackup, shareBackup } from '@/db/backup';
 import { exportBodyCsv, exportDiaryCsv } from '@/db/export';
 import { useLiveQuery } from '@/db/live';
 import { getSetting } from '@/db/settings';
-import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { BackupFormatError } from '@/lib/backup';
-import { formatExpiry } from '@/lib/provisioning';
 import { haptics } from '@/services/haptics';
 
 const BACKUP_REMINDER_DAYS = 7;
@@ -32,7 +30,6 @@ export default function SettingsScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
   const [busy, setBusy] = useState<'export' | 'import' | 'csv' | null>(null);
-  const expiry = useAppExpiry();
 
   const { data } = useLiveQuery('settings', async (database) => {
     const [lastBackupAt, counts] = await Promise.all([
@@ -157,27 +154,13 @@ export default function SettingsScreen() {
         />
       </ListGroup>
       <SectionFooter>
-        {`I dati restano sul telefono anche quando l’app scade e la rinnovi con AltStore. Il backup serve se elimini l’app, cambi Apple ID o cambi iPhone: scegli «Salva su File» e mettilo in iCloud Drive.${
+        {`I dati restano sul telefono anche quando l’app scade e la rinnovi con SideStore. Il backup serve se elimini l’app, cambi Apple ID o cambi iPhone: scegli «Salva su File» e mettilo in iCloud Drive.${
           data?.counts ? `\n\nSul telefono: ${data.counts.entries} voci di diario, ${data.counts.foods} alimenti.` : ''
         }`}
       </SectionFooter>
 
       <SectionTitle>Informazioni</SectionTitle>
       <ListGroup>
-        {expiry ? (
-          <Row
-            title="Scadenza dell’app"
-            subtitle={expiry.level === 'ok' ? 'Rinnova da AltStore prima di questa data' : 'Rinnova da AltStore: My Apps → Refresh All'}
-            detail={formatExpiry(expiry.expiresAt)}
-            icon={
-              <Icon
-                name="clock.badge.exclamationmark"
-                size={20}
-                tone={expiry.level === 'ok' ? 'accent' : expiry.level === 'soon' ? 'warning' : 'danger'}
-              />
-            }
-          />
-        ) : null}
         <Row
           title="Dati prodotti: Open Food Facts"
           subtitle="Database libero, licenza ODbL"

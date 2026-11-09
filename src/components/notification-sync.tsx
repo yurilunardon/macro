@@ -8,7 +8,6 @@ import { getActivityDates } from '@/db/calendar';
 import { useLiveQuery } from '@/db/live';
 import { getSetting } from '@/db/settings';
 import { getDoseChanges, getDoseKeys, getSupplements, takeDoses } from '@/db/supplements';
-import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { useToday } from '@/hooks/use-today';
 import { addDays, daysFrom, isDateKey } from '@/lib/dates';
 import { supplementsEvening } from '@/lib/reminders';
@@ -23,13 +22,12 @@ const SUPPLEMENT_DAYS = 14;
 
 /**
  * Keeps the scheduled notifications in line with the reminder settings, the supplements still
- * to take and the app's expiry, which changes every time AltStore refreshes the app; and opens
+ * to take; and opens
  * the screen a notification is about when it is tapped. Renders nothing.
  */
 export function NotificationSync() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const expiry = useAppExpiry();
   const today = useToday();
   const last = addDays(today, SUPPLEMENT_DAYS - 1);
   const { data } = useLiveQuery(`notification-sync:${today}`, async (database) => {
@@ -47,13 +45,12 @@ export function NotificationSync() {
       supplements: supplementReminders(supplements, taken, changes, busy, daysFrom(today, last), { date: today, time }, supplementsEvening(settings)),
     };
   }, ['settings', 'calendar']);
-  const expiresAt = expiry?.expiresAt ?? null;
   // Only what the notifications depend on, so the minute-by-minute clock does not reschedule them.
-  const key = data ? JSON.stringify([data.settings, data.supplements, expiresAt?.toISOString() ?? null]) : null;
+  const key = data ? JSON.stringify([data.settings, data.supplements]) : null;
 
   useEffect(() => {
     if (!data) return;
-    syncNotifications({ settings: data.settings, supplements: data.supplements, expiresAt }).catch(() => {
+    syncNotifications({ settings: data.settings, supplements: data.supplements }).catch(() => {
       // Scheduling is best effort: the app works the same without notifications.
     });
     // eslint-disable-next-line react-hooks/exhaustive-deps

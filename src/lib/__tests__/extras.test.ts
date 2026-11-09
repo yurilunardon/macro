@@ -2,7 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import { toCsv } from '../csv';
 import { measurementChanges } from '../measurements';
-import { expiryReminderAt, formatTime, parseTime } from '../reminders';
+import { formatTime, parseTime } from '../reminders';
 
 describe('toCsv', () => {
   it('writes Italian-style CSV that Excel opens correctly', () => {
@@ -26,12 +26,6 @@ describe('reminders', () => {
     expect(formatTime(7, 5)).toBe('07:05');
   });
 
-  it('warns the evening before the expiry, or two hours before when it is late', () => {
-    const expires = new Date(2026, 10, 2, 13, 0);
-    expect(expiryReminderAt(expires, new Date(2026, 9, 31, 10, 0))).toEqual(new Date(2026, 10, 1, 20, 0));
-    expect(expiryReminderAt(expires, new Date(2026, 10, 1, 22, 0))).toEqual(new Date(2026, 10, 2, 11, 0));
-    expect(expiryReminderAt(expires, new Date(2026, 10, 2, 12, 0))).toBeNull();
-  });
 });
 
 describe('measurementChanges', () => {

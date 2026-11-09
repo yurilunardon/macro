@@ -129,6 +129,40 @@ export function formatSetShort(set: Pick<LoggedSet, 'weight' | 'reps' | 'seconds
   return set.weight === null || set.weight === 0 ? reps || '—' : `${formatNumber(set.weight, 2)}${reps}`;
 }
 
+/** Sets one after the other with the same numbers, as one line of the table: "3 serie · 80 kg · 8 rip". */
+export type SetLine = {
+  count: number;
+  /** "80 kg", "+10 kg" on a bodyweight exercise; null without a load or for a hold. */
+  weight: string | null;
+  /** "8 rip"; null for a hold or when not written. */
+  reps: string | null;
+  /** "45 s", "1:30" for a hold. */
+  time: string | null;
+  /** "Riscaldamento", "Drop set", "A cedimento"; null for a normal set. */
+  type: string | null;
+};
+
+/**
+ * A logged exercise as a few clear lines, one per run of identical sets, each number with its
+ * unit: read at a glance, where "80×8 · 80×8 · 75×10" had to be worked out.
+ */
+export function groupSets(sets: readonly Pick<LoggedSet, 'type' | 'weight' | 'reps' | 'seconds'>[], kind: ExerciseKind): SetLine[] {
+  const lines: SetLine[] = [];
+  for (const set of sets) {
+    const time = kind === 'time' && set.seconds !== null ? (set.seconds >= 60 ? formatDuration(set.seconds) : `${formatNumber(set.seconds, 0)} s`) : null;
+    const weight =
+      kind === 'time' || set.weight === null || (set.weight === 0 && kind === 'bodyweight')
+        ? null
+        : `${kind === 'bodyweight' ? '+' : ''}${formatNumber(set.weight, 2)} kg`;
+    const reps = kind === 'time' || set.reps === null ? null : `${set.reps} rip`;
+    const type = set.type === 'normal' ? null : (SET_TYPES.find((t) => t.key === set.type)?.label ?? null);
+    const last = lines.at(-1);
+    if (last && last.weight === weight && last.reps === reps && last.time === time && last.type === type) last.count += 1;
+    else lines.push({ count: 1, weight, reps, time, type });
+  }
+  return lines;
+}
+
 /** "6,1 t" or "850 kg". */
 export function formatLifted(kg: number): string {
   return kg >= 1000 ? `${formatNumber(kg / 1000, 1)} t` : `${Math.round(kg)} kg`;

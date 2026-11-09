@@ -1,8 +1,7 @@
 import * as Notifications from 'expo-notifications';
 
 import { formatMonthName, fromDateKey, monthOf, toDateKey } from '@/lib/dates';
-import { formatExpiry } from '@/lib/provisioning';
-import { DEFAULT_REMINDERS, expiryReminderAt, monthlyReportAt, REMINDERS, type ReminderSettings } from '@/lib/reminders';
+import { DEFAULT_REMINDERS, monthlyReportAt, REMINDERS, type ReminderSettings } from '@/lib/reminders';
 import type { SupplementReminder } from '@/lib/supplements';
 
 /** Every notification this app schedules starts with this, so it can replace only its own. */
@@ -17,7 +16,7 @@ const SNOOZE_MINUTES = 30;
 
 /**
  * iOS keeps at most 64 notifications waiting: the supplements' days ahead take what the daily
- * reminders, the report and the expiry leave.
+ * reminders and the report leave.
  */
 const SUPPLEMENT_LIMIT = 50;
 
@@ -50,7 +49,6 @@ export async function ensureNotificationPermission(): Promise<boolean> {
  */
 export async function syncNotifications(input: {
   settings: ReminderSettings | null;
-  expiresAt: Date | null;
   supplements: readonly SupplementReminder[];
 }): Promise<void> {
   const settings = input.settings ?? DEFAULT_REMINDERS;
@@ -118,17 +116,6 @@ export async function syncNotifications(input: {
     });
   }
 
-  const expiryAt = settings.expiry && input.expiresAt ? expiryReminderAt(input.expiresAt) : null;
-  if (expiryAt && input.expiresAt) {
-    await Notifications.scheduleNotificationAsync({
-      identifier: `${PREFIX}expiry`,
-      content: {
-        title: 'Rinnova Fuel',
-        body: `L’app scade ${formatExpiry(input.expiresAt)}. Apri AltStore e tocca Refresh All, con il Mac acceso sulla stessa Wi-Fi.`,
-      },
-      trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: expiryAt },
-    });
-  }
 }
 
 /** The same notification again in half an hour. */

@@ -1,28 +1,21 @@
 import { Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useEffect } from 'react';
-import { Alert, Linking, Pressable, StyleSheet, View } from 'react-native';
 
-import { AppText } from '@/components/app-text';
-import { Card } from '@/components/card';
 import { DayPage } from '@/components/day-page';
 import { DayPager, useDayPager } from '@/components/day-pager';
-import { Icon } from '@/components/icon';
 import { PinnedStrip } from '@/components/pinned-strip';
 import { ScreenScroll } from '@/components/screen';
 import { WeekStrip, type DayProgress } from '@/components/week-strip';
-import { Spacing } from '@/constants/theme';
 import { getDayPlans } from '@/db/days';
 import { getActiveWorkout } from '@/db/workouts';
 import { getEntriesForDate } from '@/db/entries';
 import { useLiveQuery } from '@/db/live';
-import { useAppExpiry } from '@/hooks/use-app-expiry';
 import { useScrollTop } from '@/hooks/use-scroll-top';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { addDays, isDateKey, weekOf, type DateKey } from '@/lib/dates';
 import { formatKcal } from '@/lib/format';
 import { mealForTime } from '@/lib/meals';
-import { formatExpiry, type ExpiryStatus } from '@/lib/provisioning';
 import { CLEAR_MS, useDrainingDay } from '@/services/draining-day';
 import { usePendingDeletes } from '@/services/undo';
 
@@ -55,7 +48,6 @@ function useCalorieProgress(date: DateKey): Map<DateKey, DayProgress> {
 export default function NutritionScreen() {
   const router = useRouter();
   const today = useToday();
-  const expiry = useAppExpiry();
   // A day opened from elsewhere, such as the calendar.
   const params = useLocalSearchParams<{ date?: string }>();
   const asked = isDateKey(params.date) ? params.date : null;
@@ -111,8 +103,6 @@ export default function NutritionScreen() {
         />
       </Stack.Toolbar>
 
-      {expiry && expiry.level !== 'ok' ? <ExpiryBanner status={expiry} /> : null}
-
       <PinnedStrip scroll={scroll}>
         <WeekStrip
           selected={date}
@@ -132,33 +122,3 @@ export default function NutritionScreen() {
     </ScreenScroll>
   );
 }
-
-/** Shown from three days before the app's signature expires. */
-function ExpiryBanner({ status }: { status: ExpiryStatus }) {
-  const theme = useTheme();
-  const tone = status.level === 'soon' ? 'warning' : 'danger';
-  const openAltStore = () => {
-    Linking.openURL('altstore://').catch(() => {
-      Alert.alert('Apri AltStore', 'Apri AltStore dalla schermata Home e tocca My Apps → Refresh All.');
-    });
-  };
-  return (
-    <Pressable onPress={openAltStore} accessibilityRole="button" accessibilityHint="Apre AltStore">
-      <Card style={[styles.banner, { backgroundColor: theme.card, borderColor: theme[tone] }]}>
-        <Icon name="clock.badge.exclamationmark" size={22} tone={tone} />
-        <View style={styles.flex}>
-          <AppText variant="headline">{`Fuel scade ${formatExpiry(status.expiresAt)}`}</AppText>
-          <AppText variant="subhead" tone="textSecondary">
-            Rinnovala in AltStore con Refresh All. I dati restano.
-          </AppText>
-        </View>
-        <Icon name="chevron.right" size={13} tone="textSecondary" weight="semibold" />
-      </Card>
-    </Pressable>
-  );
-}
-
-const styles = StyleSheet.create({
-  flex: { flex: 1 },
-  banner: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, marginBottom: Spacing.md, borderWidth: 1.5 },
-});
