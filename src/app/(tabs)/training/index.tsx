@@ -22,7 +22,7 @@ import { ScreenScroll } from '@/components/screen';
 import { Radius, Spacing } from '@/constants/theme';
 import { Fold } from '@/components/fold';
 import { FoldChevron } from '@/components/fold-chevron';
-import { SetLines } from '@/components/set-lines';
+import { SetSummaryLine } from '@/components/set-lines';
 import { restFor } from '@/db/exercises';
 import { prefetch, useLiveQuery } from '@/db/live';
 import { getDay, getNextDay, getPrograms, setActiveProgram, type DaySummary, type ProgramDay } from '@/db/programs';
@@ -419,8 +419,9 @@ function PastDay({
             if (isWarmUp(exercise.exercise)) {
               const warm = exercise.sets[0];
               return warm?.done ? (
-                <View key={exercise.id} style={styles.pastExercise}>
-                  <AppText variant="subhead" numberOfLines={1}>
+                <View key={exercise.id} style={styles.pastWarmUp}>
+                  <Icon name="flame.fill" size={14} tone="warning" />
+                  <AppText variant="subhead" numberOfLines={1} style={styles.flex}>
                     Riscaldamento
                   </AppText>
                   {warm.seconds !== null ? (
@@ -437,7 +438,7 @@ function PastDay({
                 <AppText variant="subhead" numberOfLines={1}>
                   {names(exercise.exercise).title}
                 </AppText>
-                <SetLines sets={exercise.sets.filter((set) => set.done)} kind={exercise.exercise.kind} />
+                <SetSummaryLine sets={sets} kind={exercise.exercise.kind} />
               </View>
             ) : null;
           })}
@@ -627,7 +628,8 @@ const styles = StyleSheet.create({
   activeDay: { gap: Spacing.md, padding: Spacing.lg },
   dayOpen: { gap: Spacing.md, paddingHorizontal: Spacing.lg, paddingBottom: Spacing.lg },
   length: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.sm },
-  pastExercise: { gap: 3 },
+  pastExercise: { gap: 2 },
+  pastWarmUp: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
   rule: { height: StyleSheet.hairlineWidth },
   dayMeta: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   dayLink: { alignSelf: 'flex-start', paddingVertical: Spacing.xs },

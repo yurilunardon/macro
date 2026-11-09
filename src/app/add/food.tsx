@@ -20,7 +20,7 @@ import { useAddFlowParams, useCloseAddFlow, type AddFlowMode } from '@/hooks/use
 import { recipeDraft, useRecipeDraft } from '@/hooks/use-recipe-draft';
 import { useTheme } from '@/hooks/use-theme';
 import type { DateKey } from '@/lib/dates';
-import { formatGrams, formatKcal, formatNumber, numberToInput, parseDecimal, servingPresetLabel } from '@/lib/format';
+import { formatGrams, formatKcal, formatNumber, formatPortions, numberToInput, parseDecimal, portionName, servingPresetLabel } from '@/lib/format';
 import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
 import { scaleNutrients } from '@/lib/nutrition';
 import { barcodeCandidates, fetchProductByBarcode, OffNetworkError } from '@/lib/off';
@@ -177,6 +177,8 @@ function FoodDetail({
   const [meal, setMeal] = useState<MealKey>(initialMeal);
   // null until the user types, so the default can follow the data once it loads.
   const [quantityText, setQuantityText] = useState<string | null>(null);
+  // By servings ("3 barrette") or by weight; null until picked, so it can follow the data.
+  const [byServing, setByServing] = useState<boolean | null>(null);
   const [adding, setAdding] = useState(false);
 
   const { data, loading } = useLiveQuery(`food:${id}`, async (database) => {
@@ -198,17 +200,32 @@ function FoodDetail({
 
   const unit = food.unit;
   const defaultQuantity = data.lastQuantity ?? food.servingSize ?? 100;
-  const text = quantityText ?? numberToInput(defaultQuantity);
+  // With a serving, as other apps do: how many of them, the grams worked out. Weighed last time
+  // (not a half or whole number of servings), it starts by weight.
+  const serving = food.servingSize;
+  const servingName = portionName(food.servingLabel);
+  const wholeServings = serving !== null && Math.abs((defaultQuantity / serving) * 2 - Math.round((defaultQuantity / serving) * 2)) < 0.01;
+  const servings = serving !== null && (byServing ?? wholeServings);
+  const text = quantityText ?? numberToInput(servings && serving ? defaultQuantity / serving : defaultQuantity, servings ? 2 : 1);
   const parsed = parseDecimal(text);
-  const quantity = parsed !== null && parsed > 0 && parsed <= 5000 ? parsed : null;
+  const amount = parsed === null ? null : servings && serving ? parsed * serving : parsed;
+  const quantity = amount !== null && amount > 0 && amount <= 5000 ? amount : null;
   const portion = scaleNutrients(food.per100, quantity ?? 0);
+  const servingsWord = servings ? formatPortions(2, servingName).replace(/^2 /, '') : '';
+  const switchTo = (next: boolean) => {
+    if (!serving || next === servings) return;
+    setByServing(next);
+    setQuantityText(quantity === null ? null : numberToInput(next ? quantity / serving : quantity, next ? 2 : 1));
+  };
 
-  const presets = [
-    ...(food.servingSize
-      ? [{ label: servingPresetLabel(food.servingSize, food.servingLabel, unit), value: food.servingSize }]
-      : []),
-    ...(unit === 'ml' ? [100, 200, 250, 330, 500] : [30, 50, 100, 150, 200]).map((v) => ({ label: `${v} ${unit}`, value: v })),
-  ];
+  const presets = servings
+    ? [0.5, 1, 2, 3].map((v) => ({ label: formatPortions(v, servingName), value: v }))
+    : [
+        ...(food.servingSize
+          ? [{ label: servingPresetLabel(food.servingSize, food.servingLabel, unit), value: food.servingSize }]
+          : []),
+        ...(unit === 'ml' ? [100, 200, 250, 330, 500] : [30, 50, 100, 150, 200]).map((v) => ({ label: `${v} ${unit}`, value: v })),
+      ];
 
   // A recipe cannot contain itself.
   const isOwnRecipe = mode === 'ingredient' && draft.id === food.id;
@@ -282,7 +299,11 @@ function FoodDetail({
             {formatKcal(portion.kcal)}
           </AppText>
           <AppText variant="footnote" tone="textSecondary">
-            {quantity !== null ? `kcal per ${formatNumber(quantity, 1)} ${unit}` : 'Inserisci una quantità'}
+            {quantity === null
+              ? 'Inserisci una quantità'
+              : servings && parsed !== null
+                ? `kcal per ${formatPortions(parsed, servingName)} · ${formatNumber(quantity, 1)} ${unit}`
+                : `kcal per ${formatNumber(quantity, 1)} ${unit}`}
           </AppText>
         </View>
         <View style={styles.previewMacros}>
@@ -300,12 +321,27 @@ function FoodDetail({
       </Card>
 
       <SectionTitle>Quantità</SectionTitle>
+      {serving ? (
+        <View style={styles.servingSwitch}>
+          <Segmented
+            options={[
+              { key: 'serving', label: capitalize(`${servingName ? formatPortions(2, servingName).replace(/^2 /, '') : 'porzioni'} da ${formatNumber(serving, 1)} ${unit}`) },
+              { key: 'weight', label: unit === 'ml' ? 'Millilitri' : 'Grammi' },
+            ]}
+            value={servings ? 'serving' : 'weight'}
+            onChange={(key) => {
+              haptics.selection();
+              switchTo(key === 'serving');
+            }}
+          />
+        </View>
+      ) : null}
       <ListGroup>
         <FieldRow
-          label="Quantità"
+          label={servings ? `Quante ${servingsWord}` : 'Quantità'}
           value={text}
           onChangeText={setQuantityText}
-          suffix={unit}
+          suffix={servings ? undefined : unit}
           numeric
           selectTextOnFocus
           invalid={quantity === null}
@@ -316,8 +352,8 @@ function FoodDetail({
           <Chip
             key={p.label}
             label={p.label}
-            selected={quantity === p.value}
-            onPress={() => setQuantityText(numberToInput(p.value))}
+            selected={(servings ? parsed : quantity) === p.value}
+            onPress={() => setQuantityText(numberToInput(p.value, servings ? 2 : 1))}
           />
         ))}
       </ScrollView>
@@ -368,8 +404,11 @@ function FoodDetail({
   );
 }
 
+const capitalize = (text: string) => text.charAt(0).toUpperCase() + text.slice(1);
+
 const styles = StyleSheet.create({
   flex: { flex: 1 },
+  servingSwitch: { marginBottom: Spacing.md },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md },
   missing: { flexGrow: 1, alignItems: 'center', justifyContent: 'center', gap: Spacing.md, padding: Spacing.xl },
   missingActions: { alignSelf: 'stretch', gap: Spacing.sm, paddingTop: Spacing.lg },

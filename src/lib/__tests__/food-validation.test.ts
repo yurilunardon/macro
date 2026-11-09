@@ -71,8 +71,11 @@ describe('validateFoodFields', () => {
       source: 'off',
       category: null,
     };
-    const { draft } = validateFoodFields(yogurt, base);
-    expect(draft).toMatchObject({ source: 'off', imageUrl: 'https://img', servingLabel: '1 vasetto' });
+    const { draft } = validateFoodFields({ ...yogurt, servingLabel: 'vasetto' }, base);
+    expect(draft).toMatchObject({ source: 'off', imageUrl: 'https://img', servingLabel: 'vasetto' });
+    // Emptied, the name goes; a label that was only an amount stays.
+    expect(validateFoodFields(yogurt, base).draft?.servingLabel).toBeNull();
+    expect(validateFoodFields(yogurt, { ...base, servingSize: 170, servingLabel: '170 g' }).draft?.servingLabel).toBe('170 g');
   });
 
   it('round-trips a saved food through the form fields', () => {

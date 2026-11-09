@@ -9,7 +9,7 @@ import { Spacing } from '@/constants/theme';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
 import { useLiveQuery } from '@/db/live';
 import { useTheme } from '@/hooks/use-theme';
-import { formatLifted, formatWorkoutLengthShort, isWorkSet, tonnage } from '@/lib/training';
+import { formatWorkoutLengthShort, isWorkSet } from '@/lib/training';
 import { endFromSheet } from '@/services/end-workout';
 
 /**
@@ -26,7 +26,7 @@ export default function WorkoutDoneSheet() {
   const [now] = useState(() => Date.now());
   const sets = workout?.exercises.flatMap((e) => e.sets) ?? [];
   const summary = workout
-    ? [formatWorkoutLengthShort((now - new Date(workout.startedAt).getTime()) / 1000), `${sets.filter(isWorkSet).length} serie`, formatLifted(tonnage(sets))].join(' · ')
+    ? [formatWorkoutLengthShort((now - new Date(workout.startedAt).getTime()) / 1000), `${sets.filter(isWorkSet).length} serie`].join(' · ')
     : null;
 
   return (

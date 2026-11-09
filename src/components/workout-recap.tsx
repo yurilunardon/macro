@@ -12,11 +12,11 @@ import { useTheme } from '@/hooks/use-theme';
 import { formatLongDate } from '@/lib/dates';
 import { isWarmUp } from '@/lib/exercises';
 import { clockOf } from '@/lib/plan';
-import { compareWorkouts, exerciseChange, formatDuration, formatLifted, formatWorkoutLengthShort, isWorkSet, setTimes, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
+import { compareWorkouts, exerciseChange, formatDuration, formatWorkoutLengthShort, isWorkSet, setTimes, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
 
 import { AppText } from './app-text';
 import { Icon } from './icon';
-import { SetLines } from './set-lines';
+import { SetTable } from './set-lines';
 
 type Records = Awaited<ReturnType<typeof getRecords>>;
 
@@ -60,14 +60,9 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
   const rows: { label: string; value: number; format: (value: number) => string; compare?: string; tone: 'textSecondary' | 'accent' | 'warning' }[] = [
     { label: 'Durata', value: numbers.seconds, format: formatWorkoutLengthShort, compare: compared?.duration, tone: 'textSecondary' as const },
   ];
-  // At its end, how much was done, counting up. Looked at later, only the times: the sets and the
-  // load are with each exercise below.
-  if (arriving) {
-    rows.push(
-      { label: 'Serie', value: numbers.sets, format: String, tone: 'textSecondary' as const },
-      { label: 'Sollevati', value: numbers.lifted, format: formatLifted, tone: 'textSecondary' as const },
-    );
-  }
+  // At its end, the sets done, counting up; no kilos lifted, which the user does not want. Looked
+  // at later, only the times: the sets and the load are with each exercise below.
+  if (arriving) rows.push({ label: 'Serie', value: numbers.sets, format: String, tone: 'textSecondary' as const });
   // Reopened later, also how the time went: known for the sets ticked since it is kept.
   const times = arriving ? null : setTimes(workout.exercises.flatMap((e) => e.sets));
   if (times?.between != null) rows.push({ label: 'Tra una serie e l’altra', value: times.between, format: formatDuration, compare: 'in media', tone: 'textSecondary' as const });
@@ -125,10 +120,15 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
             const seconds = exercise.sets[0]?.seconds ?? null;
             return (
               <Step key={exercise.id} done index={index + 3} arriving={arriving}>
-                <View style={[styles.exercise, { backgroundColor: theme.card }]}>
-                  <AppText numberOfLines={1}>Riscaldamento</AppText>
+                <View style={[styles.exercise, styles.warmUp, { backgroundColor: theme.card }]}>
+                  <View style={[styles.flame, { backgroundColor: theme.warningSoft }]}>
+                    <Icon name="flame.fill" size={15} tone="warning" />
+                  </View>
+                  <AppText numberOfLines={1} style={styles.flex}>
+                    Riscaldamento
+                  </AppText>
                   {seconds !== null ? (
-                    <AppText variant="footnote" tone="textSecondary" numeric>
+                    <AppText variant="subhead" weight="600" numeric>
                       {formatWorkoutLengthShort(seconds)}
                     </AppText>
                   ) : null}
@@ -141,18 +141,23 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
           return (
             <Step key={exercise.id} done={work.length > 0} index={index + 3} arriving={arriving}>
               <View style={[styles.exercise, { backgroundColor: theme.card }]}>
-                <AppText numberOfLines={2} tone={work.length > 0 ? 'text' : 'textSecondary'}>
+                <AppText variant="headline" numberOfLines={2} tone={work.length > 0 ? 'text' : 'textSecondary'}>
                   {names(exercise.exercise).title}
                 </AppText>
+                {/* How it went against last time first, at a glance; then each set. */}
+                {work.length > 0 ? <Change change={change} record={recordOf(exercise)} withWas={!arriving} /> : null}
                 {work.length > 0 ? (
                   // Warm-up sets too, said as such: they count in no total, but they were done.
-                  <SetLines sets={exercise.sets.filter((set) => set.done)} kind={exercise.exercise.kind} size="regular" />
+                  <SetTable
+                    sets={exercise.sets.filter((set) => set.done)}
+                    kind={exercise.exercise.kind}
+                    range={exercise.repMin !== null && exercise.repMax !== null ? { min: exercise.repMin, max: exercise.repMax } : null}
+                  />
                 ) : (
                   <AppText variant="footnote" tone="textSecondary">
                     Saltato
                   </AppText>
                 )}
-                {work.length > 0 ? <Change change={change} record={recordOf(exercise)} withWas={!arriving} /> : null}
               </View>
             </Step>
           );
@@ -209,10 +214,10 @@ function Change({ change, record, withWas }: { change: ExerciseChange; record: b
       : record
         ? { icon: 'trophy.fill', word: 'Record', color: theme.ringCloser }
         : change.trend === 'up'
-          ? { icon: 'arrow.up.right', word: 'Cresciuto', color: theme.accent }
+          ? { icon: 'arrow.up.right', word: 'Meglio dell’altra volta', color: theme.accent }
           : change.trend === 'down'
-            ? { icon: 'arrow.down.right', word: 'Calato', color: theme.warning }
-            : { icon: 'equal', word: 'Uguale', color: theme.textSecondary };
+            ? { icon: 'arrow.down.right', word: 'Peggio dell’altra volta', color: theme.warning }
+            : { icon: 'equal', word: 'Come l’altra volta', color: theme.textSecondary };
   const amount = change.trend === 'up' || change.trend === 'down' ? change.label : null;
   return (
     <View style={styles.change}>
@@ -281,8 +286,10 @@ const styles = StyleSheet.create({
   dot: { width: 10, height: 10, borderRadius: 5 },
   tick: { width: 20, height: 20, borderRadius: 10, alignItems: 'center', justifyContent: 'center' },
   body: { flex: 1, minWidth: 0, paddingBottom: Spacing.sm },
-  exercise: { gap: 4, minHeight: 56, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, borderRadius: Radius.md, borderCurve: 'continuous' },
-  change: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.xs, marginTop: 2 },
+  warmUp: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  flame: { width: 26, height: 26, borderRadius: 13, alignItems: 'center', justifyContent: 'center' },
+  exercise: { gap: 6, minHeight: 56, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm + 2, borderRadius: Radius.md, borderCurve: 'continuous' },
+  change: { flexDirection: 'row', flexWrap: 'wrap', alignItems: 'center', gap: Spacing.xs, marginBottom: 2 },
   // Set apart from the app's own words: the book's voice, with the opening quote hanging on its left.
   note: { paddingLeft: 28 },
   noteMark: { position: 'absolute', left: 0, top: -6, fontFamily: 'ui-serif', fontSize: 48, lineHeight: 56 },

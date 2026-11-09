@@ -44,7 +44,6 @@ import { MenuButton } from '@/components/menu-button';
 import { ProgressBar } from '@/components/progress';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
-import { RangeFlag } from '@/components/range-flag';
 import { RestPicker } from '@/components/rest-picker';
 import { SetTypeMenu } from '@/components/set-type-menu';
 import { editButton } from '@/components/edit-button';
@@ -966,7 +965,7 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
               </AppText>
             </View>
             <View style={styles.askButtons}>
-              <View style={styles.flex}>
+              <View style={styles.askMore}>
                 <Button
                   title="Aggiungi serie"
                   variant="tinted"
@@ -1084,7 +1083,9 @@ function KeyboardBar({ scroll }: { scroll: ScrollTop }) {
   const keyboard = useRef(0);
   // iOS brings the box being typed in just above the keyboard, which here is under this bar.
   const reveal = useStableCallback(() => {
-    if (keyboard.current === 0) return;
+    // Only for a value box of the workout: the keyboard of a note, in its own sheet over this one,
+    // scrolled the exercises behind it.
+    if (keyboard.current === 0 || !nudge.get()) return;
     TextInput.State.currentlyFocusedInput()?.measureInWindow((_x, y, _width, height) => {
       const under = y + height + Spacing.sm - (screen - keyboard.current - KEY_BAR_HEIGHT);
       if (under > 0) scroll.ref.current?.scrollTo({ y: scroll.offset.get() + under, animated: true });
@@ -1239,9 +1240,8 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
     return { weight: parseDecimal(weight), reps: r === null ? null : Math.round(r), seconds: s === null ? null : Math.round(s), rir: parseDecimal(rir) };
   };
 
-  // Once a set is ticked, a count outside the planned range (often a typo, 20 for 10) turns
-  // orange with a "!" on its corner that says what to do. Warm-ups and drop sets follow their
-  // own counts.
+  // Once a set is ticked, a count outside the planned range turns orange, and where last time
+  // was it says by how much. Warm-ups and drop sets follow their own counts.
   const counted = kind === 'time' ? set.seconds : set.reps;
   const outside =
     set.done &&
@@ -1253,16 +1253,6 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
         ? 'above'
         : 'below'
       : null;
-  const flag = outside && range && counted !== null
-    ? {
-        title: `${counted} ${kind === 'time' ? 's' : 'rip'}: ${outside === 'above' ? 'sopra' : 'sotto'} ${range.min}–${range.max}`,
-        // What happens next time must match `progression`: all sets at the top, half under the bottom.
-        message:
-          outside === 'above'
-            ? `${kind === 'time' ? 'Troppo facile' : 'Carico leggero'}. Se succede in tutte le serie, la prossima volta ti suggerisco di ${kind === 'time' ? 'renderlo più difficile' : 'aumentarlo'}.`
-            : `${kind === 'time' ? 'Troppo difficile' : 'Carico pesante'}. Se succede in metà delle serie, la prossima volta ti suggerisco di ${kind === 'time' ? 'renderlo più facile' : 'ridurlo'}.`,
-      }
-    : null;
 
   const tick = () => {
     if (done) {
@@ -1333,18 +1323,6 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
         missing && value === '' && { borderColor: theme.danger, borderWidth: 1.5 },
       ]}
     />
-    {flagged && flag ? (
-      <Animated.View entering={FLAG_IN} style={styles.flag}>
-        <RangeFlag
-          title={flag.title}
-          message={flag.message}
-          onFix={() => {
-            haptics.selection();
-            onUpdate({ done: false });
-          }}
-        />
-      </Animated.View>
-    ) : null}
     </>
   );
 
@@ -1359,9 +1337,18 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
       <View style={styles.colSet}>
         <SetTypeMenu inert={!settled} badge={badge} type={set.type} done={done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
       </View>
-      <AppText variant="subhead" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
-        {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
-      </AppText>
+      {outside && range ? (
+        // A count outside the plan, said where last time was, in place: nothing to fix, it was done.
+        <View style={styles.colPrev} accessible accessibilityLabel={`${outside === 'above' ? 'Sopra' : 'Sotto'} ${range.min}–${range.max}`}>
+          <AppText variant="footnote" weight="600" numeric numberOfLines={1} style={{ color: theme.warning }}>
+            {`${outside === 'above' ? '↑ sopra' : '↓ sotto'} ${range.min}–${range.max}`}
+          </AppText>
+        </View>
+      ) : (
+        <AppText variant="subhead" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
+          {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
+        </AppText>
+      )}
       {kind === 'time' ? (
         <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi', 5, 0, outside !== null)}</View>
       ) : (
@@ -1645,7 +1632,6 @@ const DONE_IN = new Keyframe({
   100: { opacity: 1, transform: [{ scale: 1 }], easing: Easing.bezier(0.23, 1, 0.32, 1) },
 }).duration(340);
 const CURRENT_IN = FadeIn.duration(260);
-const FLAG_IN = FadeIn.duration(220);
 // Folding and unfolding: the sets fade across most of the card's resize, so the two read as one.
 const SETS_IN = FadeIn.duration(220).delay(80);
 const SETS_OUT = FadeOut.duration(200);
@@ -1750,6 +1736,8 @@ const styles = StyleSheet.create({
   ask: { gap: Spacing.md, padding: Spacing.lg, borderTopWidth: StyleSheet.hairlineWidth },
   askText: { gap: 2 },
   askButtons: { flexDirection: 'row', gap: Spacing.sm },
+  // The longer label gets the room it needs on one line.
+  askMore: { flex: 1.35 },
   adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.sm },
   adviceText: { flex: 1, gap: 2 },
   adviceTitle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2 },
@@ -1772,7 +1760,6 @@ const styles = StyleSheet.create({
   setSlot: { overflow: 'hidden' },
   setDivider: { position: 'absolute', top: 0, left: Spacing.md + 40, right: Spacing.md, height: StyleSheet.hairlineWidth, opacity: 0.6 },
   // On the top right corner of the reps box.
-  flag: { position: 'absolute', top: -8, right: -9 },
   setRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.md, paddingVertical: Spacing.sm },
   colSet: { width: 40, alignItems: 'center', justifyContent: 'center', textAlign: 'center' },
   colPrev: { flex: 1 },

@@ -48,6 +48,46 @@ export function servingPresetLabel(size: number, label: string | null, unit: str
   return `${name.length > 28 ? `${name.slice(0, 27)}…` : name} · ${amount}`;
 }
 
+/**
+ * What one serving is called, e.g. "barretta" from "1 barretta (32 g)": without the amount in
+ * brackets and the leading "1". Null when the label is only an amount ("85 g") or empty.
+ */
+export function portionName(label: string | null): string | null {
+  const name = (label ?? '')
+    .replace(/\s*\([^)]*\)\s*$/, '')
+    .replace(/^1\s+/, '')
+    .trim();
+  if (name === '' || /^[\d.,\s]+(g|gr|ml|cl|l)?\.?$/i.test(name)) return null;
+  return name;
+}
+
+/** Italian plural of a word, the regular way: barretta → barrette, vasetto → vasetti, cucchiaio → cucchiai. */
+function plural(word: string): string {
+  if (/io$/.test(word)) return word.slice(0, -1);
+  if (/a$/.test(word)) return `${word.slice(0, -1)}e`;
+  if (/[oe]$/.test(word)) return `${word.slice(0, -1)}i`;
+  return word;
+}
+
+/**
+ * "1 barretta", "3 barrette", "2 mele medie", "2 fette di pane", "1,5 porzioni": a number of
+ * servings in words. Only the words before the first short one ("di", "da") change.
+ */
+export function formatPortions(count: number, name: string | null): string {
+  const amount = count === 0.5 ? '½' : formatNumber(count, 2);
+  if (!name) return `${amount} ${count <= 1 ? 'porzione' : 'porzioni'}`;
+  if (count <= 1) return `${amount} ${name}`;
+  let stopped = false;
+  const words = name.split(/\s+/).map((word) => {
+    if (stopped || word.length <= 3) {
+      stopped = true;
+      return word;
+    }
+    return plural(word);
+  });
+  return `${amount} ${words.join(' ')}`;
+}
+
 /** "1 alimento", "3 alimenti". */
 export function countLabel(count: number, one: string, many: string): string {
   return `${count} ${count === 1 ? one : many}`;

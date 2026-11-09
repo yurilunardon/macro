@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import { toCsv } from '../csv';
+import { formatPortions, portionName } from '../format';
 import { measurementChanges } from '../measurements';
 import { formatTime, parseTime } from '../reminders';
 
@@ -11,6 +12,24 @@ describe('toCsv', () => {
       ['2026-10-31', 'Caffè', null],
     ]);
     expect(csv).toBe('﻿Data;Alimento;kcal\r\n2026-10-31;"Pasta; al ""pomodoro""";287,23\r\n2026-10-31;Caffè;\r\n');
+  });
+});
+
+describe('portions', () => {
+  it('names a serving without its amount', () => {
+    expect(portionName('1 barretta (32 g)')).toBe('barretta');
+    expect(portionName('85 g')).toBeNull();
+    expect(portionName(null)).toBeNull();
+  });
+
+  it('counts servings in words', () => {
+    expect(formatPortions(1, 'barretta')).toBe('1 barretta');
+    expect(formatPortions(3, 'barretta')).toBe('3 barrette');
+    expect(formatPortions(2, 'mela media')).toBe('2 mele medie');
+    expect(formatPortions(2, 'fetta di pane')).toBe('2 fette di pane');
+    expect(formatPortions(2, 'cucchiaio')).toBe('2 cucchiai');
+    expect(formatPortions(1.5, null)).toBe('1,5 porzioni');
+    expect(formatPortions(0.5, 'barretta')).toBe('½ barretta');
   });
 });
 

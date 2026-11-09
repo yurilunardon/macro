@@ -190,8 +190,15 @@ export function FoodForm({ foodId, initialBarcode = null, onSaved, labelRoute }:
           numeric
           invalid={invalid('servingSize')}
         />
+        <FieldRow
+          label="Si chiama"
+          value={fields.servingLabel}
+          onChangeText={set('servingLabel')}
+          placeholder="porzione"
+          autoCapitalize="none"
+        />
       </ListGroup>
-      <SectionFooter>Facoltativa: ad esempio 125 g per un vasetto di yogurt.</SectionFooter>
+      <SectionFooter>Facoltativa: ad esempio 32 g, «barretta». Poi aggiungi «3 barrette» invece di fare il conto dei grammi.</SectionFooter>
 
       <SectionTitle>{`Valori per 100 ${unit}`}</SectionTitle>
       <ListGroup>

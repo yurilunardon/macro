@@ -48,8 +48,8 @@ function versionOf(topics: readonly Topic[]): number {
  */
 let held: { versions: Record<Topic, number>; following: ReadonlySet<string> } | null = null;
 let releaseTimer: ReturnType<typeof setTimeout> | undefined;
-/** Long enough for the sheet to have gone: reading while it leaves would make it stutter. */
-const RELEASE_AFTER_MS = 400;
+/** About when the sheet has gone: reading while it leaves would make it stutter. */
+const RELEASE_AFTER_MS = 250;
 
 function versionFor(key: string, topics: readonly Topic[]): number {
   if (!held || held.following.has(key)) return versionOf(topics);
@@ -69,6 +69,17 @@ export function holdLiveQueries(following: readonly string[]): () => void {
       for (const listener of listeners) listener();
     }, RELEASE_AFTER_MS);
   };
+}
+
+/**
+ * The screens held catch up once, out of sight, with what was written so far, then wait again.
+ * Called once a workout's sheet has covered them: going back to them a moment later, they had to
+ * read everything then, and took a couple of seconds to say the workout was on.
+ */
+export function catchUpHeld(): void {
+  if (!held) return;
+  held = { ...held, versions: { ...versions } };
+  for (const listener of listeners) listener();
 }
 
 /** Whether what is on screen is under a screen that holds the queries, so it need not tick either. */

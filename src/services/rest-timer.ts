@@ -51,7 +51,9 @@ async function schedule(): Promise<void> {
       title: 'Recupero finito',
       body: state.label,
       // A vibration by default: felt in the pocket with the phone locked, nobody else hears it.
-      sound: alert === 'sound' ? 'default' : alert === 'vibrate' ? VIBRATE_SOUND : false,
+      // A build without the Live Activity (before 1.8.12) has no such sound either, and iOS would
+      // play its default one instead: there, a vibration stays a silent banner.
+      sound: alert === 'sound' ? 'default' : alert === 'vibrate' && RestActivity ? VIBRATE_SOUND : false,
     },
     trigger: { type: Notifications.SchedulableTriggerInputTypes.DATE, date: new Date(state.endsAt) },
   }).catch(() => {});

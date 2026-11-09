@@ -129,38 +129,76 @@ export function formatSetShort(set: Pick<LoggedSet, 'weight' | 'reps' | 'seconds
   return set.weight === null || set.weight === 0 ? reps || '—' : `${formatNumber(set.weight, 2)}${reps}`;
 }
 
-/** Sets one after the other with the same numbers, as one line of the table: "3 serie · 80 kg · 8 rip". */
-export type SetLine = {
-  count: number;
-  /** "80 kg", "+10 kg" on a bodyweight exercise; null without a load or for a hold. */
-  weight: string | null;
-  /** "8 rip"; null for a hold or when not written. */
-  reps: string | null;
-  /** "45 s", "1:30" for a hold. */
-  time: string | null;
-  /** "Riscaldamento", "Drop set", "A cedimento"; null for a normal set. */
-  type: string | null;
-};
+type SetValues = Pick<LoggedSet, 'type' | 'weight' | 'reps' | 'seconds'>;
+
+function weightOf(set: SetValues, kind: ExerciseKind): number | null {
+  if (kind === 'time' || set.weight === null || (set.weight === 0 && kind === 'bodyweight')) return null;
+  return set.weight;
+}
+
+function timeText(seconds: number): string {
+  return seconds >= 60 ? formatDuration(seconds) : `${formatNumber(seconds, 0)} s`;
+}
+
+/** "80", or "75–80" from the lowest to the highest. */
+function spread(values: readonly number[], decimals: number): string | null {
+  if (values.length === 0) return null;
+  const low = Math.min(...values);
+  const high = Math.max(...values);
+  return low === high ? formatNumber(low, decimals) : `${formatNumber(low, decimals)}–${formatNumber(high, decimals)}`;
+}
+
+/** An exercise's work sets on one line: "3 serie · 75–80 kg · 6–8 rip". */
+export type SetSummary = { count: number; weight: string | null; reps: string | null; time: string | null };
 
 /**
- * A logged exercise as a few clear lines, one per run of identical sets, each number with its
- * unit: read at a glance, where "80×8 · 80×8 · 75×10" had to be worked out.
+ * The quick look at an exercise done, for a row of the training line: how many sets, and the
+ * load and reps from the lowest to the highest, each with its unit.
  */
-export function groupSets(sets: readonly Pick<LoggedSet, 'type' | 'weight' | 'reps' | 'seconds'>[], kind: ExerciseKind): SetLine[] {
-  const lines: SetLine[] = [];
-  for (const set of sets) {
-    const time = kind === 'time' && set.seconds !== null ? (set.seconds >= 60 ? formatDuration(set.seconds) : `${formatNumber(set.seconds, 0)} s`) : null;
-    const weight =
-      kind === 'time' || set.weight === null || (set.weight === 0 && kind === 'bodyweight')
-        ? null
-        : `${kind === 'bodyweight' ? '+' : ''}${formatNumber(set.weight, 2)} kg`;
-    const reps = kind === 'time' || set.reps === null ? null : `${set.reps} rip`;
-    const type = set.type === 'normal' ? null : (SET_TYPES.find((t) => t.key === set.type)?.label ?? null);
-    const last = lines.at(-1);
-    if (last && last.weight === weight && last.reps === reps && last.time === time && last.type === type) last.count += 1;
-    else lines.push({ count: 1, weight, reps, time, type });
-  }
-  return lines;
+export function summarizeSets(sets: readonly SetValues[], kind: ExerciseKind): SetSummary {
+  const loads = sets.map((set) => weightOf(set, kind)).filter((w): w is number => w !== null);
+  const weight = spread(loads, 2);
+  const reps = kind === 'time' ? null : spread(sets.map((set) => set.reps).filter((r): r is number => r !== null), 0);
+  const seconds = kind === 'time' ? sets.map((set) => set.seconds).filter((t): t is number => t !== null) : [];
+  const time = seconds.length === 0 ? null : Math.min(...seconds) === Math.max(...seconds) ? timeText(seconds[0]) : `${timeText(Math.min(...seconds))}–${timeText(Math.max(...seconds))}`;
+  return {
+    count: sets.length,
+    weight: weight === null ? null : `${kind === 'bodyweight' ? '+' : ''}${weight} kg`,
+    reps: reps === null ? null : `${reps} rip`,
+    time,
+  };
+}
+
+/** One set of a workout done, as a row of its table. */
+export type SetRowText = {
+  /** "1", "2"… as in the workout; "R" a warm-up set, "D" a drop set, "C" one to failure. */
+  badge: string;
+  warmUp: boolean;
+  /** "80 kg", "+10 kg"; null without a load. */
+  weight: string | null;
+  reps: string | null;
+  time: string | null;
+  /** Reps (or seconds) outside the range planned, for a normal set or one to failure. */
+  outside: 'above' | 'below' | null;
+};
+
+/** Each set of an exercise done, numbered as in the workout, with what was off the plan. */
+export function setRows(sets: readonly SetValues[], kind: ExerciseKind, range: { min: number; max: number } | null): SetRowText[] {
+  let ordinal = 0;
+  return sets.map((set) => {
+    const badge = set.type === 'warmup' ? 'R' : set.type === 'drop' ? 'D' : set.type === 'failure' ? 'C' : String(++ordinal);
+    const load = weightOf(set, kind);
+    const counted = kind === 'time' ? set.seconds : set.reps;
+    const checked = range !== null && counted !== null && (set.type === 'normal' || set.type === 'failure');
+    return {
+      badge,
+      warmUp: set.type === 'warmup',
+      weight: load === null ? null : `${kind === 'bodyweight' ? '+' : ''}${formatNumber(load, 2)} kg`,
+      reps: kind === 'time' || set.reps === null ? null : `${set.reps} rip`,
+      time: kind === 'time' && set.seconds !== null ? timeText(set.seconds) : null,
+      outside: checked && counted > range.max ? 'above' : checked && counted < range.min ? 'below' : null,
+    };
+  });
 }
 
 /** "6,1 t" or "850 kg". */

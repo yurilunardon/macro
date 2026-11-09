@@ -1,4 +1,4 @@
-import { numberToInput, parseDecimal } from './format';
+import { numberToInput, parseDecimal, portionName } from './format';
 import { kcalFromMacros, type Food, type FoodDraft, type Unit } from './nutrition';
 
 /** The text of every input of the food form. */
@@ -8,6 +8,8 @@ export type FoodFields = {
   barcode: string;
   unit: Unit;
   servingSize: string;
+  /** What one serving is called: "barretta". */
+  servingLabel: string;
   kcal: string;
   protein: string;
   carbs: string;
@@ -24,6 +26,7 @@ export const EMPTY_FOOD_FIELDS: FoodFields = {
   barcode: '',
   unit: 'g',
   servingSize: '',
+  servingLabel: '',
   kcal: '',
   protein: '',
   carbs: '',
@@ -41,6 +44,7 @@ export function fieldsFromFood(food: Food): FoodFields {
     barcode: food.barcode ?? '',
     unit: food.unit,
     servingSize: numberToInput(food.servingSize),
+    servingLabel: portionName(food.servingLabel) ?? '',
     kcal: numberToInput(food.per100.kcal, 0),
     protein: numberToInput(food.per100.protein),
     carbs: numberToInput(food.per100.carbs),
@@ -72,7 +76,7 @@ export type FoodValidation = {
 
 /**
  * Checks the form and builds the food to save. `base` is the food being edited, whose
- * source, image and serving label are kept.
+ * source and image are kept.
  */
 export function validateFoodFields(f: FoodFields, base: Food | null): FoodValidation {
   const errors: string[] = [];
@@ -133,7 +137,13 @@ export function validateFoodFields(f: FoodFields, base: Food | null): FoodValida
       unit: f.unit,
       per100: { kcal, protein, carbs, fat, sugars: n.sugars, fiber: n.fiber, satFat: n.satFat, salt: n.salt },
       servingSize: n.servingSize,
-      servingLabel: base?.servingLabel ?? null,
+      // A label that was only an amount ("85 g") showed as nothing, and stays as it was.
+      servingLabel:
+        f.servingLabel.trim() !== ''
+          ? f.servingLabel.trim()
+          : base && portionName(base.servingLabel) === null && n.servingSize === base.servingSize
+            ? base.servingLabel
+            : null,
       imageUrl: base?.imageUrl ?? null,
       source: base?.source ?? 'custom',
     },

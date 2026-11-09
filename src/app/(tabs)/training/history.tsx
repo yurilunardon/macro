@@ -13,7 +13,7 @@ import { useLiveQuery } from '@/db/live';
 import { deleteWorkout, getWorkoutHistory } from '@/db/workouts';
 import { useToday } from '@/hooks/use-today';
 import { formatDayTitle } from '@/lib/dates';
-import { countLabel, formatNumber } from '@/lib/format';
+import { countLabel } from '@/lib/format';
 import { formatWorkoutLength } from '@/lib/training';
 import { groupByMonth } from '@/lib/weights';
 
@@ -57,7 +57,7 @@ export default function HistoryScreen() {
                 title={w.name}
                 subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
                   (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,
-                )} · ${countLabel(w.workSets, 'serie', 'serie')}${w.tonnage > 0 ? ` · ${formatNumber(w.tonnage, 0)} kg` : ''}`}
+                )} · ${countLabel(w.workSets, 'serie', 'serie')}`}
                 // Relative, so from the calendar's stack it stays there.
                 onPress={() => router.push({ pathname: './session', params: { id: w.id } })}
               />

@@ -2,7 +2,8 @@ import { describe, expect, it } from 'vitest';
 
 import { defaultRestSeconds, exerciseNames, exerciseSearchText, loadIncrement } from '../exercises';
 import {
-  groupSets,
+  setRows,
+  summarizeSets,
   bestOneRepMax,
   dayIcon,
   allSetsDone,
@@ -126,31 +127,21 @@ describe('formatting', () => {
   });
 });
 
-describe('groupSets', () => {
-  const set = (weight: number | null, reps: number | null, type: 'normal' | 'drop' = 'normal', seconds: number | null = null) => ({ type, weight, reps, seconds });
+describe('summarizeSets and setRows', () => {
+  const set = (weight: number | null, reps: number | null, type: 'normal' | 'drop' | 'warmup' = 'normal', seconds: number | null = null) => ({ type, weight, reps, seconds });
 
-  it('puts identical sets one after the other on one line, each number with its unit', () => {
-    expect(groupSets([set(80, 8), set(80, 8), set(75, 10)], 'weight')).toEqual([
-      { count: 2, weight: '80 kg', reps: '8 rip', time: null, type: null },
-      { count: 1, weight: '75 kg', reps: '10 rip', time: null, type: null },
-    ]);
+  it('sums an exercise up on one line, from the lowest to the highest', () => {
+    expect(summarizeSets([set(80, 8), set(80, 8), set(75, 6)], 'weight')).toEqual({ count: 3, weight: '75–80 kg', reps: '6–8 rip', time: null });
+    expect(summarizeSets([set(80, 8), set(80, 8)], 'weight')).toEqual({ count: 2, weight: '80 kg', reps: '8 rip', time: null });
+    expect(summarizeSets([set(0, 12), set(0, 10)], 'bodyweight').weight).toBeNull();
+    expect(summarizeSets([set(null, null, 'normal', 45), set(null, null, 'normal', 90)], 'time').time).toBe('45 s–1:30');
   });
 
-  it('keeps a drop set apart, and only joins sets next to each other', () => {
-    expect(groupSets([set(80, 8), set(60, 12, 'drop'), set(80, 8)], 'weight').map((l) => [l.count, l.type])).toEqual([
-      [1, null],
-      [1, 'Drop set'],
-      [1, null],
-    ]);
-  });
-
-  it('says which sets were warm-ups', () => {
-    expect(groupSets([{ type: 'warmup' as const, weight: 40, reps: 10, seconds: null }, set(80, 8)], 'weight').map((l) => l.type)).toEqual(['Riscaldamento', null]);
-  });
-
-  it('writes added load on bodyweight work, nothing without, and holds as times', () => {
-    expect(groupSets([set(0, 12), set(10, 8)], 'bodyweight').map((l) => l.weight)).toEqual([null, '+10 kg']);
-    expect(groupSets([set(null, null, 'normal', 45), set(null, null, 'normal', 90)], 'time').map((l) => l.time)).toEqual(['45 s', '1:30']);
+  it('numbers the sets as the workout does and says what was off the plan', () => {
+    const rows = setRows([set(40, 10, 'warmup'), set(80, 8), set(80, 6), set(60, 14, 'drop'), set(80, 13)], 'weight', { min: 8, max: 12 });
+    expect(rows.map((r) => r.badge)).toEqual(['R', '1', '2', 'D', '3']);
+    expect(rows.map((r) => r.outside)).toEqual([null, null, 'below', null, 'above']);
+    expect(rows[1]).toMatchObject({ weight: '80 kg', reps: '8 rip', warmUp: false });
   });
 });
 

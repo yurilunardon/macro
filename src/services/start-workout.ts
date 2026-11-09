@@ -5,7 +5,7 @@ import { useSyncExternalStore } from 'react';
 import { confirmStart } from '@/components/prompt';
 import { ACTIVE_WORKOUT_KEY, ACTIVE_WORKOUT_TOPICS, loadActiveWorkout } from '@/db/active-workout';
 import { getCalendar } from '@/db/calendar';
-import { forgetLiveQuery, notifyChange, prefetchLiveQuery } from '@/db/live';
+import { catchUpHeld, forgetLiveQuery, notifyChange, prefetchLiveQuery } from '@/db/live';
 import { getActiveWorkout, startWorkout } from '@/db/workouts';
 import { buildAgenda, expandActivities, startWarning } from '@/lib/calendar';
 import { addDays, todayKey } from '@/lib/dates';
@@ -106,6 +106,8 @@ export async function startAndOpenWorkout(
     setTimeout(() => {
       setStarting(false);
       if (!late) notifyChange('training', 'settings');
+      // Under the sheet now, they read once: lowered at once, it finds them up to date.
+      catchUpHeld();
     }, COVERED_MS);
   }
 }
