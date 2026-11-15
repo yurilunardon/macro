@@ -6,7 +6,7 @@ import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-nativ
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
+import { ActionRow, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { DayBadge } from '@/components/day-badge';
 import { editButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
@@ -206,6 +206,17 @@ export default function ProgramScreen() {
           }}
         />
       )}
+
+      {days.length > 0 ? (
+        <ListGroup>
+          <Row
+            title="Muscoli"
+            subtitle="Quanto lavora ogni muscolo"
+            icon={<Icon name="figure.stand" size={22} tone="accent" />}
+            onPress={() => router.push({ pathname: '/training/body', params: { id: program.id } })}
+          />
+        </ListGroup>
+      ) : null}
 
       <SectionTitle>Giorni</SectionTitle>
       {editing ? (

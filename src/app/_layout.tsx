@@ -8,6 +8,7 @@ import { FeedSync } from '@/components/feed-sync';
 import { NotificationSync } from '@/components/notification-sync';
 import { ToastHost } from '@/components/toast';
 import { UpdateCheck } from '@/components/update-check';
+import { MUSCLE_SHEET } from '@/components/body-figure.types';
 import { TAB_STACK_OPTIONS } from '@/constants/navigation';
 import { seedFeed } from '@/db/feed';
 import { giveSupplementsTheirTimes, seedStartingPlan } from '@/db/plan';
@@ -129,6 +130,10 @@ export default function RootLayout() {
               <Stack.Screen
                 name="link-program"
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, headerShown: false }}
+              />
+              <Stack.Screen
+                name="muscle-check"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [MUSCLE_SHEET, 1], sheetGrabberVisible: true, headerShown: false }}
               />
               <Stack.Screen
                 name="limits"

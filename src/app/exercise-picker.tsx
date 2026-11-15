@@ -13,18 +13,19 @@ import { applyPick, isPickerTarget, type PickerTarget } from '@/db/exercise-pick
 import { searchExercises, type Exercise } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
-import { equipmentLabel, isWarmUp, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
+import { equipmentLabel, isMuscle, isWarmUp, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
 import { haptics } from '@/services/haptics';
 
 /** The exercise library to choose from: native search, a filter by muscle, the most used first. */
 export default function ExercisePickerScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const params = useLocalSearchParams<{ target?: string; id?: string }>();
+  const params = useLocalSearchParams<{ target?: string; id?: string; muscle?: string }>();
   const target: PickerTarget = isPickerTarget(params.target) ? params.target : 'workout';
   const id = Number(params.id);
   const [query, setQuery] = useState('');
-  const [muscle, setMuscle] = useState<Muscle | null>(null);
+  // Opened for one muscle, from a program's figure: its exercises come first, the filter can still be changed.
+  const [muscle, setMuscle] = useState<Muscle | null>(isMuscle(params.muscle) ? params.muscle : null);
   const { names } = useExerciseNames();
   const { data } = useLiveQuery(`exercise-picker:${query}:${muscle ?? ''}`, (database) =>
     searchExercises(database, { query, muscle }),
