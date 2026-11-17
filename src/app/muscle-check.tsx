@@ -20,7 +20,8 @@ import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import { equipmentLabel, isMuscle, muscleLabel, type Muscle } from '@/lib/exercises';
-import { levelLabel, muscleWithArticle, type CheckDay, type MuscleLevel } from '@/lib/program-check';
+import { isMusclePart, partLabel, partsOfMuscle, partsTrained, type MusclePart } from '@/lib/muscle-parts';
+import { joinNames, levelLabel, muscleWithArticle, PART_GOOD, weakestPart, type CheckDay, type MuscleLevel, type PartCheck } from '@/lib/program-check';
 import { muscleShare, WEEKLY_SETS } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 
@@ -44,20 +45,26 @@ export default function MuscleCheckSheet() {
   const insets = useSafeAreaInsets();
   const today = useToday();
   const { names } = useExerciseNames();
-  const params = useLocalSearchParams<{ program?: string; muscle?: string }>();
+  const params = useLocalSearchParams<{ program?: string; muscle?: string; part?: string }>();
   const programId = Number(params.program);
   const muscle: Muscle = isMuscle(params.muscle) ? params.muscle : 'chest';
   const screen = programCheckScreen(programId, today);
   const { data } = useLiveQuery(screen.key, screen.query, screen.topics);
-  // Chosen once as the sheet opens: an exercise just added stays in its row, with a tick.
-  const [suggestions, setSuggestions] = useState<Exercise[]>([]);
-  useEffect(() => {
-    void getMuscleSuggestions(db, programId, muscle).then(setSuggestions);
-  }, [db, programId, muscle]);
   // The day new exercises go to: the one advised, until another is tapped.
   const [chosen, setChosen] = useState<number | null>(null);
-
   const check = data?.muscles.find((m) => m.muscle === muscle);
+  // The part looked at: the one tapped on the body, else the one that lacks most, until another is tapped.
+  const [picked, setPicked] = useState<MusclePart | null | undefined>(isMusclePart(params.part) ? params.part : undefined);
+  const focus = picked === undefined ? (check ? (weakestPart(check)?.part ?? null) : null) : picked;
+  // Chosen as the sheet opens or the part changes: an exercise just added stays in its row, with a tick.
+  const [suggestions, setSuggestions] = useState<Exercise[]>([]);
+  useEffect(() => {
+    void (async () => {
+      const forPart = focus ? await getMuscleSuggestions(db, programId, muscle, { part: focus }) : [];
+      setSuggestions(forPart.length > 0 ? forPart : await getMuscleSuggestions(db, programId, muscle));
+    })();
+  }, [db, programId, muscle, focus]);
+
   if (!data || !check) return <View style={[styles.sheet, { backgroundColor: theme.background }]} />;
 
   const target = data.days.find((d) => d.id === (chosen ?? check.dayId)) ?? null;
@@ -115,13 +122,29 @@ export default function MuscleCheckSheet() {
         </AppText>
       </View>
 
+      {check.parts.length > 0 ? (
+        <View style={styles.padded}>
+          <SectionTitle>Le parti</SectionTitle>
+          <PartRows
+            parts={check.parts}
+            focus={focus}
+            onPick={(part) => {
+              haptics.selection();
+              setPicked(part === focus ? null : part);
+            }}
+          />
+          <SectionFooter>{`Una parte va bene da ${PART_GOOD} serie: il resto del muscolo la aiuta. Toccane una per vedere cosa la allena.`}</SectionFooter>
+        </View>
+      ) : null}
+
       <View>
         <View style={styles.padded}>
-          <SectionTitle>La scheda</SectionTitle>
+          <SectionTitle>{focus ? `La scheda · ${partLabel(focus).toLowerCase()}` : 'La scheda'}</SectionTitle>
         </View>
         <DayCards
           data={data}
           muscle={muscle}
+          trains={focus ? new Set(check.parts.find((p) => p.part === focus)?.planIds) : null}
           advised={check.dayId}
           target={target?.id ?? null}
           title={(planId) => {
@@ -147,7 +170,7 @@ export default function MuscleCheckSheet() {
                 <Row
                   key={exercise.id}
                   title={names(exercise).title}
-                  subtitle={`${equipmentLabel(exercise.equipment)} · ${DEFAULT_PLAN.sets} serie`}
+                  subtitle={[equipmentLabel(exercise.equipment), partsSubtitle(exercise, muscle), `${DEFAULT_PLAN.sets} serie`].filter(Boolean).join(' · ')}
                   detail={
                     <Pressable
                       onPress={() => void toggle(exercise)}
@@ -230,6 +253,7 @@ function SetsGauge({ sets, level }: { sets: number; level: MuscleLevel }) {
 function DayCards({
   data,
   muscle,
+  trains,
   advised,
   target,
   title,
@@ -239,6 +263,8 @@ function DayCards({
 }: {
   data: ProgramCheck;
   muscle: Muscle;
+  /** With a part looked at, the rows that train it; the others are not picked out. */
+  trains: ReadonlySet<number> | null;
   advised: number | null;
   target: number | null;
   title: (planId: number) => string;
@@ -259,6 +285,7 @@ function DayCards({
           key={day.id}
           day={day}
           muscle={muscle}
+          trains={trains}
           width={width}
           advised={day.id === advised}
           chosen={day.id === target}
@@ -283,6 +310,7 @@ function DayCards({
 function DayCard({
   day,
   muscle,
+  trains,
   width,
   advised,
   chosen,
@@ -292,6 +320,7 @@ function DayCard({
 }: {
   day: CheckDay;
   muscle: Muscle;
+  trains: ReadonlySet<number> | null;
   width: number;
   advised: boolean;
   chosen: boolean;
@@ -331,7 +360,7 @@ function DayCard({
           </AppText>
         ) : null}
         {shown.map((e) => {
-          const share = muscleShare(e, muscle);
+          const share = trains && !trains.has(e.planId) ? 0 : muscleShare(e, muscle);
           return (
             <Animated.View key={e.planId} entering={CARD_IN}>
               <Pressable
@@ -343,7 +372,7 @@ function DayCard({
                   {title(e.planId)}
                 </AppText>
                 {share > 0 ? (
-                  <AppText variant="footnote" tone={share === 1 ? 'accent' : 'textSecondary'} numeric>
+                  <AppText variant="footnote" tone={share === 1 ? 'accent' : 'textSecondary'} numeric numberOfLines={1}>
                     {share === 1 ? `${e.sets} serie` : 'aiuta'}
                   </AppText>
                 ) : null}
@@ -360,6 +389,49 @@ function DayCard({
     </Pressable>
   );
 }
+
+/** "laterale", "dorsali e parte alta": what of the muscle an exercise trains, when it is not all of it. */
+function partsSubtitle(exercise: { ref: string | null }, muscle: Muscle): string | null {
+  const all = partsOfMuscle(muscle);
+  const trained = partsTrained(exercise, muscle);
+  if (all.length === 0 || trained.length === all.length) return null;
+  return joinNames(trained.map((p) => partLabel(p).toLowerCase()));
+}
+
+/** Each part of the muscle with its sets on a short line, the one looked at tinted. */
+function PartRows({ parts, focus, onPick }: { parts: PartCheck[]; focus: MusclePart | null; onPick: (part: MusclePart) => void }) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.parts, { backgroundColor: theme.card }]}>
+      {parts.map((p) => {
+        const on = p.part === focus;
+        const color = theme[TONE[p.level]];
+        return (
+          <Pressable
+            key={p.part}
+            onPress={() => onPick(p.part)}
+            accessibilityRole="button"
+            accessibilityState={{ selected: on }}
+            style={({ pressed }) => [styles.part, on && { backgroundColor: theme.accentSoft }, pressed && { opacity: 0.6 }]}>
+            <AppText weight={on ? '600' : '400'} style={styles.partName} numberOfLines={1}>
+              {partLabel(p.part)}
+            </AppText>
+            <View style={[styles.partTrack, { backgroundColor: theme.track }]}>
+              <View style={[styles.partFill, { width: `${(Math.min(p.sets, PART_SCALE) / PART_SCALE) * 100}%`, backgroundColor: color }]} />
+              <View style={[styles.partMark, { left: `${(PART_GOOD / PART_SCALE) * 100}%`, backgroundColor: theme.textTertiary }]} />
+            </View>
+            <AppText variant="subhead" tone="textSecondary" numeric style={styles.partSets}>
+              {`${p.shown} serie`}
+            </AppText>
+          </Pressable>
+        );
+      })}
+    </View>
+  );
+}
+
+/** The scale of a part's line: twice what it needs, so "enough" sits in the middle. */
+const PART_SCALE = PART_GOOD * 2;
 
 const styles = StyleSheet.create({
   sheet: { flexGrow: 1, gap: Spacing.lg, paddingTop: Spacing.xl },
@@ -390,5 +462,12 @@ const styles = StyleSheet.create({
     gap: Spacing.xs,
     padding: Spacing.md,
   },
+  parts: { borderRadius: Radius.lg, borderCurve: 'continuous', padding: Spacing.xs },
+  part: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 44, paddingHorizontal: Spacing.md, borderRadius: Radius.md, borderCurve: 'continuous' },
+  partName: { width: 118 },
+  partTrack: { flex: 1, height: 6, borderRadius: 3, overflow: 'hidden' },
+  partFill: { position: 'absolute', top: 0, bottom: 0, left: 0, borderRadius: 3 },
+  partMark: { position: 'absolute', top: 0, bottom: 0, width: 2 },
+  partSets: { width: 64, textAlign: 'right' },
   plus: { width: 32, height: 32, borderRadius: Radius.lg, alignItems: 'center', justifyContent: 'center' },
 });

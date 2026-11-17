@@ -23,12 +23,19 @@
 <script>/*ORBIT*/</script>
 <script>
 (function () {
-  var ORDER = ['chest', 'shoulders', 'back', 'biceps', 'triceps', 'forearms', 'abs', 'quads', 'glutes', 'hamstrings', 'calves'];
-  // The side each muscle is best seen from, in degrees around the body; `both` shows from either side.
+  // The side each muscle is best seen from, in degrees around the body.
   var VIEW = { chest: 0, shoulders: 35, back: 180, biceps: 12, triceps: 168, forearms: 150, abs: 0, quads: 0, glutes: 180, hamstrings: 180, calves: 180 };
-  var BOTH = { shoulders: true, forearms: true };
+  // The parts some muscles are drawn in (scripts/body/split.mjs); the others are drawn whole.
+  var MUSCLE_OF = {
+    'front-delts': 'shoulders', 'side-delts': 'shoulders', 'rear-delts': 'shoulders',
+    'lats': 'back', 'upper-back': 'back', 'lower-back': 'back',
+    'upper-chest': 'chest', 'lower-chest': 'chest',
+    'rectus-abs': 'abs', 'obliques': 'abs',
+    'glute-max': 'glutes', 'glute-med': 'glutes',
+    'gastrocnemius': 'calves', 'soleus': 'calves'
+  };
   var COLORS = { good: 0x2FCB55, low: 0xFF9A1F, bad: 0xFF5A3C };
-  var state = { dark: true, fg: '#FFFFFF', muted: '#AEAEB2', text: { good: '#30D158', low: '#FFB340', bad: '#FF6961' }, levels: {}, top: 0, bottom: 0, sheet: 0.55 };
+  var state = { dark: true, levels: {}, top: 0, bottom: 0, sheet: 0.55 };
   var selected = null, ready = false;
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var $ = function (id) { return document.getElementById(id); };
@@ -39,10 +46,11 @@
     if (window.ReactNativeWebView) window.ReactNativeWebView.postMessage(text);
     else if (window.parent !== window) window.parent.postMessage(text, '*');
   }
-  function level(k) { return state.levels[k] || 'good'; }
-  function lacking() { return ORDER.filter(function (k) { return level(k) !== 'good'; }); }
+  // A part has its own level when the app gives one, else its muscle's.
+  function level(name) { return state.levels[name] || state.levels[MUSCLE_OF[name] || name] || 'good'; }
 
-  var renderer, scene, camera, controls, meshes = {}, skin = null, other = null, centers = {}, radii = {}, anchors = {};
+  // Meshes by name (a part, or a muscle drawn whole); their centres, to grow from; each muscle's sphere.
+  var renderer, scene, camera, controls, meshes = {}, names = [], skin = null, other = null, centers = {}, mcenters = {}, mradii = {}, selectedPart = null;
   var anim = null, pulse = 0, needs = true, POLAR = Math.PI / 2 - 0.06, GREY = new THREE.Color(0x4a4b52);
 
   function init(buf) {
@@ -61,12 +69,10 @@
     var base = 4 + hl, min = header.min, max = header.max;
     header.groups.forEach(function (g) {
       var q = new Uint16Array(buf, base + g.pos, g.verts * 3), p = new Float32Array(g.verts * 3);
-      var sp = [0, 0, 0, 0], sn = [0, 0, 0, 0];
       for (var i = 0; i < g.verts; i++) {
         var x = min[0] + q[i * 3] / 65535 * (max[0] - min[0]), y = min[1] + q[i * 3 + 1] / 65535 * (max[1] - min[1]), z = min[2] + q[i * 3 + 2] / 65535 * (max[2] - min[2]);
         var px = x / 1000, py = z / 1000, pz = -y / 1000 - 0.096;
         p[i * 3] = px; p[i * 3 + 1] = py; p[i * 3 + 2] = pz;
-        var s = px >= 0 ? sp : sn; s[0] += px; s[1] += py; s[2] += pz; s[3]++;
       }
       var idx = g.wide ? new Uint32Array(buf, base + g.idx, g.tris * 3) : new Uint16Array(buf, base + g.idx, g.tris * 3);
       var geo = new THREE.BufferGeometry();
@@ -86,12 +92,22 @@
         mesh = other = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0x46474e, roughness: 0.75, metalness: 0 }));
       } else {
         mesh = new THREE.Mesh(geo, new THREE.MeshStandardMaterial({ color: 0xffffff, roughness: 0.55, metalness: 0, emissive: 0x000000 }));
-        mesh.userData.k = g.name; meshes[g.name] = mesh;
-        centers[g.name] = geo.boundingSphere.center.clone(); radii[g.name] = geo.boundingSphere.radius;
-        var c0 = centers[g.name];
-        anchors[g.name] = [sp[3] ? new THREE.Vector3(sp[0] / sp[3], sp[1] / sp[3], sp[2] / sp[3]) : c0.clone(), sn[3] ? new THREE.Vector3(sn[0] / sn[3], sn[1] / sn[3], sn[2] / sn[3]) : c0.clone()];
+        mesh.userData.k = MUSCLE_OF[g.name] || g.name; mesh.userData.part = MUSCLE_OF[g.name] ? g.name : null;
+        meshes[g.name] = mesh; names.push(g.name);
+        centers[g.name] = geo.boundingSphere.center.clone();
+        geo.computeBoundingBox();
       }
       scene.add(mesh);
+    });
+    // Each muscle, whole: where the camera goes to look at it.
+    var boxes = {};
+    names.forEach(function (n) {
+      var k = meshes[n].userData.k;
+      boxes[k] = boxes[k] ? boxes[k].union(meshes[n].geometry.boundingBox) : meshes[n].geometry.boundingBox.clone();
+    });
+    Object.keys(boxes).forEach(function (k) {
+      var sphere = boxes[k].getBoundingSphere(new THREE.Sphere());
+      mcenters[k] = sphere.center; mradii[k] = sphere.radius;
     });
 
     controls = new THREE.OrbitControls(camera, canvas);
@@ -140,7 +156,7 @@
     return { dist: dist, target: new THREE.Vector3(0, cy - ((c.b - c.t) / 2) * 2 * dist * tan, 0) };
   }
   function look(az, now) {
-    var f = selected && centers[selected] ? frame(centers[selected].y, radii[selected] * 2.5, radii[selected] * 2.4) : frame(0.86, 1.82, 1.62);
+    var f = selected && mcenters[selected] ? frame(mcenters[selected].y, mradii[selected] * 2.5, mradii[selected] * 2.4) : frame(0.86, 1.82, 1.62);
     flyTo(az == null ? current().az : az, POLAR, f.dist, f.target, now);
   }
 
@@ -150,23 +166,25 @@
     skin.material.uniforms.c.value.setHex(state.dark ? 0x5a5c64 : 0xc3c5cc);
     other.material.color.setHex(state.dark ? 0x46474e : 0xb1b3ba);
     GREY.setHex(state.dark ? 0x4a4b52 : 0xb9bbc2);
-    ORDER.forEach(function (k) { if (meshes[k]) meshes[k].userData.dirty = true; });
+    names.forEach(function (n) { meshes[n].userData.dirty = true; });
     fade();
   }
+  // 1 is grey like the rest of the body. With a part chosen, the rest of its muscle goes half grey.
   function fade() {
-    ORDER.forEach(function (k) {
-      var m = meshes[k]; if (!m) return;
-      m.userData.goal = selected && selected !== k ? 1 : 0;   // 1 = grey like the rest of the body
-      m.userData.lift = selected === k ? 1 : 0;
+    names.forEach(function (n) {
+      var m = meshes[n], mine = selected === m.userData.k;
+      m.userData.goal = !selected ? 0 : !mine ? 1 : selectedPart && m.userData.part !== selectedPart ? 0.55 : 0;
+      m.userData.lift = mine && (!selectedPart || m.userData.part === selectedPart) ? 1 : 0;
     });
     needs = true;
   }
-  function select(k, quiet) {
-    if (k === selected) return;
-    selected = k; pulse = performance.now();
+  function select(k, part) {
+    part = part || null;
+    if (k === selected && part === selectedPart) return;
+    var turn = k !== selected;
+    selected = k; selectedPart = part; pulse = performance.now();
     fade();
-    if (ready) look(k ? VIEW[k] * Math.PI / 180 : null);
-    if (!quiet) post({ type: 'select', muscle: k });
+    if (ready && turn) look(k ? VIEW[k] * Math.PI / 180 : null);
   }
 
   function resize() {
@@ -181,14 +199,15 @@
       if (!down || down.id !== e.pointerId) return;
       var moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t; down = null;
       if (moved > 8 || dt > 500) return;
-      // The first tap brings the names; then a name or a muscle opens it, and a tap outside puts the names away.
       var b = canvas.getBoundingClientRect();
       v.set((e.clientX - b.left) / b.width * 2 - 1, -((e.clientY - b.top) / b.height) * 2 + 1);
       ray.setFromCamera(v, camera);
-      var hits = ray.intersectObjects(ORDER.map(function (k) { return meshes[k]; }).filter(Boolean), false);
-      var hit = hits.length ? hits[0].object.userData.k : null;
-      // A muscle opens its detail; a tap beside the body does nothing.
-      if (hit) { select(hit, true); post({ type: 'select', muscle: hit }); }
+      var hits = ray.intersectObjects(names.map(function (n) { return meshes[n]; }), false);
+      if (!hits.length) return;
+      // A muscle opens its detail, on the part tapped; a tap beside the body does nothing.
+      var hit = hits[0].object.userData;
+      select(hit.k, hit.part);
+      post({ type: 'select', muscle: hit.k, part: hit.part });
     });
   }
 
@@ -208,8 +227,8 @@
       controls.update();
     }
     // The other muscles go grey, the chosen one lifts and glows.
-    ORDER.forEach(function (k) {
-      var m = meshes[k]; if (!m) return;
+    names.forEach(function (k) {
+      var m = meshes[k];
       var goal = m.userData.goal || 0, dm = m.userData.dim || 0, was = dm;
       dm = Math.abs(goal - dm) > 0.004 && !reduce ? dm + (goal - dm) * step : goal;
       if (dm !== was || m.userData.dirty) { m.userData.dim = dm; m.userData.dirty = false; m.material.color.setHex(COLORS[level(k)]).lerp(GREY, dm); needs = true; }
@@ -233,14 +252,14 @@
       apply();
       if (moved && !anim) look(null, true);
     },
-    select: function (k) { select(k || null, true); }
+    select: function (k, part) { select(k || null, part); }
   };
   if (window.__fuel) window.fuel.set(window.__fuel);
   // On the web the page sits in a frame and the app writes to it.
   window.addEventListener('message', function (e) {
     var m; try { m = typeof e.data === 'string' ? JSON.parse(e.data) : e.data; } catch (err) { return; }
     if (!m || !m.fuel) return;
-    if (m.fuel === 'set') window.fuel.set(m.state); else if (m.fuel === 'select') window.fuel.select(m.muscle);
+    if (m.fuel === 'set') window.fuel.set(m.state); else if (m.fuel === 'select') window.fuel.select(m.muscle, m.part);
   });
 
   apply();

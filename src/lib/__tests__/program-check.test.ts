@@ -1,10 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Muscle } from '../exercises';
-import { checkMuscles, dayFor, levelOf, missingLabel, weeklyTimes, type CheckDay } from '../program-check';
+import { checkMuscles, dayFor, levelOf, missingLabel, weakestPart, weeklyTimes, worseLevel, type CheckDay } from '../program-check';
 
 let plan = 0;
-const ex = (muscle: Muscle, secondary: Muscle[] = [], sets = 3) => ({ planId: ++plan, exerciseId: plan, muscle, secondary, sets });
+const ex = (muscle: Muscle, secondary: Muscle[] = [], sets = 3, ref: string | null = null) => ({ planId: ++plan, exerciseId: plan, ref, muscle, secondary, sets });
 const day = (id: number, name: string, exercises: CheckDay['exercises'], perWeek = 1): CheckDay => ({ id, name, perWeek, exercises });
 
 describe('weeklyTimes', () => {
@@ -90,5 +90,34 @@ describe('missingLabel', () => {
     expect(missingLabel(1)).toBe('manca 1 serie');
     expect(missingLabel(4)).toBe('mancano 4 serie');
     expect(missingLabel(4, { short: true })).toBe('mancano 4');
+  });
+});
+
+describe('parts', () => {
+  const shoulders = (days: CheckDay[]) => checkMuscles(days).find((m) => m.muscle === 'shoulders');
+
+  it('counts each set for the parts the exercise names, half where the muscle only helps', () => {
+    const push = day(1, 'Push', [ex('chest', ['triceps', 'shoulders'], 3, 'bench-press'), ex('shoulders', ['triceps'], 3, 'overhead-press'), ex('shoulders', [], 3, 'lateral-raise')]);
+    const parts = new Map(shoulders([push])?.parts.map((p) => [p.part, p]));
+    expect(parts.get('front-delts')?.sets).toBe(4.5);
+    expect(parts.get('side-delts')?.sets).toBe(3);
+    expect(parts.get('rear-delts')).toMatchObject({ sets: 0, level: 'bad' });
+  });
+
+  it('counts an exercise made in the app for every part of its muscle', () => {
+    const parts = shoulders([day(1, 'A', [ex('shoulders', [], 4)])])?.parts;
+    expect(parts?.map((p) => p.sets)).toEqual([4, 4, 4]);
+  });
+
+  it('names the part that lacks most, and draws a part no better than its muscle', () => {
+    const check = shoulders([day(1, 'A', [ex('shoulders', [], 6, 'overhead-press'), ex('shoulders', [], 4, 'lateral-raise')], 2)]);
+    expect(check?.level).toBe('good');
+    expect(weakestPart(check!)?.part).toBe('rear-delts');
+    expect(worseLevel('good', 'low')).toBe('low');
+    expect(worseLevel('bad', 'good')).toBe('bad');
+  });
+
+  it('leaves muscles without parts with none', () => {
+    expect(checkMuscles([]).find((m) => m.muscle === 'biceps')?.parts).toEqual([]);
   });
 });

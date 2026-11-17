@@ -1,4 +1,5 @@
 import { MUSCLES, type Muscle } from './exercises';
+import { partsOfMuscle, partsTrained, type MusclePart } from './muscle-parts';
 import { muscleShare, WEEKLY_SETS } from './training';
 
 /** How a muscle is trained by a program in a week: enough to grow, little, or very little. */
@@ -8,6 +9,8 @@ export type CheckExercise = {
   /** The row of the day it is planned in. */
   planId: number;
   exerciseId: number;
+  /** The library's id, which says what parts of a muscle it trains. */
+  ref: string | null;
   muscle: Muscle;
   secondary: readonly Muscle[];
   sets: number;
@@ -35,7 +38,39 @@ export type MuscleCheck = {
   indirect: number[];
   /** The day an exercise for it belongs in; null for a program without days. */
   dayId: number | null;
+  /** For a muscle with parts, each of them; empty for the others. */
+  parts: PartCheck[];
 };
+
+export type PartCheck = {
+  part: MusclePart;
+  sets: number;
+  shown: number;
+  level: MuscleLevel;
+  /** Rows of the days whose sets count for it. */
+  planIds: number[];
+};
+
+/** A part is enough with half of what its whole muscle needs: the sets of the others help it too. */
+export const PART_GOOD = WEEKLY_SETS.low / 2;
+const PART_VERY_LOW = 3;
+
+export function partLevelOf(shown: number): MuscleLevel {
+  return shown >= PART_GOOD ? 'good' : shown >= PART_VERY_LOW ? 'low' : 'bad';
+}
+
+const RANK: Record<MuscleLevel, number> = { good: 0, low: 1, bad: 2 };
+
+/** The worse of two: how a part is drawn, never better than its muscle. */
+export function worseLevel(a: MuscleLevel, b: MuscleLevel): MuscleLevel {
+  return RANK[a] >= RANK[b] ? a : b;
+}
+
+/** The part that lacks most, if one does. */
+export function weakestPart(check: MuscleCheck): PartCheck | null {
+  const weak = check.parts.filter((p) => p.level !== 'good').sort((a, b) => a.sets - b.sets);
+  return weak[0] ?? null;
+}
 
 /** Half the way to the least useful: under it a muscle is barely trained. */
 const VERY_LOW = WEEKLY_SETS.low / 2;
@@ -110,7 +145,21 @@ export function checkMuscles(days: readonly CheckDay[]): MuscleCheck[] {
       }
     }
     const shown = Math.round(sets);
-    return { muscle, sets, shown, level: levelOf(shown), missing: Math.max(0, WEEKLY_SETS.low - shown), direct, indirect, dayId: dayFor(muscle, days) };
+    const parts = partsOfMuscle(muscle).map(({ key: part }): PartCheck => {
+      let partSets = 0;
+      const planIds: number[] = [];
+      for (const day of days) {
+        for (const exercise of day.exercises) {
+          const share = muscleShare(exercise, muscle);
+          if (share === 0 || !partsTrained(exercise, muscle).includes(part)) continue;
+          partSets += day.perWeek * exercise.sets * share;
+          planIds.push(exercise.planId);
+        }
+      }
+      const partShown = Math.round(partSets);
+      return { part, sets: partSets, shown: partShown, level: partLevelOf(partShown), planIds };
+    });
+    return { muscle, sets, shown, level: levelOf(shown), missing: Math.max(0, WEEKLY_SETS.low - shown), direct, indirect, dayId: dayFor(muscle, days), parts };
   });
 }
 

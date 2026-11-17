@@ -340,9 +340,9 @@ export default function ProgramScreen() {
             height={figure.height}
             top={figure.top}
             shown={tab === 'muscles'}
-            onOpen={(muscle) => {
+            onOpen={(muscle, part) => {
               haptics.selection();
-              router.push({ pathname: '/muscle-check', params: { program: program.id, muscle } });
+              router.push({ pathname: '/muscle-check', params: { program: program.id, muscle, ...(part ? { part } : {}) } });
             }}
           />
         </View>

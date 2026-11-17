@@ -2,6 +2,7 @@ import { Asset } from 'expo-asset';
 import { useEffect, useImperativeHandle, useRef } from 'react';
 
 import { isMuscle } from '@/lib/exercises';
+import { isMusclePart } from '@/lib/muscle-parts';
 
 import { parseBodyMessage, type BodyFigureProps } from './body-figure.types';
 
@@ -30,13 +31,13 @@ export function BodyFigure({ state, onSelect, onFail, onReady, ref }: BodyFigure
         latest.current.onReady?.();
       }
       else if (message?.type === 'failed') latest.current.onFail?.();
-      else if (message?.type === 'select' && isMuscle(message.muscle)) latest.current.onSelect(message.muscle);
+      else if (message?.type === 'select' && isMuscle(message.muscle)) latest.current.onSelect(message.muscle, isMusclePart(message.part) ? message.part : null);
     };
     window.addEventListener('message', listen);
     return () => window.removeEventListener('message', listen);
   }, []);
 
-  useImperativeHandle(ref, () => ({ select: (muscle) => send({ fuel: 'select', muscle }) }), []);
+  useImperativeHandle(ref, () => ({ select: (muscle, part = null) => send({ fuel: 'select', muscle, part }) }), []);
 
   return <iframe ref={frame} src={uri} title="Il corpo in 3D" style={{ flex: 1, width: '100%', height: '100%', border: 0, background: 'transparent' }} />;
 }

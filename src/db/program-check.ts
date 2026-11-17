@@ -3,6 +3,7 @@ import type { SQLiteDatabase } from 'expo-sqlite';
 import { expandActivities } from '@/lib/calendar';
 import { addDays, type DateKey } from '@/lib/dates';
 import { isWarmUp, type Muscle } from '@/lib/exercises';
+import { exerciseParts, type MusclePart } from '@/lib/muscle-parts';
 import { checkMuscles, weeklyTimes, type CheckDay, type MuscleCheck } from '@/lib/program-check';
 
 import { getCalendar } from './calendar';
@@ -48,7 +49,7 @@ export async function getProgramCheck(db: SQLiteDatabase, programId: number, tod
       .filter((p) => !isWarmUp(p.exercise))
       .map((p) => {
         planned.set(p.id, { ...p, dayId: d.id });
-        return { planId: p.id, exerciseId: p.exercise.id, muscle: p.exercise.muscle, secondary: p.exercise.secondary, sets: p.sets };
+        return { planId: p.id, exerciseId: p.exercise.id, ref: p.exercise.ref, muscle: p.exercise.muscle, secondary: p.exercise.secondary, sets: p.sets };
       }),
   }));
   return { program: { id: program.id, name: program.name }, days: checkDays, muscles: checkMuscles(checkDays), planned, assumed };
@@ -58,8 +59,16 @@ export function programCheckScreen(programId: number, today: DateKey): LiveQuery
   return { key: `program-check:${programId}:${today}`, query: (db) => getProgramCheck(db, programId, today), topics: ['training', 'calendar'] };
 }
 
-/** Exercises for a muscle that the program does not have yet, the most used first. */
-export async function getMuscleSuggestions(db: SQLiteDatabase, programId: number, muscle: Muscle, count = 3): Promise<Exercise[]> {
+/**
+ * Exercises for a muscle that the program does not have yet, the most used first; for a part, the
+ * ones that name it.
+ */
+export async function getMuscleSuggestions(
+  db: SQLiteDatabase,
+  programId: number,
+  muscle: Muscle,
+  { count = 3, part = null }: { count?: number; part?: MusclePart | null } = {},
+): Promise<Exercise[]> {
   const [all, inProgram] = await Promise.all([
     searchExercises(db, { muscle }),
     db.getAllAsync<{ exercise_id: number }>(
@@ -68,5 +77,5 @@ export async function getMuscleSuggestions(db: SQLiteDatabase, programId: number
     ),
   ]);
   const there = new Set(inProgram.map((r) => r.exercise_id));
-  return all.filter((e) => !there.has(e.id)).slice(0, count);
+  return all.filter((e) => !there.has(e.id) && (part === null || exerciseParts(e).includes(part))).slice(0, count);
 }

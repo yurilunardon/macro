@@ -4,6 +4,7 @@ import { StyleSheet } from 'react-native';
 import { WebView } from 'react-native-webview';
 
 import { isMuscle } from '@/lib/exercises';
+import { isMusclePart } from '@/lib/muscle-parts';
 
 import { parseBodyMessage, type BodyFigureProps } from './body-figure.types';
 
@@ -39,7 +40,7 @@ export function BodyFigure({ state, onSelect, onFail, onReady, ref }: BodyFigure
 
   useImperativeHandle(
     ref,
-    () => ({ select: (muscle) => web.current?.injectJavaScript(`window.fuel&&window.fuel.select(${JSON.stringify(muscle)});true;`) }),
+    () => ({ select: (muscle, part = null) => web.current?.injectJavaScript(`window.fuel&&window.fuel.select(${JSON.stringify(muscle)},${JSON.stringify(part)});true;`) }),
     [],
   );
 
@@ -59,7 +60,7 @@ export function BodyFigure({ state, onSelect, onFail, onReady, ref }: BodyFigure
           onReady?.();
         }
         else if (message?.type === 'failed') onFail?.();
-        else if (message?.type === 'select' && isMuscle(message.muscle)) onSelect(message.muscle);
+        else if (message?.type === 'select' && isMuscle(message.muscle)) onSelect(message.muscle, isMusclePart(message.part) ? message.part : null);
       }}
       scrollEnabled={false}
       bounces={false}

@@ -10,6 +10,8 @@ import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { useToday } from '@/hooks/use-today';
 import type { Muscle } from '@/lib/exercises';
+import type { MusclePart } from '@/lib/muscle-parts';
+import { worseLevel } from '@/lib/program-check';
 
 import { AppText } from './app-text';
 import { BodyFigure } from './body-figure';
@@ -34,7 +36,7 @@ export function ProgramBody({
   height: number;
   top: number;
   shown: boolean;
-  onOpen: (muscle: Muscle) => void;
+  onOpen: (muscle: Muscle, part: MusclePart | null) => void;
 }) {
   const theme = useTheme();
   const dark = useColorScheme() === 'dark';
@@ -56,7 +58,11 @@ export function ProgramBody({
   const sheet = Math.max(0, MUSCLE_SHEET * window.height - (window.height - top - height)) / Math.max(1, height);
   const state = useMemo<BodyFigureState>(() => {
     const levels: BodyFigureState['levels'] = {};
-    for (const m of muscles ?? []) levels[m.muscle] = m.level;
+    for (const m of muscles ?? []) {
+      levels[m.muscle] = m.level;
+      // A part that lacks shows, even on a muscle that is fine as a whole.
+      for (const p of m.parts) levels[p.part] = worseLevel(m.level, p.level);
+    }
     return { dark, levels, top: 0, bottom: 0, sheet };
   }, [muscles, dark, sheet]);
 
