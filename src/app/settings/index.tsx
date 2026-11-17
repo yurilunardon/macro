@@ -173,6 +173,12 @@ export default function SettingsScreen() {
           icon={<Icon name="leaf.fill" size={20} tone="accent" />}
           onPress={() => void Linking.openURL('https://fdc.nal.usda.gov')}
         />
+        <Row
+          title="Muscoli in 3D: BodyParts3D"
+          subtitle="© DBCLS, licenza CC BY-SA 2.1 JP"
+          icon={<Icon name="figure.stand" size={20} tone="accent" />}
+          onPress={() => void Linking.openURL('https://lifesciencedb.jp/bp3d/')}
+        />
         <Row title="Versione" detail={Constants.expoConfig?.version ?? '—'} />
         {Updates.createdAt && !Updates.isEmbeddedLaunch ? (
           <Row

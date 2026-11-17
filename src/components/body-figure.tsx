@@ -11,7 +11,7 @@ import { parseBodyMessage, type BodyFigureProps } from './body-figure.types';
  * The body in 3D, each muscle coloured by how the program trains it. It is a page drawn with
  * WebGL in a web view (`scripts/body`): one file with the model inside, read from the app itself.
  */
-export function BodyFigure({ state, onSelect, onFail, ref }: BodyFigureProps) {
+export function BodyFigure({ state, onSelect, onFail, onReady, ref }: BodyFigureProps) {
   // Its own type takes `undefined` for extra props, which leaves no props at all.
   const web = useRef<WebView<object>>(null);
   const [uri, setUri] = useState<string | null>(null);
@@ -54,7 +54,10 @@ export function BodyFigure({ state, onSelect, onFail, ref }: BodyFigureProps) {
       injectedJavaScriptBeforeContentLoaded={`window.__fuel=${first};true;`}
       onMessage={(event) => {
         const message = parseBodyMessage(event.nativeEvent.data);
-        if (message?.type === 'ready') web.current?.injectJavaScript(`window.fuel.set(${json});true;`);
+        if (message?.type === 'ready') {
+          web.current?.injectJavaScript(`window.fuel.set(${json});true;`);
+          onReady?.();
+        }
         else if (message?.type === 'failed') onFail?.();
         else if (message?.type === 'select' && isMuscle(message.muscle)) onSelect(message.muscle);
       }}

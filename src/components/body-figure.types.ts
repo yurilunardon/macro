@@ -6,21 +6,15 @@ import type { MuscleLevel } from '@/lib/program-check';
 /** The part of the screen the muscle's sheet takes: the figure keeps the muscle above it. */
 export const MUSCLE_SHEET = 0.56;
 
-/** What the page of the figure is told: colours, how each muscle is doing, the names to write. */
+/** What the page of the figure is told: the theme and how each muscle is doing. */
 export type BodyFigureState = {
   dark: boolean;
-  /** Text colours of the names, the lines and each level's note. */
-  fg: string;
-  muted: string;
-  text: Record<MuscleLevel, string>;
   levels: Partial<Record<Muscle, MuscleLevel>>;
-  labels: Partial<Record<Muscle, { name: string; note: string }>>;
-  /** Points covered by the bar above and the tab bar below. */
+  /** Points of the figure's view covered by something above and below it. */
   top: number;
   bottom: number;
-  /** The part of the screen the muscle's sheet covers once open. */
+  /** The share of the figure's view the muscle's sheet covers once open. */
   sheet: number;
-  hint: string;
 };
 
 export type BodyFigureHandle = {
@@ -30,10 +24,12 @@ export type BodyFigureHandle = {
 
 export type BodyFigureProps = {
   state: BodyFigureState;
-  /** A muscle, or its name, was tapped. */
+  /** A muscle was tapped. */
   onSelect: (muscle: Muscle) => void;
   /** The device could not draw it. */
   onFail?: () => void;
+  /** It is drawn and can be shown. */
+  onReady?: () => void;
   ref?: Ref<BodyFigureHandle>;
 };
 

@@ -13,7 +13,6 @@ export default function TrainingLayout() {
       {/* No title in the bar: the page has its own, in large type, to rename it. */}
       <Stack.Screen name="program" options={{ title: '' }} />
       <Stack.Screen name="day" options={{ title: '' }} />
-      <Stack.Screen name="body" options={{ title: 'Muscoli' }} />
       <Stack.Screen name="exercises" options={{ title: 'Esercizi' }} />
       <Stack.Screen name="exercise" options={{ title: 'Esercizio' }} />
       <Stack.Screen name="history" options={{ title: 'Storico' }} />

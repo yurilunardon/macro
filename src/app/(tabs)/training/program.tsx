@@ -1,20 +1,25 @@
 import { Link, Stack, useLocalSearchParams, usePreventRemove, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import { useHeaderHeight } from 'expo-router/react-navigation';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
+import { useSafeAreaInsets } from 'react-native-safe-area-context';
 import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { ActionRow, ListGroup, SectionFooter, SectionTitle } from '@/components/card';
 import { DayBadge } from '@/components/day-badge';
 import { editButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { choose, confirmDestructive } from '@/components/prompt';
+import { ProgramBody } from '@/components/program-body';
 import { ScreenScroll } from '@/components/screen';
+import { Segmented } from '@/components/segmented';
 import { SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
+import { useTabBarInset } from '@/components/tab-bar';
 import { toast } from '@/components/toast';
 import { Radius, Spacing } from '@/constants/theme';
 import { prefetch, useLiveQuery } from '@/db/live';
@@ -33,6 +38,8 @@ import {
   type DaySummary,
 } from '@/db/programs';
 import { dayScreen, programScreen } from '@/db/screens';
+import { useScrollTop } from '@/hooks/use-scroll-top';
+import { useSettled } from '@/hooks/use-settled';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
 import { DAY_ICON_CHOICES } from '@/lib/training';
@@ -41,6 +48,14 @@ import { haptics } from '@/services/haptics';
 import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 const ROW_HEIGHT = 60;
+
+type ProgramTab = 'days' | 'muscles';
+const TABS: readonly { key: ProgramTab; label: string }[] = [
+  { key: 'days', label: 'Giorni' },
+  { key: 'muscles', label: 'Muscoli' },
+];
+/** The tab each program was left on, while the app stays open. */
+const lastTab = new Map<number, ProgramTab>();
 const ROW_IN = FadeIn.duration(220);
 const ROW_OUT = FadeOut.duration(180);
 const ROW_LAYOUT = LinearTransition.duration(240).easing(Easing.out(Easing.cubic));
@@ -61,6 +76,19 @@ export default function ProgramScreen() {
   const hidden = usePendingDeletes();
   // "Modifica", as in the workout and in Clock: rows get a red ⊖ and a ≡ handle to drag.
   const [editing, setEditing] = useState(false);
+  // Giorni or Muscoli, as it was left for this program.
+  const [tab, setTab] = useState<ProgramTab>(() => lastTab.get(id) ?? 'days');
+  const scroll = useScrollTop();
+  const insets = useSafeAreaInsets();
+  const tabBar = useTabBarInset();
+  const header = useHeaderHeight();
+  const window = useWindowDimensions();
+  const [tabsY, setTabsY] = useState(0);
+  const settled = useSettled();
+  const bodyBuilt = settled && (program?.days.length ?? 0) > 0 && program?.draft === false;
+  // From where the tabs start, with the large title open, to the tab bar.
+  const figureTop = (scroll.openTop.get() || header) + tabsY;
+  const figure = { top: figureTop, height: Math.max(320, window.height - insets.bottom - tabBar - figureTop) };
 
   // A template opened from "Nuova scheda" is only being looked at: going back leaves nothing
   // behind, unless it was changed, and then it asks whether to keep it.
@@ -157,10 +185,18 @@ export default function ProgramScreen() {
   const removeDay = (day: DaySummary) =>
     deleteWithUndo({ key: `day:${day.id}`, title: `${day.name} eliminato`, run: () => deleteDay(db, day.id) });
 
+  const switchTab = (next: ProgramTab) => {
+    setEditing(false);
+    lastTab.set(program.id, next);
+    // The body takes what is left of the screen, from the top of the page.
+    if (next === 'muscles') void scroll.scrollToTop();
+    setTab(next);
+  };
+
   return (
-    <ScreenScroll>
+    <ScreenScroll scroll={scroll} scrollEnabled={tab === 'days'}>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button {...editButton({ editing, disabled: days.length === 0, onChange: setEditing })} />
+        <Stack.Toolbar.Button {...editButton({ editing, disabled: days.length === 0 || tab !== 'days', onChange: setEditing })} />
         <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sulla scheda" hidden={program.draft}>
           <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
             Elimina scheda
@@ -207,17 +243,17 @@ export default function ProgramScreen() {
         />
       )}
 
-      {days.length > 0 ? (
-        <ListGroup>
-          <Row
-            title="Muscoli"
-            subtitle="Quanto lavora ogni muscolo"
-            icon={<Icon name="figure.stand" size={22} tone="accent" />}
-            onPress={() => router.push({ pathname: '/training/body', params: { id: program.id } })}
-          />
-        </ListGroup>
+      {days.length > 0 && !program.draft ? (
+        <View style={styles.segmented}>
+          <Segmented options={TABS} value={tab} onChange={switchTab} />
+        </View>
       ) : null}
 
+      <View onLayout={(event) => setTabsY(event.nativeEvent.layout.y)}>
+      {tab === 'muscles' ? (
+        <View style={{ height: figure.height }} />
+      ) : (
+      <>
       <SectionTitle>Giorni</SectionTitle>
       {editing ? (
         <SortableList
@@ -294,6 +330,24 @@ export default function ProgramScreen() {
           ? 'Trascina ≡ per cambiare l’ordine.'
           : 'I giorni si alternano in quest’ordine, poi si riparte dal primo.'}
       </SectionFooter>
+      </>
+      )}
+      {/* Built once the page has landed and kept under the days, so that "Muscoli" finds it ready. */}
+      {bodyBuilt ? (
+        <View style={[styles.figure, { height: figure.height }]} pointerEvents={tab === 'muscles' ? 'box-none' : 'none'}>
+          <ProgramBody
+            programId={program.id}
+            height={figure.height}
+            top={figure.top}
+            shown={tab === 'muscles'}
+            onOpen={(muscle) => {
+              haptics.selection();
+              router.push({ pathname: '/muscle-check', params: { program: program.id, muscle } });
+            }}
+          />
+        </View>
+      ) : null}
+      </View>
     </ScreenScroll>
   );
 }
@@ -303,6 +357,9 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   draft: { gap: Spacing.xs, padding: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous' },
   draftButton: { marginTop: Spacing.sm },
+  segmented: { marginBottom: Spacing.sm },
+  // As wide as the screen: the page's padding is for text, not for the body.
+  figure: { position: 'absolute', top: 0, left: -Spacing.lg, right: -Spacing.lg },
   status: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2, paddingHorizontal: Spacing.xs },
   day: {
     flexDirection: 'row',

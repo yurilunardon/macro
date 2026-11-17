@@ -6,13 +6,13 @@ import { isMuscle } from '@/lib/exercises';
 import { parseBodyMessage, type BodyFigureProps } from './body-figure.types';
 
 /** On the web the same page sits in a frame, and is written to with messages. */
-export function BodyFigure({ state, onSelect, onFail, ref }: BodyFigureProps) {
+export function BodyFigure({ state, onSelect, onFail, onReady, ref }: BodyFigureProps) {
   const frame = useRef<HTMLIFrameElement>(null);
   const uri = Asset.fromModule(require('../../assets/body/body.html')).uri;
   const json = JSON.stringify(state);
-  const latest = useRef({ json, onSelect, onFail });
+  const latest = useRef({ json, onSelect, onFail, onReady });
   useEffect(() => {
-    latest.current = { json, onSelect, onFail };
+    latest.current = { json, onSelect, onFail, onReady };
   });
 
   const send = (message: object) => frame.current?.contentWindow?.postMessage(JSON.stringify(message), '*');
@@ -25,7 +25,10 @@ export function BodyFigure({ state, onSelect, onFail, ref }: BodyFigureProps) {
     const listen = (event: MessageEvent) => {
       if (event.source !== frame.current?.contentWindow) return;
       const message = parseBodyMessage(event.data);
-      if (message?.type === 'ready') send({ fuel: 'set', state: JSON.parse(latest.current.json) });
+      if (message?.type === 'ready') {
+        send({ fuel: 'set', state: JSON.parse(latest.current.json) });
+        latest.current.onReady?.();
+      }
       else if (message?.type === 'failed') latest.current.onFail?.();
       else if (message?.type === 'select' && isMuscle(message.muscle)) latest.current.onSelect(message.muscle);
     };

@@ -1,8 +1,17 @@
 import { Link, Stack, useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { useState } from 'react';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
-import Animated, { FadeIn, FadeOut, Keyframe, LayoutAnimationConfig } from 'react-native-reanimated';
+import { useEffect, useState, type ReactNode } from 'react';
+import Animated, {
+  FadeIn,
+  FadeOut,
+  Keyframe,
+  LayoutAnimationConfig,
+  useAnimatedStyle,
+  useSharedValue,
+  withDelay,
+  withTiming,
+} from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -12,7 +21,7 @@ import { editButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
-import { SortableList } from '@/components/sortable-list';
+import { SORTABLE_ENTER_MS, SORTABLE_SHIFT, SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { restFor } from '@/db/exercises';
@@ -32,8 +41,11 @@ const ROW_HEIGHT = 60;
 /** With a note under an exercise: one line more. */
 const ROW_HEIGHT_NOTES = 78;
 /** How far the text moves to make room for the red ⊖: its width and its gap. */
-const ROW_SHIFT = 34;
-const EDIT_MS = 260;
+const ROW_SHIFT = SORTABLE_SHIFT;
+const EDIT_MS = SORTABLE_ENTER_MS;
+/** An exercise opened from a muscle stands out, then fades back. */
+const HIGHLIGHT_HOLD_MS = 900;
+const HIGHLIGHT_FADE_MS = 1400;
 
 // Going into edit mode and out of it, the rows are the same but drawn by another list: the text
 // starts where the other left it and slides to its place, so nothing jumps.
@@ -62,8 +74,9 @@ export default function DayScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { names } = useExerciseNames();
-  const params = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; highlight?: string }>();
   const id = Number(params.id);
+  const highlight = Number(params.highlight);
   const screen = dayScreen(id);
   const { data } = useLiveQuery(screen.key, screen.query, screen.topics);
   const hidden = usePendingDeletes();
@@ -114,6 +127,20 @@ export default function DayScreen() {
     </>
   );
 
+  // What adds to the day: under the list, and still there while editing, dimmed as "Inizia".
+  const addRows = (
+    <View style={editing && styles.dimmed} pointerEvents={editing ? 'none' : 'auto'}>
+      {/* A day is best started warm: offered until it has one. */}
+      {exercises.some((planned) => isWarmUp(planned.exercise)) ? null : (
+        <>
+          <ActionRow label="Aggiungi riscaldamento" symbol="flame" onPress={() => void addWarmUp(db, { dayId: day.id })} />
+          <View style={[styles.divider, { backgroundColor: theme.separator }]} />
+        </>
+      )}
+      <ActionRow label="Aggiungi esercizio" onPress={() => router.push({ pathname: '/exercise-picker', params: { target: 'day', id: day.id } })} />
+    </View>
+  );
+
   return (
     <ScreenScroll>
       <Stack.Toolbar placement="right">
@@ -156,12 +183,14 @@ export default function DayScreen() {
           rowHeight={rowHeight}
           onReorder={(keys) => void reorderDayExercises(db, keys.map(Number))}
           onRemove={removeExercise}
+          footer={addRows}
           renderRow={(planned) => <Animated.View entering={TEXT_TO_EDIT}>{rowText(planned)}</Animated.View>}
         />
       ) : (
         <ListGroup>
           {exercises.map((planned) => (
             <SwipeToDelete key={planned.id} onDelete={() => removeExercise(planned)}>
+              <Highlight on={planned.id === highlight}>
               {/* Nothing to set on the warm-up: no sets, no reps, no rest. */}
               {isWarmUp(planned.exercise) ? (
                 <View style={[styles.row, { height: rowHeight }]}>
@@ -190,16 +219,10 @@ export default function DayScreen() {
                 </Link.Menu>
               </Link>
               )}
+              </Highlight>
             </SwipeToDelete>
           ))}
-          {/* A day is best started warm: offered until it has one. */}
-          {exercises.some((planned) => isWarmUp(planned.exercise)) ? null : (
-            <ActionRow label="Aggiungi riscaldamento" symbol="flame" onPress={() => void addWarmUp(db, { dayId: day.id })} />
-          )}
-          <ActionRow
-            label="Aggiungi esercizio"
-            onPress={() => router.push({ pathname: '/exercise-picker', params: { target: 'day', id: day.id } })}
-          />
+          {addRows}
         </ListGroup>
       )}
       </LayoutAnimationConfig>
@@ -209,6 +232,23 @@ export default function DayScreen() {
         </Animated.View>
       ) : null}
     </ScreenScroll>
+  );
+}
+
+/** Tinted at first, then back to the card's colour: the exercise that was asked for. */
+function Highlight({ on, children }: { on: boolean; children: ReactNode }) {
+  const theme = useTheme();
+  const tint = useSharedValue(on ? 1 : 0);
+  useEffect(() => {
+    if (on) tint.set(withDelay(HIGHLIGHT_HOLD_MS, withTiming(0, { duration: HIGHLIGHT_FADE_MS })));
+  }, [on, tint]);
+  const style = useAnimatedStyle(() => ({ opacity: tint.get() }));
+  if (!on) return children;
+  return (
+    <View>
+      <Animated.View pointerEvents="none" style={[StyleSheet.absoluteFill, { backgroundColor: theme.accentSoft }, style]} />
+      {children}
+    </View>
   );
 }
 
@@ -225,4 +265,5 @@ const styles = StyleSheet.create({
   },
   start: { marginBottom: Spacing.lg },
   dimmed: { opacity: 0.35 },
+  divider: { marginLeft: Spacing.lg, height: StyleSheet.hairlineWidth },
 });

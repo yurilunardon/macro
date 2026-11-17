@@ -7,8 +7,8 @@ import Animated, {
   useSharedValue,
   withSpring,
   withTiming,
-  FadeIn,
   FadeOut,
+  Keyframe,
   type SharedValue,
 } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
@@ -24,9 +24,18 @@ const SETTLE = { duration: 320, dampingRatio: 1 };
 /** Holding a row this long picks it up; a quicker swipe still scrolls the page. */
 const LIFT_DELAY = 180;
 
-const ASK_IN = FadeIn.duration(160);
-const ASK_OUT = FadeOut.duration(120);
 const ROW_OUT = FadeOut.duration(150);
+/** Width of "Elimina", as the button a swipe reveals. */
+const ACTION_WIDTH = 88;
+/** How far the text moves to make room for the ⊖: its width and its gap. */
+export const SORTABLE_SHIFT = 34;
+/** As long as the text takes to slide over, so the ⊖ comes in beside it rather than on top. */
+export const SORTABLE_ENTER_MS = 260;
+const MINUS_IN = new Keyframe({
+  0: { opacity: 0, transform: [{ translateX: -SORTABLE_SHIFT }] },
+  100: { opacity: 1, transform: [{ translateX: 0 }] },
+}).duration(SORTABLE_ENTER_MS);
+const HANDLE_IN = new Keyframe({ 0: { opacity: 0 }, 100: { opacity: 1 } }).duration(SORTABLE_ENTER_MS);
 
 const lift = haptics.medium;
 const tick = haptics.selection;
@@ -47,6 +56,8 @@ type SortableListProps<T> = {
   onReorder: (keys: string[]) => void;
   /** With it, each row has a red ⊖ on the left, as lists in edit mode on iOS. */
   onRemove?: (item: T) => void;
+  /** Rows under the sortable ones, in the same card: what stays of the list while editing. */
+  footer?: ReactNode;
 };
 
 /**
@@ -54,7 +65,7 @@ type SortableListProps<T> = {
  * others make room as it moves, and it drops into place when let go. The red ⊖ turns and
  * brings out "Elimina" on the right; a tap anywhere else on the row puts it back.
  */
-export function SortableList<T>({ items, keyOf, rowHeight, renderRow, onReorder, onRemove }: SortableListProps<T>) {
+export function SortableList<T>({ items, keyOf, rowHeight, renderRow, onReorder, onRemove, footer }: SortableListProps<T>) {
   const theme = useTheme();
   const [asking, setAsking] = useState<string | null>(null);
   const keys = items.map(keyOf);
@@ -81,7 +92,8 @@ export function SortableList<T>({ items, keyOf, rowHeight, renderRow, onReorder,
   };
 
   return (
-    <Animated.View style={[styles.list, { backgroundColor: theme.card }, heightStyle]}>
+    <View style={[styles.list, { backgroundColor: theme.card }]}>
+    <Animated.View style={heightStyle}>
       {items.map((item) => {
         const key = keyOf(item);
         return (
@@ -91,6 +103,7 @@ export function SortableList<T>({ items, keyOf, rowHeight, renderRow, onReorder,
             positions={positions}
             rowHeight={rowHeight}
             count={items.length}
+            roundBottom={!footer}
             onDrop={drop}
             asking={asking === key}
             onAsk={onRemove ? (ask) => setAsking(ask ? key : null) : undefined}
@@ -103,6 +116,9 @@ export function SortableList<T>({ items, keyOf, rowHeight, renderRow, onReorder,
         );
       })}
     </Animated.View>
+    {/* The last row's own line already parts it from what follows. */}
+    {footer}
+    </View>
   );
 }
 
@@ -111,6 +127,8 @@ type SortableRowProps = {
   positions: SharedValue<Positions>;
   rowHeight: number;
   count: number;
+  /** The last row rounds its bottom corners as the card's, unless rows follow it. */
+  roundBottom: boolean;
   onDrop: () => void;
   asking: boolean;
   onAsk?: (ask: boolean) => void;
@@ -118,12 +136,17 @@ type SortableRowProps = {
   children: ReactNode;
 };
 
-function SortableRow({ id, positions, rowHeight, count, onDrop, asking, onAsk, onRemove, children }: SortableRowProps) {
+function SortableRow({ id, positions, rowHeight, count, roundBottom, onDrop, asking, onAsk, onRemove, children }: SortableRowProps) {
   const theme = useTheme();
   const top = useSharedValue((positions.get()[id] ?? 0) * rowHeight);
   const startTop = useSharedValue(0);
   const dragging = useSharedValue(false);
   const lifted = useSharedValue(0);
+  // Tapping the ⊖ slides the row left onto "Elimina", as in Clock.
+  const slide = useSharedValue(0);
+  useEffect(() => {
+    slide.set(withSpring(asking ? -ACTION_WIDTH : 0, SETTLE));
+  }, [asking, slide]);
 
   // When another row takes this one's place, slide to the new one.
   useAnimatedReaction(
@@ -172,48 +195,65 @@ function SortableRow({ id, positions, rowHeight, count, onDrop, asking, onAsk, o
     },
   });
 
+  // The card's corners belong to the first and last rows, which carry them as they move; a lifted row
+  // rounds all four.
+  const corners = () => {
+    'worklet';
+    const position = positions.get()[id] ?? 0;
+    const lift = lifted.get() * Radius.md;
+    const top = position === 0 ? Radius.lg : lift;
+    const bottom = roundBottom && position === count - 1 ? Radius.lg : lift;
+    return { borderTopLeftRadius: top, borderTopRightRadius: top, borderBottomLeftRadius: bottom, borderBottomRightRadius: bottom };
+  };
   const style = useAnimatedStyle(() => ({
     transform: [{ translateY: top.get() }, { scale: 1 + lifted.get() * 0.03 }],
     zIndex: dragging.get() ? 10 : 0,
-    borderRadius: lifted.get() * Radius.md,
     shadowOpacity: lifted.get() * 0.25,
+    ...corners(),
   }));
+  const clip = useAnimatedStyle(() => corners());
+  const slideStyle = useAnimatedStyle(() => ({ transform: [{ translateX: slide.get() }] }));
+  const minusStyle = useAnimatedStyle(() => ({ transform: [{ rotate: `${(slide.get() / ACTION_WIDTH) * 90}deg` }] }));
 
   return (
     <GestureDetector gesture={pan}>
       <Animated.View exiting={ROW_OUT} style={[styles.row, { height: rowHeight, backgroundColor: theme.card }, style]}>
-        {onAsk ? (
+        <Animated.View style={[styles.clip, clip]}>
           <Pressable
-            onPress={() => {
-              haptics.selection();
-              onAsk(!asking);
-            }}
-            hitSlop={8}
+            onPress={onRemove}
             accessibilityRole="button"
-            accessibilityLabel="Elimina">
-            <Animated.View style={asking ? styles.turned : null}>
-              <Icon name="minus.circle.fill" size={22} tone="danger" />
-            </Animated.View>
+            accessibilityElementsHidden={!asking}
+            style={({ pressed }) => [styles.action, { backgroundColor: theme.danger }, pressed && { opacity: 0.7 }]}>
+            <AppText variant="subhead" weight="600" style={styles.deleteText}>
+              Elimina
+            </AppText>
           </Pressable>
-        ) : null}
-        <Pressable style={styles.content} disabled={!asking} onPress={() => onAsk?.(false)}>
-          {children}
-        </Pressable>
-        {asking ? (
-          <Animated.View entering={ASK_IN} exiting={ASK_OUT}>
-            <Pressable
-              onPress={onRemove}
-              accessibilityRole="button"
-              style={({ pressed }) => [styles.delete, { backgroundColor: theme.danger }, pressed && { opacity: 0.6 }]}>
-              <AppText variant="subhead" weight="600" style={styles.deleteText}>
-                Elimina
-              </AppText>
+          <Animated.View style={[styles.slider, { backgroundColor: theme.card }, slideStyle]}>
+            {onAsk ? (
+              <Animated.View entering={MINUS_IN}>
+                <Pressable
+                  onPress={() => {
+                    haptics.selection();
+                    onAsk(!asking);
+                  }}
+                  hitSlop={8}
+                  accessibilityRole="button"
+                  accessibilityLabel="Elimina">
+                  <Animated.View style={minusStyle}>
+                    <Icon name="minus.circle.fill" size={22} tone="danger" />
+                  </Animated.View>
+                </Pressable>
+              </Animated.View>
+            ) : null}
+            <Pressable style={styles.content} disabled={!asking} onPress={() => onAsk?.(false)}>
+              {children}
             </Pressable>
+            <Animated.View entering={HANDLE_IN}>
+              <Icon name="line.3.horizontal" size={18} tone="textTertiary" />
+            </Animated.View>
+            <View style={[styles.divider, { backgroundColor: theme.separator }]} />
           </Animated.View>
-        ) : (
-          <Icon name="line.3.horizontal" size={18} tone="textTertiary" />
-        )}
-        <View style={[styles.divider, { backgroundColor: theme.separator }]} />
+        </Animated.View>
       </Animated.View>
     </GestureDetector>
   );
@@ -225,19 +265,15 @@ const styles = StyleSheet.create({
     position: 'absolute',
     left: 0,
     right: 0,
-    flexDirection: 'row',
-    alignItems: 'center',
-    gap: Spacing.md,
-    paddingHorizontal: Spacing.lg,
     borderCurve: 'continuous',
     shadowColor: '#000',
     shadowRadius: 12,
     shadowOffset: { width: 0, height: 6 },
   },
+  clip: { flex: 1, overflow: 'hidden', borderCurve: 'continuous' },
+  slider: { ...StyleSheet.absoluteFill, flexDirection: 'row', alignItems: 'center', gap: Spacing.md, paddingHorizontal: Spacing.lg },
+  action: { position: 'absolute', top: 0, bottom: 0, right: 0, width: ACTION_WIDTH, alignItems: 'center', justifyContent: 'center' },
   content: { flex: 1 },
-  // The ⊖ turns upright once tapped, as on iOS, while "Elimina" comes in.
-  turned: { transform: [{ rotate: '-90deg' }] },
-  delete: { height: 36, paddingHorizontal: Spacing.md, borderRadius: 12, borderCurve: 'continuous', justifyContent: 'center' },
   deleteText: { color: '#FFFFFF' },
   divider: { position: 'absolute', left: Spacing.lg, right: 0, bottom: 0, height: StyleSheet.hairlineWidth },
 });

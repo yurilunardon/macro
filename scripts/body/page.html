@@ -11,22 +11,12 @@
   #stage { position: absolute; inset: 0; touch-action: none; }
   canvas { width: 100%; height: 100%; display: block; outline: none; opacity: 0; transition: opacity .35s ease; }
   canvas.on { opacity: 1; }
-  #lines, #labels { position: absolute; inset: 0; width: 100%; height: 100%; pointer-events: none; transition: opacity .25s ease; opacity: 0; }
-  .tag { position: absolute; left: 0; top: 0; min-height: 44px; display: flex; flex-direction: column; justify-content: center; pointer-events: auto; transition: opacity .2s ease; white-space: nowrap; border: none; background: none; padding: 0; font-family: inherit; color: var(--fg, #fff); }
-  .tag b { font-size: 15px; font-weight: 600; line-height: 1.2; }
-  .tag i { font-style: normal; font-size: 13px; line-height: 1.25; }
-  .tag.right { text-align: right; align-items: flex-end; }
-  .tag.off { opacity: 0; pointer-events: none; }
-  #hint { position: absolute; left: 0; right: 0; text-align: center; font-size: 15px; color: var(--muted, #aeaeb2); pointer-events: none; transition: opacity .3s ease; }
-  @media (prefers-reduced-motion: reduce) { canvas, #lines, #labels, .tag, #hint { transition: none; } }
+  @media (prefers-reduced-motion: reduce) { canvas { transition: none; } }
 </style>
 </head>
 <body>
 <div id="stage">
   <canvas id="gl"></canvas>
-  <svg id="lines" aria-hidden="true"></svg>
-  <div id="labels"></div>
-  <div id="hint"></div>
 </div>
 <script>window.__BODY_B64 = "/*BODY*/";</script>
 <script>/*THREE*/</script>
@@ -38,11 +28,11 @@
   var VIEW = { chest: 0, shoulders: 35, back: 180, biceps: 12, triceps: 168, forearms: 150, abs: 0, quads: 0, glutes: 180, hamstrings: 180, calves: 180 };
   var BOTH = { shoulders: true, forearms: true };
   var COLORS = { good: 0x2FCB55, low: 0xFF9A1F, bad: 0xFF5A3C };
-  var state = { dark: true, fg: '#FFFFFF', muted: '#AEAEB2', text: { good: '#30D158', low: '#FFB340', bad: '#FF6961' }, levels: {}, labels: {}, top: 0, bottom: 0, sheet: 0.55, hint: '' };
-  var selected = null, named = false, ready = false;
+  var state = { dark: true, fg: '#FFFFFF', muted: '#AEAEB2', text: { good: '#30D158', low: '#FFB340', bad: '#FF6961' }, levels: {}, top: 0, bottom: 0, sheet: 0.55 };
+  var selected = null, ready = false;
   var reduce = window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches;
   var $ = function (id) { return document.getElementById(id); };
-  var stage = $('stage'), canvas = $('gl'), labels = $('labels'), lines = $('lines'), hint = $('hint');
+  var stage = $('stage'), canvas = $('gl');
 
   function post(message) {
     var text = JSON.stringify(message);
@@ -113,7 +103,7 @@
     controls.addEventListener('change', function () { needs = true; });
     controls.addEventListener('start', function () { anim = null; });
 
-    resize(); bindPick(); buildTags();
+    resize(); bindPick();
     ready = true; apply(); look(0.3, true);
     window.addEventListener('resize', resize);
     if (window.ResizeObserver) new ResizeObserver(resize).observe(stage);
@@ -156,15 +146,12 @@
 
   // The app's colours, levels and names, as soon as the body is there.
   function apply() {
-    document.documentElement.style.setProperty('--fg', state.fg);
-    document.documentElement.style.setProperty('--muted', state.muted);
-    hint.textContent = state.hint; hint.style.bottom = (state.bottom + 18) + 'px'; hint.style.opacity = named ? '0' : '1';
     if (!ready) return;
     skin.material.uniforms.c.value.setHex(state.dark ? 0x5a5c64 : 0xc3c5cc);
     other.material.color.setHex(state.dark ? 0x46474e : 0xb1b3ba);
     GREY.setHex(state.dark ? 0x4a4b52 : 0xb9bbc2);
     ORDER.forEach(function (k) { if (meshes[k]) meshes[k].userData.dirty = true; });
-    tagText = {}; fade();
+    fade();
   }
   function fade() {
     ORDER.forEach(function (k) {
@@ -177,8 +164,7 @@
   function select(k, quiet) {
     if (k === selected) return;
     selected = k; pulse = performance.now();
-    if (k) named = true;
-    fade(); hint.style.opacity = named ? '0' : '1';
+    fade();
     if (ready) look(k ? VIEW[k] * Math.PI / 180 : null);
     if (!quiet) post({ type: 'select', muscle: k });
   }
@@ -196,65 +182,14 @@
       var moved = Math.hypot(e.clientX - down.x, e.clientY - down.y), dt = performance.now() - down.t; down = null;
       if (moved > 8 || dt > 500) return;
       // The first tap brings the names; then a name or a muscle opens it, and a tap outside puts the names away.
-      if (!named) { named = true; hint.style.opacity = '0'; needs = true; post({ type: 'names', shown: true }); return; }
       var b = canvas.getBoundingClientRect();
       v.set((e.clientX - b.left) / b.width * 2 - 1, -((e.clientY - b.top) / b.height) * 2 + 1);
       ray.setFromCamera(v, camera);
       var hits = ray.intersectObjects(ORDER.map(function (k) { return meshes[k]; }).filter(Boolean), false);
       var hit = hits.length ? hits[0].object.userData.k : null;
-      if (hit && hit !== selected) select(hit); else if (!hit && selected) select(null); else if (!hit) { named = false; hint.style.opacity = '1'; needs = true; post({ type: 'names', shown: false }); }
+      // A muscle opens its detail; a tap beside the body does nothing.
+      if (hit) { select(hit, true); post({ type: 'select', muscle: hit }); }
     });
-  }
-
-  // Names with a line to the muscle, for the ones that lack work and face the viewer.
-  var tags = {}, tagText = {}, tagW = {}, NS = 'http://www.w3.org/2000/svg', pv = new THREE.Vector3();
-  function buildTags() {
-    ORDER.forEach(function (k) {
-      var b = document.createElement('button'); b.type = 'button'; b.className = 'tag off';
-      b.appendChild(document.createElement('b')); b.appendChild(document.createElement('i'));
-      b.addEventListener('click', function () { select(k); });
-      labels.appendChild(b);
-      var ln = document.createElementNS(NS, 'line'); ln.setAttribute('stroke-width', '1');
-      var dot = document.createElementNS(NS, 'circle'); dot.setAttribute('r', '3.5');
-      lines.appendChild(ln); lines.appendChild(dot);
-      tags[k] = { b: b, ln: ln, dot: dot };
-    });
-  }
-  function project(p, w, h) { pv.copy(p).project(camera); return { x: (pv.x + 1) / 2 * w, y: (1 - pv.y) / 2 * h }; }
-  function updateTags() {
-    var show = named && !selected;
-    labels.style.opacity = lines.style.opacity = show ? '1' : '0';
-    var w = stage.clientWidth, h = stage.clientHeight, az = current().az, c = covers();
-    var top = c.t * h + 30, bottom = h - state.bottom - 30, gut = 16;
-    var vis = show ? lacking().filter(function (k) { return meshes[k] && (BOTH[k] || Math.cos(az - VIEW[k] * Math.PI / 180) > 0.25); }) : [];
-    vis.sort(function (a, b) { return centers[b].y - centers[a].y; });
-    var cols = { left: [], right: [] };
-    vis.forEach(function (k, i) {
-      var a = project(anchors[k][0], w, h), b = project(anchors[k][1], w, h), side = i % 2 ? 'right' : 'left';
-      var p = (side === 'right') === (a.x > b.x) ? a : b;
-      cols[side].push({ k: k, p: p, y: p.y });
-    });
-    ['left', 'right'].forEach(function (side) {
-      var col = cols[side], i;
-      for (i = 0; i < col.length; i++) col[i].y = Math.max(col[i].y, i ? col[i - 1].y + 48 : top);
-      for (i = col.length - 1; i >= 0; i--) col[i].y = Math.min(col[i].y, i < col.length - 1 ? col[i + 1].y - 48 : bottom);
-      col.forEach(function (it) {
-        var t = tags[it.k], label = state.labels[it.k] || { name: it.k, note: '' }, key = label.name + '|' + label.note + '|' + level(it.k) + state.fg;
-        if (tagText[it.k] !== key) {
-          tagText[it.k] = key; t.b.firstChild.textContent = label.name; t.b.lastChild.textContent = label.note; t.b.lastChild.style.color = state.text[level(it.k)];
-          t.ln.setAttribute('stroke', state.muted); t.dot.setAttribute('fill', state.fg);
-          tagW[it.k] = t.b.offsetWidth;
-        }
-        var tw = tagW[it.k] || 80, x = side === 'left' ? gut : w - gut - tw;
-        t.b.className = 'tag ' + side;
-        t.b.style.transform = 'translate(' + x.toFixed(1) + 'px,' + (it.y - 22).toFixed(1) + 'px)';
-        t.ln.setAttribute('x1', side === 'left' ? x + tw + 6 : x - 6); t.ln.setAttribute('y1', it.y);
-        t.ln.setAttribute('x2', it.p.x); t.ln.setAttribute('y2', it.p.y);
-        t.dot.setAttribute('cx', it.p.x); t.dot.setAttribute('cy', it.p.y);
-        t.ln.style.opacity = t.dot.style.opacity = '1';
-      });
-    });
-    ORDER.forEach(function (k) { if (vis.indexOf(k) < 0) { var t = tags[k]; t.b.classList.add('off'); t.ln.style.opacity = t.dot.style.opacity = '0'; } });
   }
 
   function ease(t) { return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2; }
@@ -287,7 +222,7 @@
       if (lift && !reduce) { var age = (now - pulse) / 1000; if (age < 1.6) { glow = 0.28 * Math.sin(age * Math.PI / 1.6) * (0.6 + 0.4 * Math.sin(age * 9)); needs = true; } }
       m.material.emissive.setHex(lift ? COLORS[level(k)] : 0x000000); m.material.emissiveIntensity = glow;
     });
-    if (needs) { camera.updateMatrixWorld(); updateTags(); renderer.render(scene, camera); needs = false; }
+    if (needs) { renderer.render(scene, camera); needs = false; }
   }
 
   // What the app calls: `set` with any part of the state, `select` with a muscle or null.
@@ -309,16 +244,11 @@
   });
 
   apply();
-  // After a frame, so the page is on screen before the model is unpacked.
-  setTimeout(function () {
-    try {
-      var bin = atob(window.__BODY_B64 || ''), bytes = new Uint8Array(bin.length);
-      for (var i = 0; i < bin.length; i++) bytes[i] = bin.charCodeAt(i);
-      if (!bytes.length) throw new Error('model');
-      window.__BODY_B64 = null;
-      init(bytes.buffer);
-    } catch (e) { post({ type: 'failed' }); }
-  }, 30);
+  // The model is decoded by the browser itself: much quicker than a loop over the characters.
+  fetch('data:application/octet-stream;base64,' + window.__BODY_B64)
+    .then(function (r) { return r.arrayBuffer(); })
+    .then(function (buf) { window.__BODY_B64 = null; init(buf); })
+    .catch(function () { post({ type: 'failed' }); });
 })();
 </script>
 </body>
