@@ -17,7 +17,10 @@ type FieldRowProps = {
   numeric?: boolean;
   invalid?: boolean;
   ref?: Ref<ComponentRef<typeof TextInput>>;
-} & Pick<TextInputProps, 'autoFocus' | 'autoCapitalize' | 'returnKeyType' | 'onSubmitEditing' | 'selectTextOnFocus'>;
+} & Pick<
+  TextInputProps,
+  'autoFocus' | 'autoCapitalize' | 'returnKeyType' | 'onSubmitEditing' | 'selectTextOnFocus' | 'secureTextEntry' | 'keyboardType' | 'textContentType' | 'autoComplete' | 'autoCorrect'
+>;
 
 /** Label on the left, input on the right: for rows inside a ListGroup. */
 export function FieldRow({

@@ -10,6 +10,7 @@ export default function SettingsLayout() {
     <Stack screenOptions={TAB_STACK_OPTIONS}>
       <Stack.Screen name="index" options={{ title: 'Impostazioni' }} />
       <Stack.Screen name="reminders" options={{ title: 'Promemoria' }} />
+      <Stack.Screen name="cloud" options={{ title: 'Backup online' }} />
     </Stack>
   );
 }

@@ -16,6 +16,8 @@ import { getSetting, setSetting } from '@/db/settings';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { BackupFormatError } from '@/lib/backup';
+import { formatCloudTime } from '@/lib/cloud';
+import { useCloudBackup } from '@/services/cloud-backup';
 import { haptics } from '@/services/haptics';
 
 const BACKUP_REMINDER_DAYS = 7;
@@ -33,6 +35,7 @@ export default function SettingsScreen() {
   const router = useRouter();
   const theme = useTheme();
   const { language } = useExerciseNames();
+  const cloud = useCloudBackup();
   const [busy, setBusy] = useState<'export' | 'import' | 'csv' | null>(null);
 
   const { data } = useLiveQuery('settings', async (database) => {
@@ -47,6 +50,15 @@ export default function SettingsScreen() {
   }, ['food', 'settings']);
 
   const status = backupStatus(data?.lastBackupAt ?? null);
+  const cloudStatus = !cloud.session
+    ? 'Non attivo: tocca per accedere'
+    : cloud.error
+      ? cloud.error
+      : !cloud.auto
+        ? 'In pausa'
+        : cloud.savedAt
+          ? `Ultima copia ${formatCloudTime(cloud.savedAt)}`
+          : 'Attivo';
 
   const exportCsv = async (which: 'diary' | 'body') => {
     setBusy('csv');
@@ -148,6 +160,12 @@ export default function SettingsScreen() {
       <SectionTitle>Backup</SectionTitle>
       <ListGroup>
         <Row
+          title="Backup online"
+          subtitle={cloudStatus}
+          icon={<Icon name="icloud.fill" size={20} tone={cloud.session && !cloud.error && cloud.auto ? 'accent' : 'warning'} />}
+          onPress={() => router.push('/settings/cloud')}
+        />
+        <Row
           title="Esporta backup"
           subtitle={status.text}
           icon={<Icon name="square.and.arrow.up" size={20} tone={status.stale ? 'warning' : 'accent'} />}
@@ -178,7 +196,7 @@ export default function SettingsScreen() {
         />
       </ListGroup>
       <SectionFooter>
-        {`I dati restano sul telefono anche quando l’app scade e la rinnovi con SideStore. Il backup serve se elimini l’app, cambi Apple ID o cambi iPhone: scegli «Salva su File» e mettilo in iCloud Drive.${
+        {`Il backup online salva da solo una copia al giorno nel tuo Supabase: se perdi il telefono, accedi dal nuovo e la ripristini. Il file è una copia in più, da mettere dove vuoi con «Salva su File».${
           data?.counts ? `\n\nSul telefono: ${data.counts.entries} voci di diario, ${data.counts.foods} alimenti.` : ''
         }`}
       </SectionFooter>

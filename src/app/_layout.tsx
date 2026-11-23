@@ -4,6 +4,7 @@ import { Suspense } from 'react';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 import { GestureHandlerRootView } from 'react-native-gesture-handler';
 
+import { CloudSync } from '@/components/cloud-sync';
 import { FeedSync } from '@/components/feed-sync';
 import { NotificationSync } from '@/components/notification-sync';
 import { ToastHost } from '@/components/toast';
@@ -158,6 +159,7 @@ export default function RootLayout() {
             </Stack>
             <NotificationSync />
             <FeedSync />
+            <CloudSync />
             <UpdateCheck />
             <ToastHost />
           </SQLiteProvider>
