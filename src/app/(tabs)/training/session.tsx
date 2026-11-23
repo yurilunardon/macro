@@ -7,7 +7,7 @@ import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { WorkoutRecap } from '@/components/workout-recap';
 import { useLiveQuery } from '@/db/live';
-import { deleteWorkout, getPreviousOfSameDay, getRecords, getWorkout } from '@/db/workouts';
+import { deleteWorkout, getPreviousOfSameDay, getRecords, getWorkout, renameWorkout } from '@/db/workouts';
 
 /** A finished workout, opened again: the same recap as at its end. */
 export default function SessionScreen() {
@@ -54,7 +54,7 @@ export default function SessionScreen() {
         {/* The only action here: no need for a menu to hold it. */}
         <Stack.Toolbar.Button icon="trash" accessibilityLabel="Elimina allenamento" onPress={() => void remove()} />
       </Stack.Toolbar>
-      <WorkoutRecap workout={workout} records={records} previous={previous} />
+      <WorkoutRecap workout={workout} records={records} previous={previous} onRename={(name) => void renameWorkout(db, workout.id, name)} />
     </ScreenScroll>
   );
 }

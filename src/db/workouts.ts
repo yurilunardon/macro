@@ -377,6 +377,14 @@ export async function deleteSet(db: SQLiteDatabase, setId: number): Promise<void
   notifyChange('training');
 }
 
+/** A finished workout can be renamed: it keeps its day of the program, only the name changes. */
+export async function renameWorkout(db: SQLiteDatabase, id: number, name: string): Promise<void> {
+  const trimmed = name.trim();
+  if (trimmed === '') return;
+  await db.runAsync('UPDATE workouts SET name = ? WHERE id = ?', trimmed, id);
+  notifyChange('training');
+}
+
 export async function updateWorkoutNotes(db: SQLiteDatabase, id: number, notes: string): Promise<void> {
   await db.runAsync('UPDATE workouts SET notes = ? WHERE id = ?', notes.trim() === '' ? null : notes.trim(), id);
   notifyChange('training');

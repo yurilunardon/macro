@@ -34,7 +34,7 @@ const CARD_IN = FadeIn.duration(220);
 const TONE: Record<MuscleLevel, 'accent' | 'warning' | 'danger'> = { good: 'accent', low: 'warning', bad: 'danger' };
 
 /**
- * One muscle of a program, opened from the body: its weekly sets against the ones that make it
+ * One muscle of a program, opened from its validity: its weekly sets against the ones that make it
  * grow, the days of the program with the exercises that train it picked out, and exercises to
  * add to any day, or to a new one.
  */

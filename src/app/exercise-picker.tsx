@@ -33,6 +33,12 @@ export default function ExercisePickerScreen() {
   );
 
   const pick = async (exercise: Exercise) => {
+    // For a day, its sets, reps and rest first, to look at and change before adding it.
+    if (target === 'day' && !isWarmUp(exercise)) {
+      haptics.selection();
+      router.push({ pathname: '/plan-exercise', params: { day: id, exercise: exercise.id } });
+      return;
+    }
     await applyPick(db, target, id, exercise);
     haptics.success();
     router.back();

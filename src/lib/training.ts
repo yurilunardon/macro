@@ -215,6 +215,15 @@ export function formatDuration(totalSeconds: number): string {
   return hours > 0 ? `${hours}:${String(minutes).padStart(2, '0')}:${seconds}` : `${minutes}:${seconds}`;
 }
 
+/** "45 s", "1 min 30 s", "2 min": a few seconds or minutes said with their units. */
+export function formatSeconds(totalSeconds: number): string {
+  const s = Math.max(0, Math.round(totalSeconds));
+  if (s < 60) return `${s} s`;
+  const minutes = Math.floor(s / 60);
+  const seconds = s % 60;
+  return seconds === 0 ? `${minutes} min` : `${minutes} min ${seconds} s`;
+}
+
 /** "1 h 05 min", "48 min": for finished workouts. */
 export function formatWorkoutLength(totalSeconds: number): string {
   const minutes = Math.max(1, Math.round(totalSeconds / 60));

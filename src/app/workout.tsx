@@ -766,13 +766,15 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
   const best = bestSet(item.sets);
   const rest = item.restSeconds ?? restFor(exercise);
   const plan = item.repMin !== null && item.repMax !== null ? { min: item.repMin, max: item.repMax } : null;
-  const range = plan ? `${plan.min}–${plan.max}${exercise.kind === 'time' ? ' s' : ''}` : null;
   const timed = exercise.kind === 'time';
   let ordinal = 0;
 
   // Last time against the planned range: all sets at the top means more load today, most of
   // them under the bottom means less. Taking the suggested weight fills the sets still to do.
   const advice = shownComplete ? null : progression(item.previous, plan, exercise.kind, loadIncrement(exercise.equipment));
+  // The heaviest of last time's work sets, the one the advice moves from.
+  const lastWork = item.previous.filter((s) => s.done && (s.type === 'normal' || s.type === 'failure') && (s.weight ?? 0) > 0);
+  const lastTop = lastWork.length > 0 ? Math.max(...lastWork.map((s) => s.weight ?? 0)) : null;
   const [weight, setWeight] = useState<number | null>(() => taken.get(item.id) ?? null);
   const takeWeight = (value: number) => {
     haptics.light();
@@ -875,21 +877,21 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
         <SetBars sets={item.sets} wave={change === 'completed'} />
         {exercise.note ? <NoteRow text={exercise.note} onPress={editNote} /> : null}
         {advice ? (
-          // What to do today and why, both in sight.
-          <View style={styles.adviceRow}>
+          // What to do today and why, both in sight: a quiet box over the sets, the load first.
+          <View style={[styles.advice, { backgroundColor: theme.fill }]}>
             <View style={styles.adviceText}>
               <View style={styles.adviceTitle}>
-                <Icon
-                  name={advice.direction === 'up' ? 'arrow.up.circle.fill' : 'arrow.down.circle.fill'}
-                  size={17}
-                  tone={advice.direction === 'up' ? 'accent' : 'warning'}
-                />
-                <AppText variant="subhead" weight="600" numberOfLines={1} style={styles.shrink}>
-                  {adviceTitle(advice, exercise.kind)}
+                <AppText variant="headline" numeric numberOfLines={1} style={styles.shrink}>
+                  {advice.weight !== null ? `${formatNumber(advice.weight, 2)} kg` : adviceTitle(advice, exercise.kind)}
                 </AppText>
+                {advice.weight !== null && lastTop !== null ? (
+                  <AppText variant="footnote" weight="600" numeric tone={advice.direction === 'up' ? 'accent' : 'warning'}>
+                    {`${advice.direction === 'up' ? '↑' : '↓'} ${formatNumber(Math.abs(advice.weight - lastTop), 2)} kg`}
+                  </AppText>
+                ) : null}
               </View>
               <AppText variant="footnote" tone="textSecondary" numeric>
-                {adviceReason(advice, timed, range)}
+                {adviceReason(advice, timed, plan, advice.weight !== null)}
               </AppText>
             </View>
             {advice.weight !== null && weight !== advice.weight && item.sets.some((set) => !set.done) ? (
@@ -897,7 +899,7 @@ const ExerciseBlock = memo(function ExerciseBlock({ item: given, currentSetId, t
                 onPress={() => advice.weight !== null && takeWeight(advice.weight)}
                 accessibilityRole="button"
                 accessibilityLabel={`Usa ${formatNumber(advice.weight, 2)} chili nelle serie da fare`}
-                style={({ pressed }) => [styles.adviceButton, { backgroundColor: theme.accentSoft }, pressed && { opacity: 0.6 }]}>
+                style={({ pressed }) => [styles.adviceButton, { backgroundColor: theme.card }, pressed && { opacity: 0.6 }]}>
                 <AppText variant="subhead" weight="600" tone="accent">
                   Usa
                 </AppText>
@@ -1179,10 +1181,9 @@ type SetRowProps = {
  * (already filled in with last time's, to change if needed) and the tick that closes the set.
  * It takes only data and handles its own changes, so it is drawn again only when it changes.
  */
-const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, kind, trackRir, repMin, repMax, rest, loadStep, settled }: SetRowProps) {
+const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, kind, trackRir, rest, loadStep, settled }: SetRowProps) {
   const db = useSQLiteContext();
   const theme = useTheme();
-  const range = repMin !== null && repMax !== null ? { min: repMin, max: repMax } : null;
   const prefill: LoggedSet | undefined =
     suggested === null
       ? previous
@@ -1240,19 +1241,6 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
     return { weight: parseDecimal(weight), reps: r === null ? null : Math.round(r), seconds: s === null ? null : Math.round(s), rir: parseDecimal(rir) };
   };
 
-  // Once a set is ticked, a count outside the planned range turns orange, and where last time
-  // was it says by how much. Warm-ups and drop sets follow their own counts.
-  const counted = kind === 'time' ? set.seconds : set.reps;
-  const outside =
-    set.done &&
-    range !== null &&
-    counted !== null &&
-    (set.type === 'normal' || set.type === 'failure') &&
-    (counted > range.max || counted < range.min)
-      ? counted > range.max
-        ? 'above'
-        : 'below'
-      : null;
 
   const tick = () => {
     if (done) {
@@ -1289,7 +1277,6 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
     label: string,
     step: number,
     decimals: number,
-    flagged = false,
   ) => (
     <>
     <TextInput
@@ -1318,7 +1305,7 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
         styles.input,
         {
           backgroundColor: done ? 'transparent' : theme.fill,
-          color: flagged ? theme.warning : theme.text,
+          color: theme.text,
         },
         missing && value === '' && { borderColor: theme.danger, borderWidth: 1.5 },
       ]}
@@ -1337,24 +1324,16 @@ const SetRow = memo(function SetRow({ set, badge, previous, suggested, divided, 
       <View style={styles.colSet}>
         <SetTypeMenu inert={!settled} badge={badge} type={set.type} done={done} onChange={(type) => onUpdate({ type })} onDelete={onDelete} />
       </View>
-      {outside && range ? (
-        // A count outside the plan, said where last time was, in place: nothing to fix, it was done.
-        <View style={styles.colPrev} accessible accessibilityLabel={`${outside === 'above' ? 'Sopra' : 'Sotto'} ${range.min}–${range.max}`}>
-          <AppText variant="footnote" weight="600" numeric numberOfLines={1} style={{ color: theme.warning }}>
-            {`${outside === 'above' ? '↑ sopra' : '↓ sotto'} ${range.min}–${range.max}`}
-          </AppText>
-        </View>
-      ) : (
-        <AppText variant="subhead" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
-          {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
-        </AppText>
-      )}
+      {/* Last time, always: a count off the plan is not flagged here, it was done as it was. */}
+      <AppText variant="subhead" tone="textSecondary" numeric numberOfLines={1} style={styles.colPrev}>
+        {previous ? formatSet(previous, kind).replace(' kg ×', ' ×') : '—'}
+      </AppText>
       {kind === 'time' ? (
-        <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi', 5, 0, outside !== null)}</View>
+        <View style={styles.colInput}>{field(seconds, setSeconds, 's', 'Secondi', 5, 0)}</View>
       ) : (
         <>
           <View style={styles.colInput}>{field(weight, setWeight, 'kg', 'Chili', loadStep, 2)}</View>
-          <View style={styles.colInput}>{field(reps, setReps, 'rip', 'Ripetizioni', 1, 0, outside !== null)}</View>
+          <View style={styles.colInput}>{field(reps, setReps, 'rip', 'Ripetizioni', 1, 0)}</View>
         </>
       )}
       {trackRir ? <View style={styles.colRir}>{field(rir, setRir, '–', 'Ripetizioni in riserva', 1, 1)}</View> : null}
@@ -1467,17 +1446,16 @@ function WorkoutHead({
   );
 }
 
-/** Why: what was done last time, against the goal. */
-function adviceReason(advice: Progression, timed: boolean, range: string | null): string {
-  const done = `L’ultima volta ${advice.counts.join(', ')} ${timed ? 's' : 'rip'}`;
-  if (!range) return done;
-  return `${done}: ${advice.direction === 'up' ? 'tutte al massimo di' : 'troppe sotto'} ${range}`;
+/** Why: what was done last time, against the plan. "Consigliato: l’ultima volta 12 · 12 · 12 rip, tutte al massimo". */
+function adviceReason(advice: Progression, timed: boolean, plan: { min: number; max: number } | null, load: boolean): string {
+  const done = `${load ? 'Consigliato: l’ultima volta' : 'L’ultima volta'} ${advice.counts.join(' · ')} ${timed ? 's' : 'rip'}`;
+  if (!plan) return done;
+  return `${done}, ${advice.direction === 'up' ? 'tutte al massimo' : `sotto ${plan.min}${timed ? ' s' : ''}`}`;
 }
 
-/** "Oggi prova 82,5 kg", "Aggiungi carico", "Rendilo più facile": what last time asks of today. */
+/** "Aggiungi carico", "Rendilo più facile": what last time asks of today, with no load to name. */
 function adviceTitle(advice: Progression, kind: WorkoutExercise['exercise']['kind']): string {
   const up = advice.direction === 'up';
-  if (advice.weight !== null) return `Oggi prova ${formatNumber(advice.weight, 2)} kg`;
   if (kind === 'time') return up ? 'Rendilo più difficile' : 'Rendilo più facile';
   if (kind === 'bodyweight') return up ? 'Aggiungi carico' : 'Togli carico o ripetizioni';
   return up ? 'Aumenta il carico' : 'Riduci il carico';
@@ -1738,7 +1716,18 @@ const styles = StyleSheet.create({
   askButtons: { flexDirection: 'row', gap: Spacing.sm },
   // The longer label gets the room it needs on one line.
   askMore: { flex: 1.35 },
-  adviceRow: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, paddingHorizontal: Spacing.lg, paddingTop: Spacing.md, paddingBottom: Spacing.sm },
+  advice: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.sm,
+    marginHorizontal: Spacing.md,
+    marginTop: Spacing.md,
+    marginBottom: Spacing.xs,
+    paddingHorizontal: Spacing.md,
+    paddingVertical: Spacing.sm + 2,
+    borderRadius: Radius.md,
+    borderCurve: 'continuous',
+  },
   adviceText: { flex: 1, gap: 2 },
   adviceTitle: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2 },
   shrink: { flexShrink: 1 },

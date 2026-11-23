@@ -3,8 +3,6 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
 import { useEffect, useState, type ReactNode } from 'react';
 import Animated, {
-  FadeIn,
-  FadeOut,
   Keyframe,
   LayoutAnimationConfig,
   useAnimatedStyle,
@@ -15,13 +13,13 @@ import Animated, {
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, ListGroup, SectionFooter } from '@/components/card';
+import { ActionRow, ListGroup } from '@/components/card';
 import { DayIconButton } from '@/components/day-badge';
 import { editButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
-import { SORTABLE_ENTER_MS, SORTABLE_SHIFT, SortableList } from '@/components/sortable-list';
+import { SORTABLE_ENTER_MS, SORTABLE_SHIFT, SORTABLE_TEXT_SLACK, SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { restFor } from '@/db/exercises';
@@ -57,8 +55,6 @@ const TEXT_FROM_EDIT = new Keyframe({
   0: { transform: [{ translateX: ROW_SHIFT }] },
   100: { transform: [{ translateX: 0 }] },
 }).duration(EDIT_MS);
-const HINT_IN = FadeIn.duration(EDIT_MS);
-const HINT_OUT = FadeOut.duration(160);
 
 function planSummary(planned: PlannedExercise): string {
   if (isWarmUp(planned.exercise)) return 'Prima di iniziare: lo spunti quando hai finito';
@@ -145,11 +141,8 @@ export default function DayScreen() {
     <ScreenScroll>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button {...editButton({ editing, disabled: exercises.length === 0, onChange: setEditing })} />
-        <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sul giorno">
-          <Stack.Toolbar.MenuAction icon="trash" destructive onPress={remove}>
-            Elimina giorno
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
+        {/* The only action besides editing: no menu to hold it. */}
+        <Stack.Toolbar.Button separateBackground icon="trash" accessibilityLabel="Elimina giorno" onPress={remove} />
       </Stack.Toolbar>
 
       <View style={styles.title}>
@@ -194,7 +187,7 @@ export default function DayScreen() {
               {/* Nothing to set on the warm-up: no sets, no reps, no rest. */}
               {isWarmUp(planned.exercise) ? (
                 <View style={[styles.row, { height: rowHeight }]}>
-                  <Animated.View entering={TEXT_FROM_EDIT} style={styles.flex}>
+                  <Animated.View entering={TEXT_FROM_EDIT} style={[styles.flex, styles.slackWide]}>
                     {rowText(planned)}
                   </Animated.View>
                 </View>
@@ -204,7 +197,7 @@ export default function DayScreen() {
                   <Pressable accessibilityRole="button">
                     {({ pressed }) => (
                       <View style={[styles.row, { height: rowHeight }, pressed && { backgroundColor: theme.cardPressed }]}>
-                        <Animated.View entering={TEXT_FROM_EDIT} style={styles.flex}>
+                        <Animated.View entering={TEXT_FROM_EDIT} style={[styles.flex, styles.slack]}>
                           {rowText(planned)}
                         </Animated.View>
                         <Icon name="chevron.right" size={13} tone="textTertiary" weight="semibold" />
@@ -226,11 +219,6 @@ export default function DayScreen() {
         </ListGroup>
       )}
       </LayoutAnimationConfig>
-      {editing ? (
-        <Animated.View entering={HINT_IN} exiting={HINT_OUT}>
-          <SectionFooter>Trascina ≡ per cambiare l’ordine.</SectionFooter>
-        </Animated.View>
-      ) : null}
     </ScreenScroll>
   );
 }
@@ -257,6 +245,10 @@ const styles = StyleSheet.create({
   title: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm, marginBottom: Spacing.md },
   titleText: { flex: 1, marginBottom: 0 },
   flex: { flex: 1, gap: 2 },
+  // The text as wide as in edit mode, so it is cut at the same letter in both.
+  slack: { marginRight: SORTABLE_TEXT_SLACK },
+  // The warm-up has no chevron: its room too.
+  slackWide: { marginRight: SORTABLE_TEXT_SLACK + 13 + Spacing.md },
   row: {
     flexDirection: 'row',
     alignItems: 'center',

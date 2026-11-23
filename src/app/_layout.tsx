@@ -8,7 +8,6 @@ import { FeedSync } from '@/components/feed-sync';
 import { NotificationSync } from '@/components/notification-sync';
 import { ToastHost } from '@/components/toast';
 import { UpdateCheck } from '@/components/update-check';
-import { MUSCLE_SHEET } from '@/components/body-figure.types';
 import { TAB_STACK_OPTIONS } from '@/constants/navigation';
 import { seedFeed } from '@/db/feed';
 import { giveSupplementsTheirTimes, seedStartingPlan } from '@/db/plan';
@@ -16,6 +15,9 @@ import { DATABASE_NAME, migrateDatabase } from '@/db/schema';
 import { useColorScheme } from '@/hooks/use-color-scheme';
 import { useTheme } from '@/hooks/use-theme';
 import { todayKey } from '@/lib/dates';
+
+/** The muscle's sheet over the program's validity: half the screen, the list still in sight above. */
+const MUSCLE_SHEET = 0.56;
 
 export { ErrorBoundary } from 'expo-router';
 

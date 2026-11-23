@@ -29,6 +29,11 @@ const ROW_OUT = FadeOut.duration(150);
 const ACTION_WIDTH = 88;
 /** How far the text moves to make room for the ⊖: its width and its gap. */
 export const SORTABLE_SHIFT = 34;
+/**
+ * Room kept free at the end of a row's text outside edit mode: there the chevron (13) stands where
+ * the ≡ (18) and the ⊖ would be, and the text, as wide in both modes, is cut at the same letter.
+ */
+export const SORTABLE_TEXT_SLACK = SORTABLE_SHIFT + 18 - 13;
 /** As long as the text takes to slide over, so the ⊖ comes in beside it rather than on top. */
 export const SORTABLE_ENTER_MS = 260;
 const MINUS_IN = new Keyframe({

@@ -90,11 +90,12 @@ export default function ExerciseScreen({ sheet = false }: { sheet?: boolean }) {
         </Stack.Toolbar>
       ) : (
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Azioni sull’esercizio">
-          <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
-            {exercise.ref ? 'Nascondi dalla libreria' : 'Elimina esercizio'}
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
+        {/* The only action: no menu to hold it. */}
+        <Stack.Toolbar.Button
+          icon={exercise.ref ? 'eye.slash' : 'trash'}
+          accessibilityLabel={exercise.ref ? 'Nascondi dalla libreria' : 'Elimina esercizio'}
+          onPress={() => void remove()}
+        />
       </Stack.Toolbar>
       )}
 

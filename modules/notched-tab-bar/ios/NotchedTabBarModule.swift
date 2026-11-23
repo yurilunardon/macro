@@ -34,9 +34,10 @@ public final class NotchedTabBarProps: ExpoSwiftUI.ViewProps {
 
 /// Sizes shared with the JavaScript side (modules/notched-tab-bar/src/NotchedTabBarView.ts).
 private enum Metrics {
-  /// How long the lens takes from one tab to the other. At 0.32 it looked like a jump between
-  /// Alimentazione and Allenamento ("troppo veloce… sembra scattare"); 0.5 had felt slow.
-  static let lensResponse: Double = 0.44
+  /// How long the lens takes from one tab to the other. As a spring (response 0.32, then 0.44) it
+  /// left at full speed and looked like a jump between Alimentazione and Allenamento ("troppo
+  /// veloce… sembra scattare"): now it eases out of its place, crosses and slows into the other.
+  static let lensDuration: Double = 0.62
   /// The capsule, as tall as iOS's own tab bar.
   static let bar: CGFloat = 62
   /// The calendar's button, the air around it in the cradle, and how far its centre sits below
@@ -326,7 +327,7 @@ struct NotchedTabBarView: ExpoSwiftUI.View, ExpoSwiftUI.WithHostingView {
     .animation(
       reduceMotion
         ? .easeOut(duration: 0.2)
-        : lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .spring(response: Metrics.lensResponse, dampingFraction: 0.86),
+        : lifted ? .interactiveSpring(response: 0.2, dampingFraction: 0.85) : .timingCurve(0.42, 0, 0.18, 1, duration: Metrics.lensDuration),
       value: center)
     .animation(.easeOut(duration: 0.2), value: lifted)
     .allowsHitTesting(false)

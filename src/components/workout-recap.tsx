@@ -1,5 +1,5 @@
 import { useEffect, useState, type ReactNode } from 'react';
-import { StyleSheet, View } from 'react-native';
+import { Pressable, StyleSheet, View } from 'react-native';
 import Animated, { Easing, FadeIn, FadeInDown, useAnimatedReaction, useReducedMotion, useSharedValue, withDelay, withTiming } from 'react-native-reanimated';
 import { scheduleOnRN } from 'react-native-worklets';
 
@@ -12,11 +12,15 @@ import { useTheme } from '@/hooks/use-theme';
 import { formatLongDate } from '@/lib/dates';
 import { isWarmUp } from '@/lib/exercises';
 import { clockOf } from '@/lib/plan';
-import { compareWorkouts, exerciseChange, formatDuration, formatWorkoutLengthShort, isWorkSet, setTimes, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
+import { compareWorkouts, exerciseChange, formatSeconds, formatWorkoutLength, formatWorkoutLengthShort, isWorkSet, setTimes, tonnage, type ExerciseChange, type WorkoutNumbers } from '@/lib/training';
+import { haptics } from '@/services/haptics';
 
 import { AppText } from './app-text';
+import { EditableTitle } from './editable-title';
+import { Fold } from './fold';
+import { FoldChevron } from './fold-chevron';
 import { Icon } from './icon';
-import { SetTable } from './set-lines';
+import { SetSummaryLine, SetTable } from './set-lines';
 
 type Records = Awaited<ReturnType<typeof getRecords>>;
 
@@ -39,6 +43,8 @@ type WorkoutRecapProps = {
   previous?: Workout | null;
   /** At the end of a workout, its rows come in one after the other and its numbers grow. */
   arriving?: boolean;
+  /** With it, the name is renamed by tapping it, as a program's. */
+  onRename?: (name: string) => void;
 };
 
 /**
@@ -47,7 +53,7 @@ type WorkoutRecapProps = {
  * the user's own words. At its end the numbers grow into place, on their own; reopened later they
  * have last time's beside them.
  */
-export function WorkoutRecap({ workout, records, previous = null, arriving = false }: WorkoutRecapProps) {
+export function WorkoutRecap({ workout, records, previous = null, arriving = false, onRename }: WorkoutRecapProps) {
   const theme = useTheme();
   const { names } = useExerciseNames();
   const numbersOf = (w: Workout): WorkoutNumbers => ({
@@ -57,24 +63,28 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
   });
   const numbers = numbersOf(workout);
   const compared = previous && !arriving ? compareWorkouts(numbers, numbersOf(previous)) : null;
-  const rows: { label: string; value: number; format: (value: number) => string; compare?: string; tone: 'textSecondary' | 'accent' | 'warning' }[] = [
-    { label: 'Durata', value: numbers.seconds, format: formatWorkoutLengthShort, compare: compared?.duration, tone: 'textSecondary' as const },
+  const rows: { label: string; value: number; format: (value: number) => string; compare?: string }[] = [
+    { label: 'Durata', value: numbers.seconds, format: formatWorkoutLength, compare: compared ? sinceLastTime(compared.duration) : undefined },
   ];
   // At its end, the sets done, counting up; no kilos lifted, which the user does not want. Looked
   // at later, only the times: the sets and the load are with each exercise below.
-  if (arriving) rows.push({ label: 'Serie', value: numbers.sets, format: String, tone: 'textSecondary' as const });
+  if (arriving) rows.push({ label: 'Serie fatte', value: numbers.sets, format: String });
   // Reopened later, also how the time went: known for the sets ticked since it is kept.
   const times = arriving ? null : setTimes(workout.exercises.flatMap((e) => e.sets));
-  if (times?.between != null) rows.push({ label: 'Tra una serie e l’altra', value: times.between, format: formatDuration, compare: 'in media', tone: 'textSecondary' as const });
-  if (times?.work != null) rows.push({ label: 'Durata di una serie', value: times.work, format: formatDuration, compare: 'in media, dalla fine del recupero', tone: 'textSecondary' as const });
+  if (times?.between != null) rows.push({ label: 'Tempo medio tra due serie', value: times.between, format: formatSeconds });
+  if (times?.work != null) rows.push({ label: 'Durata media di una serie', value: times.work, format: formatSeconds });
   const recordOf = (exercise: WorkoutExercise) => records.some((r) => r.exercise.id === exercise.exercise.id);
 
   return (
     <View style={styles.recap}>
       <Animated.View entering={arriving ? FadeIn.delay(RECAP_AFTER_MS).duration(280) : undefined} style={styles.head}>
-        <AppText variant="display" numberOfLines={2}>
-          {workout.name}
-        </AppText>
+        {onRename ? (
+          <EditableTitle value={workout.name} accessibilityLabel="Nome dell’allenamento" onChange={onRename} style={styles.title} />
+        ) : (
+          <AppText variant="display" numberOfLines={2}>
+            {workout.name}
+          </AppText>
+        )}
         <AppText variant="subhead" tone="textSecondary">
           {formatLongDate(workout.date)}
         </AppText>
@@ -88,7 +98,7 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
                 {row.label}
               </AppText>
               {row.compare ? (
-                <AppText variant="footnote" weight={row.compare.startsWith('in media') ? undefined : '600'} tone={row.tone}>
+                <AppText variant="footnote" tone="textSecondary">
                   {row.compare}
                 </AppText>
               ) : null}
@@ -102,11 +112,6 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
             )}
           </View>
         ))}
-        {compared && previous ? (
-          <AppText variant="footnote" tone="textSecondary" style={styles.comparedWith}>
-            {`Rispetto a ${formatLongDate(previous.date).toLowerCase()}`}
-          </AppText>
-        ) : null}
       </Animated.View>
 
       <View>
@@ -137,28 +142,15 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
             );
           }
           const work = exercise.sets.filter(isWorkSet);
-          const change = exerciseChange(work, exercise.previous, exercise.exercise.kind);
           return (
             <Step key={exercise.id} done={work.length > 0} index={index + 3} arriving={arriving}>
-              <View style={[styles.exercise, { backgroundColor: theme.card }]}>
-                <AppText variant="headline" numberOfLines={2} tone={work.length > 0 ? 'text' : 'textSecondary'}>
-                  {names(exercise.exercise).title}
-                </AppText>
-                {/* How it went against last time first, at a glance; then each set. */}
-                {work.length > 0 ? <Change change={change} record={recordOf(exercise)} withWas={!arriving} /> : null}
-                {work.length > 0 ? (
-                  // Warm-up sets too, said as such: they count in no total, but they were done.
-                  <SetTable
-                    sets={exercise.sets.filter((set) => set.done)}
-                    kind={exercise.exercise.kind}
-                    range={exercise.repMin !== null && exercise.repMax !== null ? { min: exercise.repMin, max: exercise.repMax } : null}
-                  />
-                ) : (
-                  <AppText variant="footnote" tone="textSecondary">
-                    Saltato
-                  </AppText>
-                )}
-              </View>
+              <ExerciseCard
+                name={names(exercise.exercise).title}
+                exercise={exercise}
+                change={work.length > 0 ? exerciseChange(work, exercise.previous, exercise.exercise.kind) : null}
+                record={recordOf(exercise)}
+                withWas={!arriving}
+              />
             </Step>
           );
         })}
@@ -181,6 +173,78 @@ export function WorkoutRecap({ workout, records, previous = null, arriving = fal
         </Animated.View>
       ) : null}
     </View>
+  );
+}
+
+/** "8 min in più dell’ultima volta", "Come l’ultima volta". */
+function sinceLastTime(duration: string): string {
+  const same = 'come l’ultima volta';
+  return duration === same ? 'Come l’ultima volta' : `${duration} dell’ultima volta`;
+}
+
+/**
+ * An exercise of the workout, folded: its name, how it went against last time and its sets in one
+ * line. A tap opens every set, one per row.
+ */
+function ExerciseCard({
+  name,
+  exercise,
+  change,
+  record,
+  withWas,
+}: {
+  name: string;
+  exercise: WorkoutExercise;
+  change: ExerciseChange | null;
+  record: boolean;
+  withWas: boolean;
+}) {
+  const theme = useTheme();
+  const [open, setOpen] = useState(false);
+  const done = exercise.sets.filter((set) => set.done);
+  const work = done.filter(isWorkSet);
+  const kind = exercise.exercise.kind;
+  if (work.length === 0) {
+    return (
+      <View style={[styles.exercise, { backgroundColor: theme.card }]}>
+        <AppText variant="headline" numberOfLines={2} tone="textSecondary">
+          {name}
+        </AppText>
+        <AppText variant="footnote" tone="textSecondary">
+          Saltato
+        </AppText>
+      </View>
+    );
+  }
+  return (
+    <Pressable
+      onPress={() => {
+        haptics.selection();
+        setOpen(!open);
+      }}
+      accessibilityRole="button"
+      accessibilityState={{ expanded: open }}
+      accessibilityHint={open ? 'Chiude le serie' : 'Mostra ogni serie'}
+      style={({ pressed }) => [styles.exercise, { backgroundColor: pressed ? theme.cardPressed : theme.card }]}>
+      <View style={styles.exerciseHead}>
+        <AppText variant="headline" numberOfLines={2} style={styles.flex}>
+          {name}
+        </AppText>
+        <FoldChevron open={open} />
+      </View>
+      {change ? <Change change={change} record={record} withWas={withWas} /> : null}
+      <SetSummaryLine sets={work} kind={kind} />
+      <Fold open={open}>
+        {/* Warm-up sets too, said as such: they count in no total, but they were done. */}
+        <View style={styles.sets}>
+          <SetTable
+            sets={done}
+            kind={kind}
+            range={exercise.repMin !== null && exercise.repMax !== null ? { min: exercise.repMin, max: exercise.repMax } : null}
+          />
+        </View>
+      </Fold>
+    </Pressable>
   );
 }
 
@@ -277,8 +341,11 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   recap: { gap: Spacing.lg },
   head: { gap: 2 },
+  // As the display text it replaces, without the page title's own spacing.
+  title: { fontSize: 40, lineHeight: 46, letterSpacing: -0.5, marginBottom: 0, paddingHorizontal: 0 },
+  exerciseHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  sets: { paddingTop: Spacing.sm },
   number: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, minHeight: 52, paddingVertical: Spacing.sm },
-  comparedWith: { paddingTop: Spacing.xs },
   step: { flexDirection: 'row', gap: Spacing.sm },
   rail: { width: 20, alignItems: 'center' },
   line: { position: 'absolute', width: 2, left: 9 },

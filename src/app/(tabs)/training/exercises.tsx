@@ -1,5 +1,4 @@
 import { Stack, useRouter } from 'expo-router';
-import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
 import { ScrollView, StyleSheet, View } from 'react-native';
 
@@ -10,15 +9,13 @@ import { SearchField } from '@/components/search-field';
 import { Spacing } from '@/constants/theme';
 import { searchExercises } from '@/db/exercises';
 import { useLiveQuery } from '@/db/live';
-import { setSetting } from '@/db/settings';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { equipmentLabel, isWarmUp, MUSCLES, muscleLabel, type Muscle } from '@/lib/exercises';
 
 /** The whole exercise library, to look at an exercise's history or change its blocks. */
 export default function ExercisesScreen() {
-  const db = useSQLiteContext();
   const router = useRouter();
-  const { language, names } = useExerciseNames();
+  const { names } = useExerciseNames();
   const [query, setQuery] = useState('');
   const [muscle, setMuscle] = useState<Muscle | null>(null);
   const { data } = useLiveQuery(`exercises:${query}:${muscle ?? ''}`, (database) => searchExercises(database, { query, muscle }), ['training', 'settings']);
@@ -26,14 +23,6 @@ export default function ExercisesScreen() {
   return (
     <>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Menu separateBackground icon="textformat" accessibilityLabel="Lingua dei nomi">
-          <Stack.Toolbar.MenuAction isOn={language === 'en'} onPress={() => void setSetting(db, 'exerciseNames', 'en')}>
-            Nome inglese per primo
-          </Stack.Toolbar.MenuAction>
-          <Stack.Toolbar.MenuAction isOn={language === 'it'} onPress={() => void setSetting(db, 'exerciseNames', 'it')}>
-            Nome italiano per primo
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
         <Stack.Toolbar.Button separateBackground icon="plus" accessibilityLabel="Nuovo esercizio" onPress={() => router.push('/exercise-new')} />
       </Stack.Toolbar>
       <GroupedList
@@ -50,7 +39,7 @@ export default function ExercisesScreen() {
           </ScrollView>
           </View>
         }
-        footer={<SectionFooter>I più usati in cima. «Aa» cambia la lingua dei nomi.</SectionFooter>}
+        footer={<SectionFooter>I più usati in cima. La lingua dei nomi si cambia in Impostazioni.</SectionFooter>}
         renderRow={(exercise) => (
           <Row
             title={names(exercise).title}

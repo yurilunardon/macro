@@ -1,17 +1,17 @@
 import { useLocalSearchParams, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useState } from 'react';
-import { ActivityIndicator, Pressable, ScrollView, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
+import { ActionRow, ListGroup, Row, SectionTitle } from '@/components/card';
 import { FieldRow } from '@/components/form';
 import { Icon } from '@/components/icon';
 import { RestPicker } from '@/components/rest-picker';
 import { Radius, Spacing } from '@/constants/theme';
-import { restFor } from '@/db/exercises';
-import { getPlannedExercise, removeDayExercise, updateDayExercise, type PlannedExercise } from '@/db/programs';
+import { getExercise, restFor } from '@/db/exercises';
+import { addDayExercise, DEFAULT_PLAN, getPlannedExercise, removeDayExercise, updateDayExercise, type PlannedExercise } from '@/db/programs';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
@@ -20,23 +20,34 @@ import { formatDuration } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 import { deleteWithUndo } from '@/services/undo';
 
-
-/** Sets, rep range, rest and note of one exercise in a day of the program. */
+/**
+ * Sets, rep range, rest and note of one exercise in a day of the program. Opened with `id`, it
+ * changes one already there; with `day` and `exercise`, from the picker, it shows what the new one
+ * would start with, to look at and change before adding it.
+ */
 export default function PlanExerciseScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
-  const { id } = useLocalSearchParams<{ id?: string }>();
+  const params = useLocalSearchParams<{ id?: string; day?: string; exercise?: string }>();
+  const adding = params.day !== undefined && params.exercise !== undefined;
   const [planned, setPlanned] = useState<PlannedExercise | null>(null);
 
   useEffect(() => {
     let cancelled = false;
-    void getPlannedExercise(db, Number(id)).then((p) => {
+    const load = adding
+      ? getExercise(db, Number(params.exercise)).then((exercise) =>
+          exercise
+            ? { id: -1, exercise, ...DEFAULT_PLAN, ...(exercise.kind === 'time' ? { repMin: 30, repMax: 60 } : {}) }
+            : null,
+        )
+      : getPlannedExercise(db, Number(params.id));
+    void load.then((p) => {
       if (!cancelled) setPlanned(p);
     });
     return () => {
       cancelled = true;
     };
-  }, [db, id]);
+  }, [db, adding, params.id, params.exercise]);
 
   if (!planned) {
     return (
@@ -45,10 +56,10 @@ export default function PlanExerciseScreen() {
       </View>
     );
   }
-  return <PlanForm planned={planned} />;
+  return <PlanForm planned={planned} dayId={adding ? Number(params.day) : null} />;
 }
 
-function PlanForm({ planned }: { planned: PlannedExercise }) {
+function PlanForm({ planned, dayId }: { planned: PlannedExercise; dayId: number | null }) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -71,13 +82,15 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
 
   const save = async () => {
     if (!valid) return;
-    await updateDayExercise(db, planned.id, {
-      sets,
-      repMin: Math.round(min),
-      repMax: Math.round(max),
-      restSeconds: rest,
-      note,
-    });
+    const plan = { sets, repMin: Math.round(Math.min(min, max)), repMax: Math.round(Math.max(min, max)), restSeconds: rest, note };
+    if (dayId !== null) {
+      await addDayExercise(db, dayId, planned.exercise.id, { ...plan, note: note.trim() === '' ? null : note.trim() });
+      haptics.success();
+      // This sheet and the picker under it: back to the day, with the exercise in it.
+      router.dismiss(2);
+      return;
+    }
+    await updateDayExercise(db, planned.id, plan);
     haptics.success();
     router.back();
   };
@@ -110,16 +123,18 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
           </AppText>
           <Stepper onPress={() => step(1)} symbol="plus" label="Una serie in più" />
         </View>
-        <FieldRow label={timed ? 'Secondi, da' : 'Ripetizioni, da'} value={repMin} onChangeText={setRepMin} numeric invalid={min === null} />
-        <FieldRow label="a" value={repMax} onChangeText={setRepMax} numeric invalid={max === null} />
+        {/* One row, the two ends of the range side by side: "8 – 12". */}
+        <View style={styles.row}>
+          <AppText style={styles.flex}>{timed ? 'Secondi' : 'Ripetizioni'}</AppText>
+          <RangeBox value={repMin} onChangeText={setRepMin} invalid={min === null} label={timed ? 'Secondi, il meno' : 'Ripetizioni, il meno'} />
+          <AppText variant="title3" tone="textSecondary">
+            –
+          </AppText>
+          <RangeBox value={repMax} onChangeText={setRepMax} invalid={max === null} label={timed ? 'Secondi, il più' : 'Ripetizioni, il più'} />
+        </View>
       </ListGroup>
-      <SectionFooter>
-        {timed
-          ? 'Al massimo in tutte le serie, ti propone più secondi.'
-          : 'Al massimo della fascia in tutte le serie, ti propone più carico.'}
-      </SectionFooter>
 
-      <ListGroup>
+      <ListGroup style={styles.group}>
         <Row
           title="Recupero dopo ogni serie"
           subtitle={rest === null ? 'Come nell’esercizio' : 'Solo in questa scheda'}
@@ -141,10 +156,37 @@ function PlanForm({ planned }: { planned: PlannedExercise }) {
       </ListGroup>
 
       <View style={styles.actions}>
-        <Button title="Salva" onPress={() => void save()} disabled={!valid} />
-        <Button title="Elimina dalla scheda" variant="destructive" onPress={remove} />
+        {dayId !== null ? (
+          <Button title="Aggiungi al giorno" onPress={() => void save()} disabled={!valid} />
+        ) : (
+          <>
+            <Button title="Salva" onPress={() => void save()} disabled={!valid} />
+            <Button title="Elimina dalla scheda" variant="destructive" onPress={remove} />
+          </>
+        )}
       </View>
     </ScrollView>
+  );
+}
+
+/** One end of the range: a small box with the number in it. */
+function RangeBox({ value, onChangeText, invalid, label }: { value: string; onChangeText: (text: string) => void; invalid: boolean; label: string }) {
+  const theme = useTheme();
+  return (
+    <TextInput
+      value={value}
+      onChangeText={onChangeText}
+      keyboardType="number-pad"
+      inputAccessoryViewButtonLabel="Fine"
+      selectTextOnFocus
+      maxLength={3}
+      accessibilityLabel={label}
+      style={[
+        styles.rangeBox,
+        { backgroundColor: theme.fill, color: invalid ? theme.danger : theme.text },
+        invalid && { borderColor: theme.danger, borderWidth: 1.5 },
+      ]}
+    />
   );
 }
 
@@ -168,5 +210,18 @@ const styles = StyleSheet.create({
   flex: { flex: 1 },
   sets: { minWidth: 28, textAlign: 'center' },
   stepper: { width: 40, height: 36, borderRadius: Radius.sm, alignItems: 'center', justifyContent: 'center' },
+  rangeBox: {
+    width: 56,
+    height: 36,
+    borderRadius: Radius.sm,
+    borderCurve: 'continuous',
+    textAlign: 'center',
+    fontSize: 20,
+    fontWeight: '600',
+    fontVariant: ['tabular-nums'],
+    paddingVertical: 0,
+  },
+  // The space the footer under the sets used to leave.
+  group: { marginTop: Spacing.md },
   actions: { paddingTop: Spacing.lg, gap: Spacing.sm },
 });

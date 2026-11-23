@@ -3,7 +3,7 @@ import * as Updates from 'expo-updates';
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useState } from 'react';
-import { ActivityIndicator, Alert, Linking } from 'react-native';
+import { ActivityIndicator, Alert, Linking, Switch } from 'react-native';
 
 import { ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { Icon } from '@/components/icon';
@@ -12,7 +12,9 @@ import { toast } from '@/components/toast';
 import { pickBackup, restoreBackup, shareBackup } from '@/db/backup';
 import { exportBodyCsv, exportDiaryCsv } from '@/db/export';
 import { useLiveQuery } from '@/db/live';
-import { getSetting } from '@/db/settings';
+import { getSetting, setSetting } from '@/db/settings';
+import { useExerciseNames } from '@/hooks/use-exercise-names';
+import { useTheme } from '@/hooks/use-theme';
 import { BackupFormatError } from '@/lib/backup';
 import { haptics } from '@/services/haptics';
 
@@ -29,6 +31,8 @@ function backupStatus(lastBackupAt: string | null): { text: string; stale: boole
 export default function SettingsScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const theme = useTheme();
+  const { language } = useExerciseNames();
   const [busy, setBusy] = useState<'export' | 'import' | 'csv' | null>(null);
 
   const { data } = useLiveQuery('settings', async (database) => {
@@ -121,6 +125,26 @@ export default function SettingsScreen() {
         />
       </ListGroup>
 
+      <SectionTitle>Allenamento</SectionTitle>
+      <ListGroup>
+        <Row
+          title="Nomi degli esercizi in inglese"
+          subtitle={language === 'en' ? 'Bench press, poi Panca piana' : 'Panca piana, poi Bench press'}
+          chevron={false}
+          detail={
+            <Switch
+              value={language === 'en'}
+              onValueChange={(english) => {
+                haptics.selection();
+                void setSetting(db, 'exerciseNames', english ? 'en' : 'it');
+              }}
+              trackColor={{ true: theme.accent }}
+              accessibilityLabel="Nomi degli esercizi in inglese"
+            />
+          }
+        />
+      </ListGroup>
+
       <SectionTitle>Backup</SectionTitle>
       <ListGroup>
         <Row
@@ -172,12 +196,6 @@ export default function SettingsScreen() {
           subtitle="Valori medi, pubblico dominio"
           icon={<Icon name="leaf.fill" size={20} tone="accent" />}
           onPress={() => void Linking.openURL('https://fdc.nal.usda.gov')}
-        />
-        <Row
-          title="Muscoli in 3D: BodyParts3D"
-          subtitle="© DBCLS, licenza CC BY-SA 2.1 JP"
-          icon={<Icon name="figure.stand" size={20} tone="accent" />}
-          onPress={() => void Linking.openURL('https://lifesciencedb.jp/bp3d/')}
         />
         <Row title="Versione" detail={Constants.expoConfig?.version ?? '—'} />
         {Updates.createdAt && !Updates.isEmbeddedLaunch ? (

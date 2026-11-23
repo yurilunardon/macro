@@ -1,10 +1,8 @@
 import { Link, Stack, useLocalSearchParams, usePreventRemove, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState } from 'react';
-import { useHeaderHeight } from 'expo-router/react-navigation';
-import { ActivityIndicator, Alert, Pressable, StyleSheet, useWindowDimensions, View } from 'react-native';
-import { useSafeAreaInsets } from 'react-native-safe-area-context';
-import Animated, { Easing, FadeIn, FadeOut, LinearTransition } from 'react-native-reanimated';
+import { ActivityIndicator, Alert, Pressable, StyleSheet, View } from 'react-native';
+import Animated, { Easing, FadeIn, FadeOut, Keyframe, LayoutAnimationConfig, LinearTransition } from 'react-native-reanimated';
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
@@ -14,12 +12,11 @@ import { editButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { choose, confirmDestructive } from '@/components/prompt';
-import { ProgramBody } from '@/components/program-body';
+import { ProgramValidity } from '@/components/program-validity';
 import { ScreenScroll } from '@/components/screen';
 import { Segmented } from '@/components/segmented';
-import { SortableList } from '@/components/sortable-list';
+import { SORTABLE_ENTER_MS, SORTABLE_SHIFT, SORTABLE_TEXT_SLACK, SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
-import { useTabBarInset } from '@/components/tab-bar';
 import { toast } from '@/components/toast';
 import { Radius, Spacing } from '@/constants/theme';
 import { prefetch, useLiveQuery } from '@/db/live';
@@ -39,7 +36,6 @@ import {
 } from '@/db/programs';
 import { dayScreen, programScreen } from '@/db/screens';
 import { useScrollTop } from '@/hooks/use-scroll-top';
-import { useSettled } from '@/hooks/use-settled';
 import { useTheme } from '@/hooks/use-theme';
 import { muscleLabel } from '@/lib/exercises';
 import { DAY_ICON_CHOICES } from '@/lib/training';
@@ -49,19 +45,41 @@ import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
 
 const ROW_HEIGHT = 60;
 
-type ProgramTab = 'days' | 'muscles';
+type ProgramTab = 'days' | 'check';
 const TABS: readonly { key: ProgramTab; label: string }[] = [
   { key: 'days', label: 'Giorni' },
-  { key: 'muscles', label: 'Muscoli' },
+  { key: 'check', label: 'Validità' },
 ];
 /** The tab each program was left on, while the app stays open. */
 const lastTab = new Map<number, ProgramTab>();
 const ROW_IN = FadeIn.duration(220);
 const ROW_OUT = FadeOut.duration(180);
 const ROW_LAYOUT = LinearTransition.duration(240).easing(Easing.out(Easing.cubic));
+// Into edit mode and out of it the rows are drawn by another list: what they hold starts where the
+// other left it and slides to its place, as in a day.
+const TO_EDIT = new Keyframe({
+  0: { transform: [{ translateX: -SORTABLE_SHIFT }] },
+  100: { transform: [{ translateX: 0 }] },
+}).duration(SORTABLE_ENTER_MS);
+const FROM_EDIT = new Keyframe({
+  0: { transform: [{ translateX: SORTABLE_SHIFT }] },
+  100: { transform: [{ translateX: 0 }] },
+}).duration(SORTABLE_ENTER_MS);
 
 function daySummary(day: DaySummary): string {
   return [countLabel(day.exerciseCount, 'esercizio', 'esercizi'), day.muscles.map(muscleLabel).join(', ')].filter(Boolean).join(' · ');
+}
+
+/** A day's name and what it holds, as wide in edit mode as out of it. */
+function DayText({ day }: { day: DaySummary }) {
+  return (
+    <View style={styles.flex}>
+      <AppText numberOfLines={1}>{day.name}</AppText>
+      <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+        {daySummary(day)}
+      </AppText>
+    </View>
+  );
 }
 
 /** A program: its days in the order they rotate, and whether it is the one in use. */
@@ -79,16 +97,6 @@ export default function ProgramScreen() {
   // Giorni or Muscoli, as it was left for this program.
   const [tab, setTab] = useState<ProgramTab>(() => lastTab.get(id) ?? 'days');
   const scroll = useScrollTop();
-  const insets = useSafeAreaInsets();
-  const tabBar = useTabBarInset();
-  const header = useHeaderHeight();
-  const window = useWindowDimensions();
-  const [tabsY, setTabsY] = useState(0);
-  const settled = useSettled();
-  const bodyBuilt = settled && (program?.days.length ?? 0) > 0 && program?.draft === false;
-  // From where the tabs start, with the large title open, to the tab bar.
-  const figureTop = (scroll.openTop.get() || header) + tabsY;
-  const figure = { top: figureTop, height: Math.max(320, window.height - insets.bottom - tabBar - figureTop) };
 
   // A template opened from "Nuova scheda" is only being looked at: going back leaves nothing
   // behind, unless it was changed, and then it asks whether to keep it.
@@ -185,25 +193,38 @@ export default function ProgramScreen() {
   const removeDay = (day: DaySummary) =>
     deleteWithUndo({ key: `day:${day.id}`, title: `${day.name} eliminato`, run: () => deleteDay(db, day.id) });
 
+  // Under the days, and still there while editing, dimmed, as in a day: nothing disappears.
+  const addDayRow = (
+    <View style={editing && styles.dimmed} pointerEvents={editing ? 'none' : 'auto'}>
+      <ActionRow label="Aggiungi giorno" onPress={newDay} />
+    </View>
+  );
+
   const switchTab = (next: ProgramTab) => {
     setEditing(false);
     lastTab.set(program.id, next);
-    // The body takes what is left of the screen, from the top of the page.
-    if (next === 'muscles') void scroll.scrollToTop();
     setTab(next);
   };
 
   return (
-    <ScreenScroll scroll={scroll} scrollEnabled={tab === 'days'}>
+    <ScreenScroll scroll={scroll}>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Button {...editButton({ editing, disabled: days.length === 0 || tab !== 'days', onChange: setEditing })} />
-        <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Azioni sulla scheda" hidden={program.draft}>
-          <Stack.Toolbar.MenuAction icon="trash" destructive onPress={() => void remove()}>
-            Elimina scheda
-          </Stack.Toolbar.MenuAction>
-        </Stack.Toolbar.Menu>
+        {/* The only action besides editing: no menu to hold it. */}
+        {program.draft ? null : (
+          <Stack.Toolbar.Button separateBackground icon="trash" accessibilityLabel="Elimina scheda" onPress={() => void remove()} />
+        )}
       </Stack.Toolbar>
 
+      {/* Over the name, as on the training tab: a label of the program, apart from what follows. */}
+      {program.active && !program.draft ? (
+        <View style={styles.status}>
+          <Icon name="checkmark.circle.fill" size={13} tone="accent" />
+          <AppText variant="footnote" weight="600" tone="accent">
+            SCHEDA IN USO
+          </AppText>
+        </View>
+      ) : null}
       <EditableTitle value={program.name} accessibilityLabel="Nome della scheda" onChange={(name) => void renameProgram(db, program.id, name)} />
 
       {program.draft ? (
@@ -225,22 +246,17 @@ export default function ProgramScreen() {
             />
           </View>
         </Animated.View>
-      ) : program.active ? (
-        <View style={styles.status}>
-          <Icon name="checkmark.circle.fill" size={17} tone="accent" />
-          <AppText variant="subhead" weight="600" tone="accent">
-            Scheda in uso
-          </AppText>
+      ) : program.active ? null : (
+        <View style={styles.use}>
+          <Button
+            title="Usa questa scheda"
+            variant="tinted"
+            onPress={() => {
+              haptics.success();
+              void setActiveProgram(db, program.id);
+            }}
+          />
         </View>
-      ) : (
-        <Button
-          title="Usa questa scheda"
-          variant="tinted"
-          onPress={() => {
-            haptics.success();
-            void setActiveProgram(db, program.id);
-          }}
-        />
       )}
 
       {days.length > 0 && !program.draft ? (
@@ -249,12 +265,18 @@ export default function ProgramScreen() {
         </View>
       ) : null}
 
-      <View onLayout={(event) => setTabsY(event.nativeEvent.layout.y)}>
-      {tab === 'muscles' ? (
-        <View style={{ height: figure.height }} />
+      {tab === 'check' && days.length > 0 && !program.draft ? (
+        <ProgramValidity
+          programId={program.id}
+          onOpen={(muscle, part) => {
+            haptics.selection();
+            router.push({ pathname: '/muscle-check', params: { program: program.id, muscle, ...(part ? { part } : {}) } });
+          }}
+        />
       ) : (
       <>
       <SectionTitle>Giorni</SectionTitle>
+      <LayoutAnimationConfig skipEntering>
       {editing ? (
         <SortableList
           items={days}
@@ -262,13 +284,12 @@ export default function ProgramScreen() {
           rowHeight={ROW_HEIGHT}
           onReorder={(keys) => void reorderDays(db, keys.map(Number))}
           onRemove={removeDay}
+          footer={addDayRow}
           renderRow={(day) => (
-            <View>
-              <AppText numberOfLines={1}>{day.name}</AppText>
-              <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                {daySummary(day)}
-              </AppText>
-            </View>
+            <Animated.View entering={TO_EDIT} style={styles.editRow}>
+              <DayBadge icon={day.icon} />
+              <DayText day={day} />
+            </Animated.View>
           )}
         />
       ) : (
@@ -282,13 +303,10 @@ export default function ProgramScreen() {
                   <Pressable accessibilityRole="button" onPressIn={() => void prefetch(db, dayScreen(day.id))}>
                     {({ pressed }) => (
                       <View style={[styles.day, pressed && { backgroundColor: theme.cardPressed }]}>
-                        <DayBadge icon={day.icon} />
-                        <View style={styles.flex}>
-                          <AppText numberOfLines={1}>{day.name}</AppText>
-                          <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-                            {daySummary(day)}
-                          </AppText>
-                        </View>
+                        <Animated.View entering={FROM_EDIT} style={[styles.editRow, styles.slack]}>
+                          <DayBadge icon={day.icon} />
+                          <DayText day={day} />
+                        </Animated.View>
                         <Icon name="chevron.right" size={13} tone="textTertiary" weight="semibold" />
                       </View>
                     )}
@@ -322,32 +340,14 @@ export default function ProgramScreen() {
             </SwipeToDelete>
             </Animated.View>
           ))}
-          <ActionRow label="Aggiungi giorno" onPress={newDay} />
+          {addDayRow}
         </ListGroup>
       )}
-      <SectionFooter>
-        {editing
-          ? 'Trascina ≡ per cambiare l’ordine.'
-          : 'I giorni si alternano in quest’ordine, poi si riparte dal primo.'}
-      </SectionFooter>
+      </LayoutAnimationConfig>
+      {/* The same words in edit mode: nothing under the list moves. */}
+      <SectionFooter>I giorni si alternano in quest’ordine, poi si riparte dal primo.</SectionFooter>
       </>
       )}
-      {/* Built once the page has landed and kept under the days, so that "Muscoli" finds it ready. */}
-      {bodyBuilt ? (
-        <View style={[styles.figure, { height: figure.height }]} pointerEvents={tab === 'muscles' ? 'box-none' : 'none'}>
-          <ProgramBody
-            programId={program.id}
-            height={figure.height}
-            top={figure.top}
-            shown={tab === 'muscles'}
-            onOpen={(muscle, part) => {
-              haptics.selection();
-              router.push({ pathname: '/muscle-check', params: { program: program.id, muscle, ...(part ? { part } : {}) } });
-            }}
-          />
-        </View>
-      ) : null}
-      </View>
     </ScreenScroll>
   );
 }
@@ -358,15 +358,17 @@ const styles = StyleSheet.create({
   draft: { gap: Spacing.xs, padding: Spacing.lg, borderRadius: Radius.lg, borderCurve: 'continuous' },
   draftButton: { marginTop: Spacing.sm },
   segmented: { marginBottom: Spacing.sm },
-  // As wide as the screen: the page's padding is for text, not for the body.
-  figure: { position: 'absolute', top: 0, left: -Spacing.lg, right: -Spacing.lg },
-  status: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs + 2, paddingHorizontal: Spacing.xs },
+  status: { flexDirection: 'row', alignItems: 'center', gap: Spacing.xs, paddingHorizontal: Spacing.xs, marginBottom: 2 },
+  use: { marginBottom: Spacing.md },
+  dimmed: { opacity: 0.35 },
+  editRow: { flex: 1, flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
+  slack: { marginRight: SORTABLE_TEXT_SLACK },
+  // Fixed height and room left at the end of the text, so the row is the same in edit mode.
   day: {
     flexDirection: 'row',
     alignItems: 'center',
     gap: Spacing.md,
     paddingHorizontal: Spacing.lg,
-    paddingVertical: Spacing.md,
-    minHeight: ROW_HEIGHT,
+    height: ROW_HEIGHT,
   },
 });

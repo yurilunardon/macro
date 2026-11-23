@@ -4,24 +4,21 @@ import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { ListGroup, Row, SectionTitle } from '@/components/card';
-import { DayBadge } from '@/components/day-badge';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
-import { Spacing } from '@/constants/theme';
+import { Radius, Spacing } from '@/constants/theme';
 import { useLiveQuery } from '@/db/live';
 import { deleteWorkout, getWorkoutHistory } from '@/db/workouts';
-import { useToday } from '@/hooks/use-today';
-import { formatDayTitle } from '@/lib/dates';
+import { useTheme } from '@/hooks/use-theme';
+import { formatLongDate, formatWeekdayAbbr, fromDateKey, type DateKey } from '@/lib/dates';
 import { countLabel } from '@/lib/format';
-import { formatWorkoutLength } from '@/lib/training';
 import { groupByMonth } from '@/lib/weights';
 
-/** Every finished workout, newest first, by month. */
+/** Every finished workout, newest first, by month: for each, the day it was and what day it was. */
 export default function HistoryScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
-  const today = useToday();
   const confirm = () =>
     confirmDestructive({
       title: 'Eliminare l’allenamento?',
@@ -53,11 +50,9 @@ export default function HistoryScreen() {
             {month.items.map((w) => (
               <SwipeToDelete key={w.id} confirm={confirm} onDelete={() => void deleteWorkout(db, w.id)}>
               <Row
-                icon={<DayBadge icon={w.icon} />}
+                icon={<DateLeaf date={w.date} />}
                 title={w.name}
-                subtitle={`${formatDayTitle(w.date, today)} · ${formatWorkoutLength(
-                  (new Date(w.endedAt).getTime() - new Date(w.startedAt).getTime()) / 1000,
-                )} · ${countLabel(w.workSets, 'serie', 'serie')}`}
+                accessibilityHint={formatLongDate(w.date)}
                 // Relative, so from the calendar's stack it stays there.
                 onPress={() => router.push({ pathname: './session', params: { id: w.id } })}
               />
@@ -70,7 +65,25 @@ export default function HistoryScreen() {
   );
 }
 
+/** The date as a calendar's leaf: the day of the week above, the day of the month big under it. */
+function DateLeaf({ date }: { date: DateKey }) {
+  const theme = useTheme();
+  return (
+    <View style={[styles.leaf, { backgroundColor: theme.fill }]} accessible={false}>
+      <AppText variant="caption" weight="700" tone="accent" style={styles.leafDay}>
+        {formatWeekdayAbbr(date)}
+      </AppText>
+      <AppText variant="title3" weight="600" numeric style={styles.leafNumber}>
+        {String(fromDateKey(date).getDate())}
+      </AppText>
+    </View>
+  );
+}
+
 const styles = StyleSheet.create({
+  leaf: { width: 44, height: 44, borderRadius: Radius.sm, borderCurve: 'continuous', alignItems: 'center', justifyContent: 'center' },
+  leafDay: { fontSize: 10, lineHeight: 12, letterSpacing: 0.4 },
+  leafNumber: { lineHeight: 24 },
   center: { flex: 1, alignItems: 'center', justifyContent: 'center' },
   empty: { paddingTop: Spacing.xxl, paddingHorizontal: Spacing.lg },
 });
