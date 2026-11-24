@@ -58,7 +58,7 @@ export default function TrainingScreen() {
   // under the sheet its queries wait by themselves. Behind a page further in, on the other hand, it
   // keeps up: held until it came back, it all changed and jumped under the finger going back.
   const still = useWorkoutStarting();
-  const { data: live } = useLiveQuery(
+  const { data: live, loading: reading } = useLiveQuery(
     'training-home',
     async (database) => {
       const [active, next, programs, history] = await Promise.all([
@@ -75,9 +75,12 @@ export default function TrainingScreen() {
     },
     ['training', 'settings'],
   );
-  const data = useFrozen(live, still);
   // The gym days to come in the calendar, so this page says the same: which day, and when.
   const soon = useAgenda(today, addDays(today, 13), today);
+  // A change (another program picked, a workout done) is read again by both queries, which end at
+  // different moments: the page waits for both and changes once, instead of twice in a row.
+  const settling = reading || soon.loading;
+  const data = useFrozen(live, still || settling);
   const gymTypeId = soon.data?.gymTypeId ?? null;
   const upcoming = daysFrom(today, addDays(today, 13))
     .flatMap((date) => soon.agenda.get(date) ?? [])
@@ -95,7 +98,7 @@ export default function TrainingScreen() {
   const programs = data?.programs ?? [];
   const history = data?.history ?? [];
   const next = data?.next ?? null;
-  const rows = useFrozen(next ? buildTrainingLine({ history, dayIds: next.program.days.map((d) => d.id), nextId: next.day.id, upcoming, active: data?.active }) : [], still);
+  const rows = useFrozen(next ? buildTrainingLine({ history, dayIds: next.program.days.map((d) => d.id), nextId: next.day.id, upcoming, active: data?.active }) : [], still || settling);
   const openDay = (dayId: number) => {
     void prefetch(db, dayScreen(dayId));
     router.push({ pathname: '/training/day', params: { id: dayId } });

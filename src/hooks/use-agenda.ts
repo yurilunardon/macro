@@ -10,6 +10,8 @@ export type Agenda = {
   /** What each day from `from` to `to` holds. */
   agenda: Map<DateKey, AgendaItem[]>;
   types: Map<number, ActivityType>;
+  /** A re-read after a change is on its way: what is shown is the data before it. */
+  loading: boolean;
 };
 
 /**
@@ -19,7 +21,7 @@ export type Agenda = {
  */
 export function useAgenda(from: DateKey, to: DateKey, today: DateKey): Agenda {
   const start = from < today ? from : today;
-  const { data } = useLiveQuery(`calendar:${start}:${to}`, (database) => getCalendar(database, start, to), ['calendar', 'training']);
+  const { data, loading } = useLiveQuery(`calendar:${start}:${to}`, (database) => getCalendar(database, start, to), ['calendar', 'training']);
   // Worked out again only when the data changes: a page that draws itself for another reason, as a
   // month does at each day picked, need not lay out its weeks again.
   const agenda = useMemo(
@@ -37,5 +39,5 @@ export function useAgenda(from: DateKey, to: DateKey, today: DateKey): Agenda {
     [data, start, to, today],
   );
   const types = useMemo(() => new Map((data?.types ?? []).map((t) => [t.id, t])), [data]);
-  return { data, agenda, types };
+  return { data, agenda, types, loading };
 }
