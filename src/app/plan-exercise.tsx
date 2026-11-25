@@ -28,7 +28,7 @@ import { deleteWithUndo } from '@/services/undo';
 export default function PlanExerciseScreen() {
   const db = useSQLiteContext();
   const theme = useTheme();
-  const params = useLocalSearchParams<{ id?: string; day?: string; exercise?: string }>();
+  const params = useLocalSearchParams<{ id?: string; day?: string; exercise?: string; direct?: string }>();
   const adding = params.day !== undefined && params.exercise !== undefined;
   const [planned, setPlanned] = useState<PlannedExercise | null>(null);
 
@@ -56,10 +56,10 @@ export default function PlanExerciseScreen() {
       </View>
     );
   }
-  return <PlanForm planned={planned} dayId={adding ? Number(params.day) : null} />;
+  return <PlanForm planned={planned} dayId={adding ? Number(params.day) : null} direct={params.direct === '1'} />;
 }
 
-function PlanForm({ planned, dayId }: { planned: PlannedExercise; dayId: number | null }) {
+function PlanForm({ planned, dayId, direct = false }: { planned: PlannedExercise; dayId: number | null; direct?: boolean }) {
   const db = useSQLiteContext();
   const router = useRouter();
   const theme = useTheme();
@@ -86,8 +86,10 @@ function PlanForm({ planned, dayId }: { planned: PlannedExercise; dayId: number 
     if (dayId !== null) {
       await addDayExercise(db, dayId, planned.exercise.id, { ...plan, note: note.trim() === '' ? null : note.trim() });
       haptics.success();
-      // This sheet and the picker under it: back to the day, with the exercise in it.
-      router.dismiss(2);
+      // This sheet and the picker under it: back to the day, with the exercise in it. Opened
+      // straight from the day (a hint of the program), there is no picker to close.
+      if (direct) router.back();
+      else router.dismiss(2);
       return;
     }
     await updateDayExercise(db, planned.id, plan);

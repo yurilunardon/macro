@@ -5,6 +5,7 @@ import type { DateKey } from '@/lib/dates';
 import type { MealKey } from '@/lib/meals';
 import { rescaleNutrients, scaleNutrients, type Food, type Nutrients, type Unit } from '@/lib/nutrition';
 
+import { tickDoseForEntry, untickDoseForEntry } from './links';
 import { notifyChange } from './live';
 
 export type Entry = {
@@ -60,6 +61,7 @@ export async function addEntry(
   input: { date: DateKey; meal: MealKey; food: Food; quantity: number },
 ): Promise<number> {
   const totals = scaleNutrients(input.food.per100, input.quantity);
+  const createdAt = new Date().toISOString();
   const result = await db.runAsync(
     `INSERT INTO entries (date, meal, food_id, name, brand, unit, quantity, kcal, protein, carbs, fat,
        sugars, fiber, sat_fat, salt, created_at)
@@ -72,9 +74,11 @@ export async function addEntry(
     input.food.unit,
     input.quantity,
     ...totalsParams(totals),
-    new Date().toISOString(),
+    createdAt,
   );
   notifyChange('food');
+  // A whey shake is also a supplement: it is ticked there too.
+  await tickDoseForEntry(db, { date: input.date, name: input.food.name, created_at: createdAt });
   return result.lastInsertRowId;
 }
 
@@ -144,8 +148,10 @@ export async function updateEntry(
 }
 
 export async function deleteEntry(db: SQLiteDatabase, id: number): Promise<void> {
+  const row = await db.getFirstAsync<EntryRow>('SELECT * FROM entries WHERE id = ?', id);
   await db.runAsync('DELETE FROM entries WHERE id = ?', id);
   notifyChange('food');
+  if (row) await untickDoseForEntry(db, row);
 }
 
 /** Moves an entry to another meal of the same day. */

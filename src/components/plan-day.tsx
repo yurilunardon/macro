@@ -10,10 +10,11 @@ import { AppText } from './app-text';
 
 const AnimatedCircle = Animated.createAnimatedComponent(Circle);
 
-/** How much of the day is done, as a small ring with "3/7" in it. */
-export function DayRing({ done, total, size = 56 }: { done: number; total: number; size?: number }) {
+type DayRingProps = { done: number; total: number; size?: number; stroke?: number; label?: string };
+
+/** How much of the day is done, as a small ring with "3/7" in it. Also used for other "N of M". */
+export function DayRing({ done, total, size = 56, stroke = 5, label }: DayRingProps) {
   const theme = useTheme();
-  const stroke = 5;
   const radius = (size - stroke) / 2;
   const circumference = 2 * Math.PI * radius;
   const progress = useSharedValue(0);
@@ -26,7 +27,7 @@ export function DayRing({ done, total, size = 56 }: { done: number; total: numbe
     strokeOpacity: progress.get() > 0.002 ? 1 : 0,
   }));
   return (
-    <View style={{ width: size, height: size }} accessible accessibilityLabel={`${done} cose fatte su ${total}`}>
+    <View style={{ width: size, height: size }} accessible accessibilityLabel={label ?? `${done} cose fatte su ${total}`}>
       <Svg width={size} height={size}>
         <Circle cx={size / 2} cy={size / 2} r={radius} stroke={theme.track} strokeWidth={stroke} fill="none" />
         <AnimatedCircle
@@ -43,7 +44,7 @@ export function DayRing({ done, total, size = 56 }: { done: number; total: numbe
         />
       </Svg>
       <View style={styles.ringCenter} pointerEvents="none">
-        <AppText weight="700" numeric maxFontSizeMultiplier={1.3} style={styles.ringText}>
+        <AppText weight="700" numeric maxFontSizeMultiplier={1.3} style={[styles.ringText, size >= 80 && styles.ringTextBig]}>
           {`${done}/${total}`}
         </AppText>
       </View>
@@ -65,4 +66,5 @@ export function activityName(item: AgendaItem, types: ReadonlyMap<number, Activi
 const styles = StyleSheet.create({
   ringCenter: { ...StyleSheet.absoluteFill, alignItems: 'center', justifyContent: 'center' },
   ringText: { fontSize: 15, lineHeight: 18 },
+  ringTextBig: { fontSize: 22, lineHeight: 26 },
 });

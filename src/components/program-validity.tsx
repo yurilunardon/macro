@@ -14,9 +14,10 @@ import { WEEKLY_SETS } from '@/lib/training';
 import { AppText } from './app-text';
 import { ListGroup, SectionFooter, SectionTitle } from './card';
 import { Icon } from './icon';
-import { useCountedNumber } from './progress';
+import { DayRing } from './plan-day';
 
 const TONE: Record<MuscleLevel, 'accent' | 'warning' | 'danger'> = { good: 'accent', low: 'warning', bad: 'danger' };
+const SOFT: Record<MuscleLevel, 'accentSoft' | 'warningSoft' | 'dangerSoft'> = { good: 'accentSoft', low: 'warningSoft', bad: 'dangerSoft' };
 const RANK: Record<MuscleLevel, number> = { bad: 0, low: 1, good: 2 };
 /** The scale of a muscle's line, in weekly sets: the zone that makes it grow sits in the middle. */
 const SCALE = 24;
@@ -48,56 +49,47 @@ export function ProgramValidity({ programId, onOpen }: { programId: number; onOp
           <MuscleRow key={m.muscle} check={m} onPress={() => onOpen(m.muscle, null)} />
         ))}
       </ListGroup>
-      <SectionFooter>{`Serie a settimana. Per crescere ne servono tra ${WEEKLY_SETS.low} e ${WEEKLY_SETS.high}: dove un muscolo aiuta soltanto, una serie conta metà.`}</SectionFooter>
+      <SectionFooter>
+        {`Serie a settimana. Per crescere ne servono tra ${WEEKLY_SETS.low} e ${WEEKLY_SETS.high}: dove un muscolo aiuta soltanto, una serie conta metà. `}
+        {data.assumed
+          ? 'Nessun giorno di palestra in calendario: ogni giorno contato una volta a settimana.'
+          : `Giorni di palestra dal calendario: ${formatTimes(Math.round(data.days.reduce((sum, d) => sum + d.perWeek, 0) * 10) / 10)} a settimana.`}
+      </SectionFooter>
 
     </View>
   );
 }
 
-/** At the top: how many muscles are in the zone, one dot per muscle, and how often the program comes up. */
+/**
+ * At the top: a ring with how many muscles get enough sets to grow, and beside it only the names
+ * of those that do not, each in its colour. How often the program comes up is said under the list.
+ */
 function Verdict({ data }: { data: ProgramCheck }) {
   const theme = useTheme();
   const good = data.muscles.filter((m) => m.level === 'good').length;
   const total = data.muscles.length;
-  const counted = useCountedNumber(good);
-  const lacking = data.muscles.filter((m) => m.level !== 'good');
-  const perWeek = Math.round(data.days.reduce((sum, d) => sum + d.perWeek, 0) * 10) / 10;
-  const word = lacking.length === 0 ? 'Completa' : lacking.length <= 2 ? 'Quasi completa' : 'Da completare';
-  const tone = lacking.length === 0 ? 'accent' : lacking.length <= 2 ? 'warning' : 'danger';
-  const ordered = [...data.muscles].sort((a, b) => RANK[b.level] - RANK[a.level]);
+  const lacking = data.muscles.filter((m) => m.level !== 'good').sort((a, b) => RANK[a.level] - RANK[b.level] || a.sets - b.sets);
 
   return (
     <View style={[styles.verdict, { backgroundColor: theme.card }]}>
-      <AppText variant="headline" tone={tone}>
-        {word}
-      </AppText>
-      <View style={styles.verdictNumber}>
-        <AppText variant="display" numeric>
-          {String(counted)}
-        </AppText>
-        <AppText variant="title3" tone="textSecondary" numeric>
-          {`su ${total}`}
-        </AppText>
-      </View>
-      <AppText variant="subhead" tone="textSecondary">
-        muscoli allenati abbastanza per crescere
-      </AppText>
-      <View style={styles.dots}>
-        {ordered.map((m) => (
-          <View key={m.muscle} style={[styles.dot, { backgroundColor: theme[TONE[m.level]] }]} />
-        ))}
-      </View>
-      {lacking.length > 0 ? (
-        <AppText variant="subhead">{`Da rinforzare: ${joinNames(lacking.sort((a, b) => a.sets - b.sets).map((m) => muscleLabel(m.muscle).toLowerCase()))}.`}</AppText>
-      ) : null}
-      <View style={[styles.divider, { backgroundColor: theme.separator }]} />
-      <View style={styles.week}>
-        <Icon name="calendar" size={15} tone="textSecondary" />
-        <AppText variant="footnote" tone="textSecondary" style={styles.flex}>
-          {data.assumed
-            ? 'Nessun giorno di palestra in calendario: ogni giorno contato una volta a settimana.'
-            : `${formatTimes(perWeek)} a settimana, dai giorni di palestra del calendario.`}
-        </AppText>
+      <DayRing done={good} total={total} size={88} stroke={9} label={`${good} muscoli a posto su ${total}`} />
+      <View style={styles.verdictText}>
+        <AppText variant="headline">{lacking.length === 0 ? 'Tutti i muscoli a posto' : 'Muscoli a posto'}</AppText>
+        {lacking.length > 0 ? (
+          <View style={styles.chips}>
+            {lacking.map((m) => (
+              <View key={m.muscle} style={[styles.chip, { backgroundColor: theme[SOFT[m.level]] }]}>
+                <AppText variant="footnote" weight="600" style={{ color: theme[TONE[m.level]] }}>
+                  {muscleLabel(m.muscle)}
+                </AppText>
+              </View>
+            ))}
+          </View>
+        ) : (
+          <AppText variant="subhead" tone="textSecondary">
+            Ognuno ha le serie che servono per crescere.
+          </AppText>
+        )}
       </View>
     </View>
   );
@@ -156,12 +148,10 @@ function formatTimes(times: number): string {
 const styles = StyleSheet.create({
   flex: { flex: 1 },
   loading: { paddingVertical: Spacing.xxl, alignItems: 'center' },
-  verdict: { borderRadius: Radius.lg, borderCurve: 'continuous', padding: Spacing.lg, gap: Spacing.xs },
-  verdictNumber: { flexDirection: 'row', alignItems: 'baseline', gap: Spacing.sm, marginTop: Spacing.xs },
-  dots: { flexDirection: 'row', gap: 6, marginVertical: Spacing.sm },
-  dot: { flex: 1, height: 8, borderRadius: 4 },
-  divider: { height: StyleSheet.hairlineWidth, marginVertical: Spacing.sm },
-  week: { flexDirection: 'row', alignItems: 'center', gap: Spacing.sm },
+  verdict: { borderRadius: Radius.lg, borderCurve: 'continuous', padding: Spacing.lg, flexDirection: 'row', alignItems: 'center', gap: Spacing.lg },
+  verdictText: { flex: 1, gap: Spacing.sm },
+  chips: { flexDirection: 'row', flexWrap: 'wrap', gap: 6 },
+  chip: { paddingHorizontal: 10, paddingVertical: 4, borderRadius: 12, borderCurve: 'continuous' },
   muscle: { paddingHorizontal: Spacing.lg, paddingVertical: Spacing.md, gap: Spacing.sm },
   muscleHead: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md },
   track: { height: 6, borderRadius: 3, overflow: 'hidden' },

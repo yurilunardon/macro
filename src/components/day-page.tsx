@@ -9,12 +9,16 @@ import { copyEntry, copyMeal, deleteEntry, deleteMealEntries, getEntriesForDate,
 import { prefetch, useLiveQuery } from '@/db/live';
 import { recentFoodsScreen } from '@/db/screens';
 import { saveMealFromDiary } from '@/db/saved-meals';
+import { getDoseChanges, getDoseTimes, getSupplements, setDoseTaken } from '@/db/supplements';
 import { Spacing } from '@/constants/theme';
 import { useTheme } from '@/hooks/use-theme';
 import { addDays, daysBetween, formatDaySubtitle, formatDayTitle, formatLongDate, weekdayOf, type DateKey } from '@/lib/dates';
 import { countLabel, formatKcal, formatNumber } from '@/lib/format';
 import { dayTypeFor, type DayType } from '@/lib/goals';
-import { MEALS, mealLabel, type MealKey } from '@/lib/meals';
+import { sameProduct } from '@/lib/links';
+import { MEALS, mealForClock, mealLabel, type MealKey } from '@/lib/meals';
+import { buildDay, DEFAULT_WEIGH_IN, isoAt, type DayEntry } from '@/lib/plan';
+import { formatDose, supplementSymbol } from '@/lib/supplements';
 import { sumNutrients } from '@/lib/nutrition';
 import { QUICK_ADD_NAME } from '@/lib/quick-add';
 import { CLEAR_MS, setDrainingDay } from '@/services/draining-day';
@@ -79,20 +83,38 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
   const { data } = useLiveQuery(
     `diary:${date}`,
     async (database) => {
-      const [entries, yesterday, plan, training] = await Promise.all([
+      const [entries, yesterday, plan, training, supplements, taken, changes] = await Promise.all([
         getEntriesForDate(database, date),
         getEntriesForDate(database, addDays(date, -1)),
         getDayPlan(database, date),
         getTrainingSettings(database),
+        getSupplements(database),
+        getDoseTimes(database, date),
+        getDoseChanges(database, date, date),
       ]);
+      // The day's doses, each in the meal of its time: what was taken where it was taken, the rest
+      // until the day is over. A training day by the diary stands for the calendar's busy days.
+      const doses = buildDay({
+        date,
+        supplements,
+        taken,
+        changes,
+        active: new Set(plan.dayType === 'training' ? [date] : []),
+        weighIn: { ...DEFAULT_WEIGH_IN, enabled: false },
+        weight: null,
+      })
+        .flatMap((e) => (e.kind === 'supplement' && !e.skipped && (e.done || date >= today) ? [e] : []))
+        // A shake taken is already in the meal as a food, with its calories: once is enough.
+        .filter((d) => !d.done || !entries.some((e) => sameProduct(d.supplement.name, e.name)));
       return {
         entries,
         yesterdayMeals: new Set(yesterday.map((e) => e.meal)),
         plan,
         scheduledType: dayTypeFor(weekdayOf(date), training.trainingWeekdays, null),
+        doses,
       };
     },
-    ['food', 'settings'],
+    ['food', 'settings', 'calendar'],
   );
   const loaded = data !== undefined;
   // Read through a ref, so a new callback from the screen does not redraw the page.
@@ -186,6 +208,12 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
     await Promise.all(MEALS.map((m) => deleteMealEntries(db, date, m.key)));
     setDrainingDay(null);
     haptics.success();
+  };
+
+  const toggleDose = async (dose: SupplementDose) => {
+    haptics.selection();
+    const at = dose.done ? undefined : date === today ? new Date().toISOString() : isoAt(date, dose.planned);
+    await setDoseTaken(db, dose.supplement.id, date, dose.index, !dose.done, at);
   };
 
   const copyEntryTo = async (entry: Entry) => {
@@ -418,6 +446,14 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                     </Animated.View>
                   );
                 })}
+                {/* The supplements of the meal's hours, from the calendar: ticked here, ticked there. */}
+                {data.doses
+                  .filter((d) => mealForClock(d.at) === meal.key)
+                  .map((dose) => (
+                    <Animated.View key={dose.key} layout={draining ? DRAIN_LAYOUT : MEAL_LAYOUT}>
+                      <DoseRow dose={dose} interactive={interactive} onToggle={() => void toggleDose(dose)} />
+                    </Animated.View>
+                  ))}
                 {/* The sheet to add grows out of this row and shrinks back into it. */}
                 {interactive ? (
                   <Animated.View key="add" layout={draining ? DRAIN_LAYOUT : MEAL_LAYOUT}>
@@ -455,6 +491,44 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
     </View>
   );
 });
+
+type SupplementDose = Extract<DayEntry, { kind: 'supplement' }>;
+
+/**
+ * A dose of a supplement among the foods of its meal: a circle to tick, as in the calendar, its
+ * name and how much, and when it was taken or is meant to be.
+ */
+function DoseRow({ dose, interactive, onToggle }: { dose: SupplementDose; interactive: boolean; onToggle: () => void }) {
+  const theme = useTheme();
+  const s = dose.supplement;
+  const when = dose.done ? `presa alle ${dose.at}` : `alle ${dose.planned}`;
+  return (
+    <Pressable
+      disabled={!interactive}
+      onPress={onToggle}
+      accessibilityRole="checkbox"
+      accessibilityState={{ checked: dose.done }}
+      accessibilityLabel={`${s.name}, ${formatDose(s.dose, s.unit)}, ${when}`}
+      accessibilityHint="Segna l’integratore, anche nel calendario">
+      {({ pressed }) => (
+        <View style={[styles.entry, pressed && { backgroundColor: theme.cardPressed }]}>
+          <View style={[styles.tick, { borderColor: dose.done ? theme.accent : theme.textTertiary, backgroundColor: dose.done ? theme.accent : 'transparent' }]}>
+            {dose.done ? <Icon name="checkmark" size={11} color={theme.onAccent} weight="bold" /> : null}
+          </View>
+          <View style={styles.entryText}>
+            <AppText variant="callout" numberOfLines={1} tone={dose.done ? 'text' : 'textSecondary'}>
+              {s.name}
+            </AppText>
+            <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+              {`${formatDose(s.dose, s.unit)} · ${when}`}
+            </AppText>
+          </View>
+          <Icon name={supplementSymbol(s.unit)} size={15} tone="textTertiary" />
+        </View>
+      )}
+    </Pressable>
+  );
+}
 
 /** A meal's calories, moving with the day's ring when a food comes or goes. */
 function MealKcal({ value, ms }: { value: number; ms?: number }) {
@@ -508,6 +582,7 @@ const styles = StyleSheet.create({
     minHeight: 50,
   },
   entryText: { flex: 1, gap: 1 },
+  tick: { width: 22, height: 22, borderRadius: 11, borderWidth: 1.5, alignItems: 'center', justifyContent: 'center' },
   clearDay: { alignSelf: 'center', paddingVertical: Spacing.md, paddingHorizontal: Spacing.lg, marginTop: Spacing.lg },
   headerButton: { width: 40, height: 44, alignItems: 'center', justifyContent: 'center' },
   copy: {

@@ -192,3 +192,31 @@ export function joinNames(names: readonly string[]): string {
   if (names.length <= 1) return names.join('');
   return `${names.slice(0, -1).join(', ')} e ${names[names.length - 1]}`;
 }
+
+/** What a day of the program could change for the whole week: a muscle to add here, sets to take off. */
+export type DayHint =
+  | { kind: 'add'; muscle: Muscle; level: MuscleLevel; shown: number; missing: number }
+  | { kind: 'trim'; muscle: Muscle; shown: number; planId: number; exerciseId: number; sets: number; remove: number };
+
+/**
+ * The hints of one day, from the check of its whole program: the muscles short of sets whose
+ * exercise belongs in this day, and the muscles past what helps that this day trains as their main
+ * one, with the exercise to take sets from (its most) and how many, never under two.
+ */
+export function dayHints(days: readonly CheckDay[], muscles: readonly MuscleCheck[], dayId: number): DayHint[] {
+  const day = days.find((d) => d.id === dayId);
+  if (!day) return [];
+  const hints: DayHint[] = [];
+  for (const m of muscles) {
+    if (m.level !== 'good' && m.dayId === dayId) hints.push({ kind: 'add', muscle: m.muscle, level: m.level, shown: m.shown, missing: m.missing });
+  }
+  for (const m of muscles) {
+    const excess = m.shown - WEEKLY_SETS.high;
+    if (excess <= 0 || day.perWeek <= 0) continue;
+    const own = day.exercises.filter((e) => e.muscle === m.muscle && e.sets > 2).sort((a, b) => b.sets - a.sets)[0];
+    if (!own) continue;
+    const remove = Math.min(own.sets - 2, Math.max(1, Math.ceil(excess / day.perWeek)));
+    hints.push({ kind: 'trim', muscle: m.muscle, shown: m.shown, planId: own.planId, exerciseId: own.exerciseId, sets: own.sets, remove });
+  }
+  return hints;
+}

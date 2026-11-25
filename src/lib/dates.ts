@@ -90,6 +90,11 @@ export function formatWeekdayAndDay(key: DateKey): string {
   return `${capitalize(weekdayAbbreviated.format(date))} ${date.getDate()}`;
 }
 
+/** "venerdì": the day of the week in full, lower case, for the middle of a sentence. */
+export function formatWeekdayName(key: DateKey): string {
+  return weekdayName.format(fromDateKey(key));
+}
+
 /** "VEN": the day of the week in three letters, for a date drawn as a calendar leaf. */
 export function formatWeekdayAbbr(key: DateKey): string {
   return weekdayAbbreviated.format(fromDateKey(key)).replace('.', '').toUpperCase();

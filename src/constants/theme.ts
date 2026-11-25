@@ -22,6 +22,8 @@ export const Colors = {
     warning: '#B25000',
     /** Behind a warning that takes room, as a banner. */
     warningSoft: '#FFF1DB',
+    /** Behind a word in the danger colour, as a chip. */
+    dangerSoft: '#FDE2E4',
     protein: '#D9480F',
     carbs: '#0B7285',
     fat: '#9C36B5',
@@ -50,6 +52,7 @@ export const Colors = {
     danger: '#FF6961',
     warning: '#FFB340',
     warningSoft: '#33260D',
+    dangerSoft: '#3A1414',
     protein: '#FF9F0A',
     carbs: '#3BC9DB',
     fat: '#DA8FFF',

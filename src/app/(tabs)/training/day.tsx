@@ -13,7 +13,7 @@ import Animated, {
 
 import { AppText } from '@/components/app-text';
 import { Button } from '@/components/button';
-import { ActionRow, ListGroup } from '@/components/card';
+import { ActionRow, ListGroup, Row, SectionFooter, SectionTitle } from '@/components/card';
 import { DayIconButton } from '@/components/day-badge';
 import { editButton } from '@/components/edit-button';
 import { EditableTitle } from '@/components/editable-title';
@@ -22,15 +22,18 @@ import { ScreenScroll } from '@/components/screen';
 import { SORTABLE_ENTER_MS, SORTABLE_SHIFT, SORTABLE_TEXT_SLACK, SortableList } from '@/components/sortable-list';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
-import { restFor } from '@/db/exercises';
+import { restFor, type Exercise } from '@/db/exercises';
+import { getMuscleSuggestions, getProgramCheck } from '@/db/program-check';
 import { useLiveQuery } from '@/db/live';
 import { addWarmUp } from '@/db/exercise-picks';
 import { dayScreen } from '@/db/screens';
 import { deleteDay, removeDayExercise, setDayIcon, renameDay, reorderDayExercises, type PlannedExercise } from '@/db/programs';
 import { useExerciseNames } from '@/hooks/use-exercise-names';
 import { useTheme } from '@/hooks/use-theme';
+import { useToday } from '@/hooks/use-today';
 import { isWarmUp, muscleLabel } from '@/lib/exercises';
-import { formatDuration } from '@/lib/training';
+import { dayHints, muscleWithArticle, type DayHint } from '@/lib/program-check';
+import { formatDuration, WEEKLY_SETS } from '@/lib/training';
 import { haptics } from '@/services/haptics';
 import { startAndOpenWorkout } from '@/services/start-workout';
 import { deleteWithUndo, usePendingDeletes } from '@/services/undo';
@@ -219,7 +222,75 @@ export default function DayScreen() {
         </ListGroup>
       )}
       </LayoutAnimationConfig>
+
+      {/* What this day could change for the whole week, from the program's Validità. */}
+      {editing ? null : <DayHints dayId={day.id} programId={day.programId} />}
     </ScreenScroll>
+  );
+}
+
+type HintRow = { hint: DayHint; exercise: Exercise | null };
+
+/**
+ * "Per la scheda": the muscles of the week this day is the place for, with an exercise to add, and
+ * the ones past what helps, with the sets to take off. Nothing when the program is fine.
+ */
+function DayHints({ dayId, programId }: { dayId: number; programId: number }) {
+  const router = useRouter();
+  const today = useToday();
+  const { names } = useExerciseNames();
+  const { data } = useLiveQuery(
+    `day-hints:${dayId}:${today}`,
+    async (database): Promise<HintRow[]> => {
+      const check = await getProgramCheck(database, programId, today);
+      if (!check) return [];
+      return Promise.all(
+        dayHints(check.days, check.muscles, dayId).map(async (hint): Promise<HintRow> => {
+          if (hint.kind === 'trim') return { hint, exercise: check.planned.get(hint.planId)?.exercise ?? null };
+          const [first] = await getMuscleSuggestions(database, programId, hint.muscle, { count: 1 });
+          return { hint, exercise: first ?? null };
+        }),
+      );
+    },
+    ['training', 'calendar'],
+  );
+  if (!data || data.length === 0) return null;
+
+  return (
+    <View>
+      <SectionTitle>Per la scheda</SectionTitle>
+      <ListGroup>
+        {data.map(({ hint, exercise }) => {
+          const muscle = muscleLabel(hint.muscle);
+          if (hint.kind === 'add') {
+            return (
+              <Row
+                key={`add-${hint.muscle}`}
+                icon={<Icon name="plus.circle.fill" size={22} tone={hint.level === 'bad' ? 'danger' : 'warning'} />}
+                title={exercise ? `Aggiungi ${names(exercise).title} qui` : `Aggiungi un esercizio per ${muscleWithArticle(hint.muscle)}`}
+                subtitle={`${muscle}: ${hint.shown} serie a settimana su ${WEEKLY_SETS.low}`}
+                onPress={() =>
+                  exercise
+                    ? router.push({ pathname: '/plan-exercise', params: { day: dayId, exercise: exercise.id, direct: '1' } })
+                    : router.push({ pathname: '/exercise-picker', params: { target: 'day', id: dayId } })
+                }
+              />
+            );
+          }
+          const name = exercise ? names(exercise).title : 'un esercizio';
+          return (
+            <Row
+              key={`trim-${hint.muscle}`}
+              icon={<Icon name="minus.circle.fill" size={22} tone="textSecondary" />}
+              title={`Togli ${hint.remove === 1 ? '1 serie' : `${hint.remove} serie`} a ${name}`}
+              subtitle={`${muscle}: ${hint.shown} a settimana, oltre ${WEEKLY_SETS.high} non serve`}
+              onPress={() => router.push({ pathname: '/plan-exercise', params: { id: hint.planId } })}
+            />
+          );
+        })}
+      </ListGroup>
+      <SectionFooter>Dai muscoli di tutta la settimana, come in Validità: questo è il giorno dove vanno.</SectionFooter>
+    </View>
   );
 }
 

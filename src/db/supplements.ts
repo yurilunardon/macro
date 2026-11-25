@@ -15,6 +15,7 @@ import {
   type Supplement,
 } from '@/lib/supplements';
 
+import { logEntryForDose, removeEntryForDose } from './links';
 import { notifyChange } from './live';
 
 type SupplementRow = {
@@ -198,28 +199,40 @@ export async function getDoseTimes(db: SQLiteDatabase, date: DateKey): Promise<M
 
 /** Ticks or unticks the `index`-th dose of a day; `at` when it was taken at another time than now. */
 export async function setDoseTaken(db: SQLiteDatabase, supplementId: number, date: DateKey, index: number, taken: boolean, at?: string): Promise<void> {
+  const before = await db.getFirstAsync<{ taken_at: string }>(
+    'SELECT taken_at FROM supplement_doses WHERE supplement_id = ? AND date = ? AND dose_index = ?',
+    supplementId,
+    date,
+    index,
+  );
   if (taken) {
+    const takenAt = at ?? new Date().toISOString();
     await db.runAsync(
       `INSERT INTO supplement_doses (supplement_id, date, dose_index, taken_at) VALUES (?, ?, ?, ?)
        ON CONFLICT (supplement_id, date, dose_index) DO UPDATE SET taken_at = excluded.taken_at`,
       supplementId,
       date,
       index,
-      at ?? new Date().toISOString(),
+      takenAt,
     );
     // Taken after all: no longer skipped.
     await db.runAsync('UPDATE supplement_day SET skipped = NULL WHERE supplement_id = ? AND date = ? AND dose_index = ?', supplementId, date, index);
+    notifyChange('calendar');
+    // Newly ticked: a supplement that is a food goes in the diary too. Only moved: nothing to add.
+    if (!before) await logEntryForDose(db, supplementId, date, takenAt);
   } else {
     await db.runAsync('DELETE FROM supplement_doses WHERE supplement_id = ? AND date = ? AND dose_index = ?', supplementId, date, index);
+    notifyChange('calendar');
+    if (before) await removeEntryForDose(db, supplementId, date, before.taken_at);
   }
-  notifyChange('calendar');
 }
 
 /** Ticks these doses of a day, e.g. from a notification's "Fatto". */
 export async function takeDoses(db: SQLiteDatabase, doses: readonly { id: number; index: number }[], date: DateKey): Promise<number> {
   const now = new Date().toISOString();
   for (const { id, index } of doses) {
-    await db.runAsync('INSERT OR IGNORE INTO supplement_doses (supplement_id, date, dose_index, taken_at) VALUES (?, ?, ?, ?)', id, date, index, now);
+    const result = await db.runAsync('INSERT OR IGNORE INTO supplement_doses (supplement_id, date, dose_index, taken_at) VALUES (?, ?, ?, ?)', id, date, index, now);
+    if (result.changes > 0) await logEntryForDose(db, id, date, now);
   }
   notifyChange('calendar');
   return doses.length;

@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Muscle } from '../exercises';
-import { checkMuscles, dayFor, levelOf, missingLabel, weakestPart, weeklyTimes, worseLevel, type CheckDay } from '../program-check';
+import { checkMuscles, dayFor, dayHints, levelOf, missingLabel, weakestPart, weeklyTimes, worseLevel, type CheckDay, type CheckExercise } from '../program-check';
 
 let plan = 0;
 const ex = (muscle: Muscle, secondary: Muscle[] = [], sets = 3, ref: string | null = null) => ({ planId: ++plan, exerciseId: plan, ref, muscle, secondary, sets });
@@ -119,5 +119,23 @@ describe('parts', () => {
 
   it('leaves muscles without parts with none', () => {
     expect(checkMuscles([]).find((m) => m.muscle === 'biceps')?.parts).toEqual([]);
+  });
+});
+
+describe('dayHints', () => {
+  const ex = (planId: number, muscle: CheckExercise['muscle'], sets: number): CheckExercise => ({ planId, exerciseId: planId, ref: null, muscle, secondary: [], sets });
+
+  it('adds a short muscle on its day and trims one past what helps', () => {
+    const days: CheckDay[] = [
+      { id: 1, name: 'Push', perWeek: 1, exercises: [ex(1, 'chest', 5), ex(2, 'chest', 5), ex(3, 'chest', 5), ex(4, 'chest', 6), ex(5, 'shoulders', 4)] },
+      { id: 2, name: 'Legs', perWeek: 1, exercises: [ex(6, 'quads', 6), ex(7, 'calves', 3)] },
+    ];
+    const muscles = checkMuscles(days);
+    const push = dayHints(days, muscles, 1);
+    const trim = push.find((h) => h.kind === 'trim');
+    expect(trim).toMatchObject({ muscle: 'chest', planId: 4, remove: 1 });
+    const legs = dayHints(days, muscles, 2);
+    expect(legs.some((h) => h.kind === 'add' && h.muscle === 'calves')).toBe(true);
+    expect(push.some((h) => h.kind === 'add' && h.muscle === 'calves')).toBe(false);
   });
 });
