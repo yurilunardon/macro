@@ -1,8 +1,8 @@
 import { Stack, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
 import { useEffect, useRef, useState, type ComponentRef } from 'react';
-import { ActivityIndicator, Alert, Keyboard, Linking, Pressable, ScrollView, StyleSheet, TextInput, View, useWindowDimensions } from 'react-native';
-import Animated, { useAnimatedKeyboard, useAnimatedStyle, useSharedValue } from 'react-native-reanimated';
+import { ActivityIndicator, Alert, Keyboard, Linking, Pressable, ScrollView, StyleSheet, TextInput, View } from 'react-native';
+import Animated, { useAnimatedKeyboard, useAnimatedStyle } from 'react-native-reanimated';
 import { useSafeAreaInsets } from 'react-native-safe-area-context';
 
 import { AppText } from '@/components/app-text';
@@ -97,15 +97,13 @@ function Chat({ model }: { model: string | null }) {
   const today = useToday();
   const scroll = useRef<ComponentRef<typeof ScrollView>>(null);
   const insets = useSafeAreaInsets();
-  const screen = useWindowDimensions();
-  // The keyboard as it moves, frame by frame, also while it is dragged down. The screen is a sheet,
-  // so what the keyboard covers is measured from the screen's bottom edge, not from its own frame:
-  // React Native's KeyboardAvoidingView reads its frame inside the sheet and comes out short.
+  // The keyboard as it moves, frame by frame, also while it is dragged down. The sheet reaches the
+  // bottom of the screen, so the bar rises by the whole keyboard. Nothing is measured: inside a
+  // sheet both KeyboardAvoidingView and measureInWindow read the layout from the sheet's own top,
+  // not the screen's, and come out short by the gap above the sheet.
   const keyboard = useAnimatedKeyboard();
-  const below = useSharedValue(0);
-  const root = useRef<ComponentRef<typeof View>>(null);
   const bottom = insets.bottom;
-  const lift = useAnimatedStyle(() => ({ paddingBottom: Math.max(keyboard.height.value - below.value, bottom) }));
+  const lift = useAnimatedStyle(() => ({ paddingBottom: Math.max(keyboard.height.value, bottom) }));
   useEffect(() => {
     const shown = Keyboard.addListener('keyboardDidShow', () => scroll.current?.scrollToEnd({ animated: true }));
     return () => shown.remove();
@@ -161,14 +159,7 @@ function Chat({ model }: { model: string | null }) {
   const shown = pending ? [...messages, pending] : messages;
 
   return (
-    <Animated.View
-      ref={root}
-      onLayout={() =>
-        root.current?.measureInWindow((_x, y, _w, height) => {
-          below.value = Math.max(0, screen.height - (y + height));
-        })
-      }
-      style={[styles.flex, { backgroundColor: theme.background }, lift]}>
+    <Animated.View style={[styles.flex, { backgroundColor: theme.background }, lift]}>
       <Stack.Toolbar placement="right">
         <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Altro">
           <Stack.Toolbar.MenuAction icon="person.text.rectangle" onPress={() => router.push('/coach-notes')}>
