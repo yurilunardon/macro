@@ -107,7 +107,6 @@ export default function TrainingScreen() {
   return (
     <ScreenScroll>
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button icon="sparkles" accessibilityLabel="Coach" onPress={() => router.push('/coach')} />
         <Stack.Toolbar.Menu icon="plus" accessibilityLabel="Nuovo">
           <Stack.Toolbar.MenuAction icon="figure.strengthtraining.traditional" onPress={() => void startFree()}>
             Allenamento libero

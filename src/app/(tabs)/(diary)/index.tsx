@@ -77,7 +77,6 @@ export default function NutritionScreen() {
       </Stack.Toolbar>
       {/* Scanning is the quickest way to log food: the button on the far right, wider than an icon. */}
       <Stack.Toolbar placement="right">
-        <Stack.Toolbar.Button icon="sparkles" accessibilityLabel="Coach" onPress={() => router.push('/coach')} />
         <Stack.Toolbar.Menu icon="ellipsis" accessibilityLabel="Altro">
           <Stack.Toolbar.MenuAction icon="target" onPress={() => router.push('/goals')}>
             Obiettivi

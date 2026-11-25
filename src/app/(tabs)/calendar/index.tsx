@@ -55,6 +55,9 @@ export default function CalendarScreen() {
           Il piano
         </Stack.Toolbar.Button>
         <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Altro">
+          <Stack.Toolbar.MenuAction icon="sparkles" onPress={() => router.push('/coach')}>
+            Coach
+          </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon="calendar.badge.plus" onPress={() => router.push({ pathname: '/activity', params: { date } })}>
             Aggiungi un’attività
           </Stack.Toolbar.MenuAction>
