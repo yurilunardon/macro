@@ -1,5 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
+import type { CoachMessage, CoachNote } from '@/lib/coach';
 import { DEFAULT_TARGETS, type Profile, type Targets } from '@/lib/goals';
 import type { DateKey } from '@/lib/dates';
 import { resolveLimits, type NutrientLimits } from '@/lib/limits';
@@ -54,6 +55,10 @@ type SettingsMap = {
   warmUpSkips: number;
   /** The daily ceilings on sugars, saturated fat and salt, when changed from the usual ones. */
   nutrientLimits: Partial<NutrientLimits>;
+  /** What the coach learned about the user and keeps for every question. */
+  coachNotes: CoachNote[];
+  /** The conversation with the coach, the last ones. */
+  coachChat: CoachMessage[];
 };
 
 /** A published calendar followed, and how the last reading went. */

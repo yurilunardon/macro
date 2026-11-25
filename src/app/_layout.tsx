@@ -84,6 +84,21 @@ export default function RootLayout() {
               <Stack.Screen name="supplement" options={{ ...TAB_STACK_OPTIONS, presentation: 'modal', title: 'Integratore' }} />
               <Stack.Screen name="settings" options={{ presentation: 'modal', headerShown: false }} />
               <Stack.Screen
+                name="coach"
+                options={{
+                  ...TAB_STACK_OPTIONS,
+                  headerTransparent: false,
+                  headerBlurEffect: undefined,
+                  headerStyle: { backgroundColor: theme.background },
+                  presentation: 'modal',
+                  title: 'Coach',
+                }}
+              />
+              <Stack.Screen
+                name="coach-notes"
+                options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, headerShown: false }}
+              />
+              <Stack.Screen
                 name="exercise-new"
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.75, 1], sheetGrabberVisible: true, headerShown: false }}
               />

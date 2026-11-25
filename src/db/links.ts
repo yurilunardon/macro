@@ -1,11 +1,13 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import type { EntryRow } from '@/lib/backup';
+import type { EntryRow, FoodRow } from '@/lib/backup';
 import type { DateKey } from '@/lib/dates';
 import { nextDose, sameMoment, sameProduct } from '@/lib/links';
 import { mealForClock } from '@/lib/meals';
+import { scaleNutrients } from '@/lib/nutrition';
 import { clockOf } from '@/lib/plan';
 
+import { foodFromRow } from './foods';
 import { notifyChange } from './live';
 
 /**
@@ -69,12 +71,12 @@ export async function untickDoseForEntry(db: SQLiteDatabase, entry: Pick<EntryRo
  * that day, in the meal of the time it was taken. Nothing if that food was never logged.
  */
 export async function logEntryForDose(db: SQLiteDatabase, supplementId: number, date: DateKey, takenAt: string): Promise<void> {
-  const supplement = await db.getFirstAsync<{ name: string }>('SELECT name FROM supplements WHERE id = ?', supplementId);
+  const supplement = await db.getFirstAsync<{ name: string; dose: number; unit: string }>('SELECT name, dose, unit FROM supplements WHERE id = ?', supplementId);
   if (!supplement) return;
   const sameDay = await db.getAllAsync<EntryRow>('SELECT * FROM entries WHERE date = ?', date);
   if (sameDay.some((e) => sameProduct(supplement.name, e.name) && sameMoment(e.created_at, takenAt))) return;
   const recent = await db.getAllAsync<EntryRow>('SELECT * FROM entries WHERE food_id IS NOT NULL AND quantity > 0 ORDER BY id DESC LIMIT 400');
-  const last = recent.find((e) => sameProduct(supplement.name, e.name));
+  const last = recent.find((e) => sameProduct(supplement.name, e.name)) ?? (await fromFoods(db, supplement));
   if (!last) return;
   await db.runAsync(
     `INSERT INTO entries (date, meal, food_id, name, brand, unit, quantity, kcal, protein, carbs, fat, sugars, fiber, sat_fat, salt, created_at)
@@ -97,6 +99,37 @@ export async function logEntryForDose(db: SQLiteDatabase, supplementId: number, 
     takenAt,
   );
   notifyChange('food');
+}
+
+/**
+ * Never logged yet: the saved food of the same name, as much as a dose, when the dose is in grams
+ * or millilitres or the food says how much a serving is.
+ */
+async function fromFoods(db: SQLiteDatabase, supplement: { name: string; dose: number; unit: string }): Promise<Omit<EntryRow, 'id' | 'date' | 'meal' | 'created_at'> | null> {
+  const first = supplement.name.split(/\s+/).find((w) => w.length >= 3);
+  if (!first) return null;
+  const rows = await db.getAllAsync<FoodRow>('SELECT * FROM foods WHERE name LIKE ? ORDER BY id DESC LIMIT 50', `%${first}%`);
+  const row = rows.find((r) => sameProduct(supplement.name, r.name));
+  if (!row) return null;
+  const food = foodFromRow(row);
+  const quantity = supplement.unit === food.unit ? supplement.dose : food.servingSize;
+  if (!quantity) return null;
+  const n = scaleNutrients(food.per100, quantity);
+  return {
+    food_id: food.id,
+    name: food.name,
+    brand: food.brand,
+    unit: food.unit,
+    quantity,
+    kcal: n.kcal,
+    protein: n.protein,
+    carbs: n.carbs,
+    fat: n.fat,
+    sugars: n.sugars,
+    fiber: n.fiber,
+    sat_fat: n.satFat,
+    salt: n.salt,
+  };
 }
 
 /** A dose unticked: the food it put in the diary goes. */
