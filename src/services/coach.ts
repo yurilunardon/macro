@@ -5,7 +5,7 @@
 import { File, Paths } from 'expo-file-system';
 import { useSyncExternalStore } from 'react';
 
-import { geminiErrorText, pickModels, type CoachMessage } from '@/lib/coach';
+import { geminiErrorText, messageForModel, pickModels, type CoachMessage } from '@/lib/coach';
 
 const API = 'https://generativelanguage.googleapis.com/v1beta';
 const STORE = 'coach.json';
@@ -98,7 +98,12 @@ type GenerateResponse = {
  * One answer to the conversation. The model that answered last goes first; on a limit or a missing
  * model the next Flash is tried.
  */
-export async function askCoach(system: string, messages: readonly CoachMessage[]): Promise<string> {
+export async function askCoach(
+  system: string,
+  messages: readonly Pick<CoachMessage, 'role' | 'text' | 'about' | 'context'>[],
+  /** The JSON shape the answer must have; without it, plain text. */
+  schema?: object,
+): Promise<string> {
   const key = state.key;
   if (!key) throw new CoachError('Manca la chiave di Gemini');
   const list = await models(key);
@@ -111,7 +116,8 @@ export async function askCoach(system: string, messages: readonly CoachMessage[]
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({
           systemInstruction: { parts: [{ text: system }] },
-          contents: messages.map((m) => ({ role: m.role, parts: [{ text: m.text }] })),
+          contents: messages.map((m) => ({ role: m.role, parts: [{ text: messageForModel(m) }] })),
+          ...(schema ? { generationConfig: { responseMimeType: 'application/json', responseSchema: schema } } : {}),
         }),
       })) as GenerateResponse;
       if (result.promptFeedback?.blockReason) throw new CoachError('Gemini non ha voluto rispondere a questa domanda');

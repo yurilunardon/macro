@@ -1,6 +1,6 @@
 import type { SQLiteDatabase } from 'expo-sqlite';
 
-import type { CoachMessage, CoachNote } from '@/lib/coach';
+import type { CoachDaily, CoachMessage, CoachNote, CoachProfile, CoachWeek, CoachWorkoutNote } from '@/lib/coach';
 import { DEFAULT_TARGETS, type Profile, type Targets } from '@/lib/goals';
 import type { DateKey } from '@/lib/dates';
 import { resolveLimits, type NutrientLimits } from '@/lib/limits';
@@ -59,6 +59,14 @@ type SettingsMap = {
   coachNotes: CoachNote[];
   /** The conversation with the coach, the last ones. */
   coachChat: CoachMessage[];
+  /** The user's card the coach keeps, field by field. */
+  coachProfile: CoachProfile;
+  /** The weekly analyses, newest first. */
+  coachWeeks: CoachWeek[];
+  /** The coach's sentence for today. */
+  coachDaily: CoachDaily;
+  /** The coach's comments on the last workouts, newest first. */
+  coachWorkouts: CoachWorkoutNote[];
 };
 
 /** A published calendar followed, and how the last reading went. */

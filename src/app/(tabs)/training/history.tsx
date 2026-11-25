@@ -1,9 +1,10 @@
-import { useRouter } from 'expo-router';
+import { Link, useRouter } from 'expo-router';
 import { useSQLiteContext } from 'expo-sqlite';
-import { ActivityIndicator, Pressable, StyleSheet, View } from 'react-native';
+import { ActivityIndicator, Pressable, StyleSheet, View, type PressableProps } from 'react-native';
 
 import { AppText } from '@/components/app-text';
 import { SectionTitle } from '@/components/card';
+import { openCoach } from '@/components/coach-cards';
 import { Icon } from '@/components/icon';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
@@ -55,11 +56,22 @@ export default function HistoryScreen() {
                 <RestRow key={`rest-${item.gap.from}`} gap={item.gap} />
               ) : (
                 <SwipeToDelete key={item.workout.id} confirm={confirm} onDelete={() => void deleteWorkout(db, item.workout.id)}>
-                  <WorkoutRow
-                    workout={item.workout}
-                    // Relative, so from the calendar's stack it stays there.
-                    onPress={() => router.push({ pathname: './session', params: { id: item.workout.id } })}
-                  />
+                  {/* Relative, so from the calendar's stack it stays there. */}
+                  <Link href={{ pathname: './session', params: { id: item.workout.id } }} asChild>
+                    <Link.Trigger>
+                      <WorkoutRow workout={item.workout} />
+                    </Link.Trigger>
+                    <Link.Menu>
+                      <Link.MenuAction
+                        icon="sparkles"
+                        onPress={() => openCoach(router, { about: `${item.workout.name} di ${formatLongDate(item.workout.date).toLowerCase()}`, workout: item.workout.id })}>
+                        Chiedi al coach
+                      </Link.MenuAction>
+                      <Link.MenuAction icon="trash" destructive onPress={() => void confirm().then((ok) => { if (ok) void deleteWorkout(db, item.workout.id); })}>
+                        Elimina
+                      </Link.MenuAction>
+                    </Link.Menu>
+                  </Link>
                 </SwipeToDelete>
               ),
             )}
@@ -90,31 +102,32 @@ function byMonth(items: HistoryItem<WorkoutSummary>[]): { title: string; items: 
 }
 
 /** A workout: the day of the month on the left, then what it was, the day of the week and how long. */
-function WorkoutRow({ workout, onPress }: { workout: WorkoutSummary; onPress: () => void }) {
+function WorkoutRow({ workout, ...press }: { workout: WorkoutSummary } & Omit<PressableProps, 'style' | 'children'>) {
   const theme = useTheme();
   const seconds = (Date.parse(workout.endedAt) - Date.parse(workout.startedAt)) / 1000;
   const name = formatWeekdayName(workout.date);
   const weekday = name.charAt(0).toUpperCase() + name.slice(1);
+  // The look pressed goes inside: Link's Slot drops a style given as a function.
   return (
-    <Pressable
-      onPress={onPress}
-      accessibilityRole="button"
-      accessibilityLabel={`${workout.name}, ${formatLongDate(workout.date)}`}
-      style={({ pressed }) => [styles.row, { backgroundColor: theme.background }, pressed && { opacity: 0.7 }]}>
-      <View style={styles.date} accessible={false}>
-        <AppText variant="title2" weight="700" numeric>
-          {String(fromDateKey(workout.date).getDate())}
-        </AppText>
-      </View>
-      <View style={[styles.card, { backgroundColor: theme.card }]}>
-        <View style={styles.flex}>
-          <AppText numberOfLines={1}>{workout.name}</AppText>
-          <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
-            {Number.isFinite(seconds) && seconds > 0 ? `${weekday} · ${formatWorkoutLength(seconds)}` : weekday}
-          </AppText>
+    <Pressable {...press} accessibilityRole="button" accessibilityLabel={`${workout.name}, ${formatLongDate(workout.date)}`}>
+      {({ pressed }) => (
+        <View style={[styles.row, { backgroundColor: theme.background }, pressed && { opacity: 0.7 }]}>
+          <View style={styles.date} accessible={false}>
+            <AppText variant="title2" weight="700" numeric>
+              {String(fromDateKey(workout.date).getDate())}
+            </AppText>
+          </View>
+          <View style={[styles.card, { backgroundColor: theme.card }]}>
+            <View style={styles.flex}>
+              <AppText numberOfLines={1}>{workout.name}</AppText>
+              <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                {Number.isFinite(seconds) && seconds > 0 ? `${weekday} · ${formatWorkoutLength(seconds)}` : weekday}
+              </AppText>
+            </View>
+            <Icon name="chevron.right" size={13} tone="textTertiary" weight="semibold" />
+          </View>
         </View>
-        <Icon name="chevron.right" size={13} tone="textTertiary" weight="semibold" />
-      </View>
+      )}
     </Pressable>
   );
 }

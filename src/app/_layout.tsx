@@ -95,7 +95,8 @@ export default function RootLayout() {
                 }}
               />
               <Stack.Screen
-                name="coach-notes"
+                name="coach-ask"
+                // Over what was on screen; the keyboard lifts the sheet, the bar stays on it.
                 options={{ presentation: 'formSheet', sheetAllowedDetents: [0.6, 1], sheetGrabberVisible: true, headerShown: false }}
               />
               <Stack.Screen

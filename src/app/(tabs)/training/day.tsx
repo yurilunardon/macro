@@ -20,6 +20,7 @@ import { EditableTitle } from '@/components/editable-title';
 import { Icon } from '@/components/icon';
 import { ScreenScroll } from '@/components/screen';
 import { SORTABLE_ENTER_MS, SORTABLE_SHIFT, SORTABLE_TEXT_SLACK, SortableList } from '@/components/sortable-list';
+import { openCoach } from '@/components/coach-cards';
 import { SwipeToDelete } from '@/components/swipe-to-delete';
 import { Spacing } from '@/constants/theme';
 import { restFor, type Exercise } from '@/db/exercises';
@@ -209,6 +210,16 @@ export default function DayScreen() {
                   </Pressable>
                 </Link.Trigger>
                 <Link.Menu>
+                  <Link.MenuAction
+                    icon="sparkles"
+                    onPress={() =>
+                      openCoach(router, {
+                        about: planned.exercise.name,
+                        context: `Esercizio della scheda, giorno ${day.name}: ${planned.sets} serie da ${planned.repMin}–${planned.repMax}`,
+                      })
+                    }>
+                    Chiedi al coach
+                  </Link.MenuAction>
                   <Link.MenuAction icon="trash" destructive onPress={() => removeExercise(planned)}>
                     Elimina
                   </Link.MenuAction>

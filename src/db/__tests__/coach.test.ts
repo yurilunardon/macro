@@ -5,12 +5,13 @@ import { snapshotText } from '@/lib/coach';
 import { todayKey } from '@/lib/dates';
 import { PROGRAM_TEMPLATES } from '@/lib/templates';
 
-import { addCoachNotes, getCoachSnapshot } from '../coach';
+import { addCoachNotes, addCoachWeek, applyCoachProposal, getCoachSnapshot, undoCoachProposal, updateCoachProfile } from '../coach';
 import { addEntry, deleteEntry, getEntriesForDate } from '../entries';
 import { seedExercises } from '../exercises';
 import { getFood, insertFood } from '../foods';
-import { createProgramFromTemplate } from '../programs';
+import { createProgramFromTemplate, getPlannedExercise } from '../programs';
 import { migrateDatabase } from '../schema';
+import { getSetting, setSetting } from '../settings';
 import { addSupplement, getDoseTimes, setDoseTaken } from '../supplements';
 import { finishWorkout, getWorkout, startWorkout, updateSet } from '../workouts';
 
@@ -95,5 +96,46 @@ describe('the coach snapshot', () => {
     expect(text).toContain('120 kcal');
     expect(text).toContain('SCHEDA IN USO');
     if (workout.exercises.length > 0) expect(text).toContain('60×10');
+  });
+
+  it('applies a proposal of the week and puts it back', async () => {
+    const today = todayKey();
+    await seedExercises(db);
+    await createProgramFromTemplate(db, PROGRAM_TEMPLATES.find((t) => t.key === 'ppl')!);
+    await setSetting(db, 'targets', { kcal: 2400, protein: 150, carbs: 260, fat: 70 });
+    const snapshot = await getCoachSnapshot(db, today);
+    const planned = snapshot.program!.days[0].exercises[0];
+    expect(snapshotText(snapshot)).toContain(`[#${planned.id}]`);
+    const before = (await getPlannedExercise(db, planned.id))!;
+
+    await addCoachWeek(db, {
+      from: '2026-11-16',
+      to: '2026-11-22',
+      at: 'now',
+      summary: ['a'],
+      food: '',
+      training: '',
+      weight: '',
+      proposals: [
+        { id: 'p0', title: 'Proteine a 170', detail: '', change: { kind: 'targets', day: 'all', kcal: 2500, protein: 170, carbs: null, fat: null }, applied: null },
+        { id: 'p1', title: 'Più serie', detail: '', change: { kind: 'exercise', planId: planned.id, sets: 5, repMin: 6, repMax: 8 }, applied: null },
+      ],
+    });
+    await applyCoachProposal(db, '2026-11-16', 'p0');
+    await applyCoachProposal(db, '2026-11-16', 'p1');
+    expect(await getSetting(db, 'targets')).toEqual({ kcal: 2500, protein: 170, carbs: 260, fat: 70 });
+    expect(await getPlannedExercise(db, planned.id)).toMatchObject({ sets: 5, repMin: 6, repMax: 8 });
+
+    await undoCoachProposal(db, '2026-11-16', 'p0');
+    await undoCoachProposal(db, '2026-11-16', 'p1');
+    expect(await getSetting(db, 'targets')).toEqual({ kcal: 2400, protein: 150, carbs: 260, fat: 70 });
+    expect(await getPlannedExercise(db, planned.id)).toMatchObject({ sets: before.sets, repMin: before.repMin, repMax: before.repMax });
+    expect((await getSetting(db, 'coachWeeks'))![0].proposals.every((p) => p.applied === null)).toBe(true);
+  });
+
+  it('keeps the fields of the card the coach rewrites', async () => {
+    await updateCoachProfile(db, { sleep: 'circa 7 ore', body: 'ginocchio delicato' });
+    await updateCoachProfile(db, { sleep: 'circa 8 ore', body: '' });
+    expect(await getSetting(db, 'coachProfile')).toEqual({ sleep: 'circa 8 ore' });
   });
 });

@@ -26,6 +26,7 @@ import { haptics } from '@/services/haptics';
 import { openAgendaItem } from '@/services/open-agenda-item';
 import { useWorkoutStarting } from '@/services/start-workout';
 
+import { CoachToday } from '@/components/coach-cards';
 import { AppText } from './app-text';
 import type { DayPageProps } from './day-pager';
 import { Icon } from './icon';
@@ -171,6 +172,13 @@ export const CalendarDay = memo(function CalendarDay({ date, today, onReady }: {
         </View>
         {plan.progress.total > 0 ? <DayRing done={plan.progress.done} total={plan.progress.total} /> : null}
       </View>
+
+      {/* Today only: the coach's sentence for the day, or the week on Mondays. */}
+      {date === today ? (
+        <View style={styles.coach}>
+          <CoachToday today={today} />
+        </View>
+      ) : null}
 
       <View ref={grid} collapsable={false} style={{ height: gridHeight(firstHour) }}>
         {selected ? <Pressable accessible={false} style={StyleSheet.absoluteFill} onPress={() => calendarDrag.set({ selected: null })} /> : null}
@@ -457,6 +465,7 @@ export const CALENDAR_HEADING = HEADING;
 const NOW_GUTTER = GUTTER - 6;
 
 const styles = StyleSheet.create({
+  coach: { marginBottom: Spacing.md },
   flex: { flex: 1 },
   heading: { flexDirection: 'row', alignItems: 'center', gap: Spacing.md, height: HEADING },
   hour: { position: 'absolute', left: 0, right: 0, height: 0 },

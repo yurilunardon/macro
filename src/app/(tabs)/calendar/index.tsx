@@ -51,13 +51,11 @@ export default function CalendarScreen() {
         </Stack.Toolbar.Button>
       </Stack.Toolbar>
       <Stack.Toolbar placement="right">
+        <Stack.Toolbar.Button icon="sparkles" accessibilityLabel="Coach" onPress={() => router.push('/coach')} />
         <Stack.Toolbar.Button accessibilityLabel="Il piano" onPress={() => router.push('/calendar/plan')}>
           Il piano
         </Stack.Toolbar.Button>
         <Stack.Toolbar.Menu separateBackground icon="ellipsis" accessibilityLabel="Altro">
-          <Stack.Toolbar.MenuAction icon="sparkles" onPress={() => router.push('/coach')}>
-            Coach
-          </Stack.Toolbar.MenuAction>
           <Stack.Toolbar.MenuAction icon="calendar.badge.plus" onPress={() => router.push({ pathname: '/activity', params: { date } })}>
             Aggiungi un’attività
           </Stack.Toolbar.MenuAction>

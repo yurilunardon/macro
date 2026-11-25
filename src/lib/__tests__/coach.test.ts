@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { geminiErrorText, newNotes, parseReply, pickModels, snapshotText, type CoachSnapshot } from '../coach';
+import { geminiErrorText, lastWeek, messageForModel, newNotes, parseReply, parseWeek, pickModels, readyQuestion, snapshotText, type CoachSnapshot } from '../coach';
 
 describe('parseReply', () => {
   it('takes the notes out of the reply', () => {
@@ -57,5 +57,70 @@ describe('snapshotText', () => {
     expect(text).toContain('11-24 allenamento: 2100 kcal');
     expect(text).toContain('Panca piana: 80×10');
     expect(text).toContain('- Gioca a pallavolo');
+  });
+});
+
+describe('parseReply fields of the card', () => {
+  it('takes the PROFILO lines into the card, unknown fields as notes', () => {
+    const r = parseReply('Ok.\nPROFILO Sonno: circa 7 ore, a letto alle 23\n**PROFILO Corpo:** ginocchio destro delicato\nPROFILO Hobby: chitarra');
+    expect(r.text).toBe('Ok.');
+    expect(r.profile).toEqual({ sleep: 'circa 7 ore, a letto alle 23', body: 'ginocchio destro delicato' });
+    expect(r.notes).toEqual(['chitarra']);
+  });
+});
+
+describe('messageForModel', () => {
+  it('puts what it is about and its data first', () => {
+    expect(messageForModel({ text: 'Cosa cambio?', about: 'Panca piana', context: '4×8' })).toBe('[Riguarda: Panca piana]\n[Dati: 4×8]\nCosa cambio?');
+    expect(messageForModel({ text: 'Ciao' })).toBe('Ciao');
+  });
+});
+
+describe('lastWeek', () => {
+  it('is Monday to Sunday of the week before', () => {
+    expect(lastWeek('2026-11-25')).toEqual({ from: '2026-11-16', to: '2026-11-22' });
+    expect(lastWeek('2026-11-23')).toEqual({ from: '2026-11-16', to: '2026-11-22' });
+    expect(lastWeek('2026-11-29')).toEqual({ from: '2026-11-16', to: '2026-11-22' });
+  });
+});
+
+describe('parseWeek', () => {
+  it('keeps the proposals the app can apply and drops the rest', () => {
+    const json = JSON.stringify({
+      summary: ['4 allenamenti su 4', 'Proteine sotto 3 giorni', 'Peso −0,4 kg'],
+      food: 'Calorie giuste.',
+      training: 'Panca cresce.',
+      weight: 'In linea.',
+      proposals: [
+        { title: 'Proteine a 150 g a riposo', detail: 'Oggi 130 g', kind: 'targets', day: 'rest', kcal: 2200.4, protein: 150, carbs: 220, fat: 70 },
+        { title: 'Rematore 4×8', detail: 'Fermo da 3 volte', kind: 'exercise', planId: 12, sets: 4, repMin: 8, repMax: 8 },
+        { title: 'Calorie a 400', detail: 'troppo poche', kind: 'targets', day: 'all', kcal: 400, protein: 100 },
+        { title: 'Senza numeri', detail: '', kind: 'exercise' },
+      ],
+    });
+    const week = parseWeek(json, '2026-11-16', '2026-11-22', 'now');
+    expect(week?.summary).toHaveLength(3);
+    expect(week?.proposals.map((p) => p.change)).toEqual([
+      { kind: 'targets', day: 'rest', kcal: 2200, protein: 150, carbs: 220, fat: 70 },
+      { kind: 'exercise', planId: 12, sets: 4, repMin: 8, repMax: 8 },
+    ]);
+    expect(week?.proposals[0].applied).toBeNull();
+  });
+
+  it('is null for what is not JSON', () => {
+    expect(parseWeek('non è json', '2026-11-16', '2026-11-22', 'now')).toBeNull();
+  });
+});
+
+describe('readyQuestion', () => {
+  const target = { kcal: 2400, protein: 160, carbs: 250, fat: 70 };
+  it('asks about protein from the afternoon on', () => {
+    expect(readyQuestion(18, { kcal: 1800, protein: 98 }, target)).toBe('Come recupero 62 g di proteine?');
+    expect(readyQuestion(10, { kcal: 300, protein: 20 }, target)).toBeNull();
+  });
+  it('asks about calories when well over, nothing when fine', () => {
+    expect(readyQuestion(21, { kcal: 2700, protein: 150 }, target)).toBe('Ho superato di 300 kcal, come sistemo?');
+    expect(readyQuestion(21, { kcal: 2400, protein: 150 }, target)).toBeNull();
+    expect(readyQuestion(21, { kcal: 2400, protein: 50 }, null)).toBeNull();
   });
 });

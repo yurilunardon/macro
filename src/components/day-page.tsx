@@ -29,6 +29,7 @@ import { AppText } from './app-text';
 import { Card, ListGroup } from './card';
 import type { DayPageProps as PagerProps } from './day-pager';
 import { Icon } from './icon';
+import { openCoach, ReadyQuestion } from './coach-cards';
 import { MenuButton } from './menu-button';
 import { SMOOTH_MS } from './motion';
 import { MacroBars } from './nutrient-grid';
@@ -319,6 +320,17 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
           ) : null}
         </View>
 
+        {/* Today, from the afternoon: one question for the coach when the numbers ask for it. */}
+        {interactive && date === today ? (
+          <View style={styles.ready}>
+            <ReadyQuestion
+              eaten={totals}
+              target={data.plan.isDefault ? null : (targets ?? null)}
+              summary={targets ? `Oggi ${Math.round(totals.kcal)} kcal su ${Math.round(targets.kcal)}, proteine ${Math.round(totals.protein)} g su ${Math.round(targets.protein)}` : ''}
+            />
+          </View>
+        ) : null}
+
         {/*
           Each meal is one block, as in MyFitnessPal and FoodNoms: its name and calories at the
           top, the foods, and "Aggiungi alimento" at the bottom, so what is added plainly goes to
@@ -379,6 +391,15 @@ export const DayPage = memo(function DayPage({ date, today, interactive, onReady
                       groups={[
                         {
                           actions: [
+                            {
+                              label: 'Chiedi al coach',
+                              icon: 'sparkles',
+                              onPress: () =>
+                                openCoach(router, {
+                                  about: `${meal.label} di ${formatLongDate(date).toLowerCase()}`,
+                                  context: mealEntries.map((e) => `${e.name} ${Math.round(e.totals.kcal)} kcal, P${Math.round(e.totals.protein)}`).join('; '),
+                                }),
+                            },
                             { label: 'Salva come pasto', icon: 'bookmark', onPress: () => saveAsMeal(meal.key, count) },
                             {
                               label: `Svuota ${meal.label.toLowerCase()}`,
@@ -556,6 +577,7 @@ function Kcal({ value }: { value: number }) {
 }
 
 const styles = StyleSheet.create({
+  ready: { marginBottom: Spacing.md },
   flex: { flex: 1 },
   loading: { minHeight: 700 },
   pressed: { opacity: 0.6 },

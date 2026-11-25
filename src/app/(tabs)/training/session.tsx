@@ -3,16 +3,20 @@ import { useSQLiteContext } from 'expo-sqlite';
 import { ActivityIndicator, StyleSheet, View } from 'react-native';
 
 import { AppText } from '@/components/app-text';
+import { CoachWorkoutComment } from '@/components/coach-cards';
 import { confirmDestructive } from '@/components/prompt';
 import { ScreenScroll } from '@/components/screen';
 import { WorkoutRecap } from '@/components/workout-recap';
 import { useLiveQuery } from '@/db/live';
+import { useToday } from '@/hooks/use-today';
+import { daysBetween } from '@/lib/dates';
 import { deleteWorkout, getPreviousOfSameDay, getRecords, getWorkout, renameWorkout } from '@/db/workouts';
 
 /** A finished workout, opened again: the same recap as at its end. */
 export default function SessionScreen() {
   const db = useSQLiteContext();
   const router = useRouter();
+  const today = useToday();
   const params = useLocalSearchParams<{ id?: string }>();
   const id = Number(params.id);
   const { data } = useLiveQuery(`session:${id}`, async (database) => {
@@ -55,6 +59,7 @@ export default function SessionScreen() {
         <Stack.Toolbar.Button icon="trash" accessibilityLabel="Elimina allenamento" onPress={() => void remove()} />
       </Stack.Toolbar>
       <WorkoutRecap workout={workout} records={records} previous={previous} onRename={(name) => void renameWorkout(db, workout.id, name)} />
+      <CoachWorkoutComment workoutId={workout.id} today={today} recent={daysBetween(workout.date, today) <= 1} />
     </ScreenScroll>
   );
 }
