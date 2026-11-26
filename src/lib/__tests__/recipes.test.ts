@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import type { Nutrients } from '../nutrition';
-import { computeRecipe, parseRecipeFields } from '../recipes';
+import { computeRecipe, cookingOf, parseRecipeFields } from '../recipes';
 
 const n = (kcal: number, protein: number, carbs: number, fat: number): Nutrients => ({
   kcal, protein, carbs, fat, sugars: null, fiber: null, satFat: null, salt: null,
@@ -37,6 +37,64 @@ describe('computeRecipe', () => {
   it('needs at least one ingredient with some weight', () => {
     expect(computeRecipe([], 500, 2)).toBeNull();
     expect(computeRecipe([{ quantity: 0, per100: n(100, 1, 1, 1) }], null, null)).toBeNull();
+  });
+});
+
+describe('cookingOf', () => {
+  it('knows what takes water and what loses it', () => {
+    expect(cookingOf('Pasta di semola, cruda')?.factor).toBe(2.2);
+    expect(cookingOf('Spaghetti n.5')?.factor).toBe(2.2);
+    expect(cookingOf("Pasta all'uovo fresca")?.factor).toBe(1.6);
+    expect(cookingOf('Riso bianco, crudo')?.factor).toBe(2.6);
+    expect(cookingOf('Farina di mais (polenta), cruda')?.factor).toBe(4);
+    expect(cookingOf('Fagioli cannellini secchi')?.factor).toBe(2.4);
+    expect(cookingOf('Macinato di manzo 15% di grassi, crudo')?.factor).toBe(0.75);
+    expect(cookingOf('Petto di pollo, crudo')?.factor).toBe(0.75);
+    expect(cookingOf('Filetto di merluzzo')?.factor).toBe(0.8);
+  });
+
+  it('leaves alone what is cooked, preserved or not cooked in water', () => {
+    for (const name of [
+      'Pasta di semola, cotta',
+      'Riso bianco, cotto',
+      'Fagioli borlotti in scatola',
+      'Ceci, lessati',
+      "Tonno sott'olio, sgocciolato",
+      'Prosciutto cotto',
+      'Bresaola',
+      'Gallette di riso integrale',
+      'Pasta sfoglia',
+      'Passata di pomodoro',
+      'Olio extravergine di oliva',
+      'Mozzarella',
+    ]) {
+      expect(cookingOf(name), name).toBeNull();
+    }
+    expect(cookingOf('Riso, crudo', 'ml')).toBeNull();
+  });
+});
+
+describe('computeRecipe with the cooking', () => {
+  it('estimates the cooked weight when it is not given', () => {
+    const r = computeRecipe(
+      [
+        { name: 'Pasta di semola, cruda', quantity: 500, per100: n(371, 13, 75, 1.5) },
+        { name: 'Macinato di manzo 15% di grassi, crudo', quantity: 300, per100: n(215, 18.6, 0, 15) },
+        { name: 'Passata di pomodoro', quantity: 700, per100: n(33, 1.3, 6, 0.2) },
+      ],
+      null,
+      null,
+    )!;
+    expect(r.rawWeight).toBe(1500);
+    expect(r.weight).toBeCloseTo(1100 + 225 + 700);
+    expect(r.estimated).toBe(true);
+    expect(r.cooking).toEqual(['pasta ×2,2', 'carne ×0,75']);
+  });
+
+  it('trusts the scale over the estimate', () => {
+    const r = computeRecipe([{ name: 'Riso bianco, crudo', quantity: 300, per100: n(360, 7, 80, 0.6) }], 700, null)!;
+    expect(r.weight).toBe(700);
+    expect(r.estimated).toBe(false);
   });
 });
 

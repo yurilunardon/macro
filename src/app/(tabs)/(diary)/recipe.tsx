@@ -131,7 +131,7 @@ function RecipeEditor() {
           label="Peso finale cotto"
           value={draft.cookedWeight}
           onChangeText={(cookedWeight) => recipeDraft.set({ cookedWeight })}
-          placeholder={result ? formatNumber(result.rawWeight, 0) : '—'}
+          placeholder={result ? `${result.estimated ? '≈ ' : ''}${formatNumber(Math.round(result.weight), 0)}` : '—'}
           suffix="g"
           numeric
           invalid={bad('cookedWeight')}
@@ -146,7 +146,9 @@ function RecipeEditor() {
         />
       </ListGroup>
       <SectionFooter>
-        Peso del piatto cotto. Se vuoto, si usa la somma degli ingredienti crudi.
+        {result?.estimated
+          ? `Stimato dalla cottura: ${result.cooking.join(', ')}, il resto com’è. Crudi sono ${formatNumber(Math.round(result.rawWeight), 0)} g. Se lo pesi, scrivilo.`
+          : 'Peso di tutto il piatto cotto. Se non lo sai, si stima da come cuociono gli ingredienti.'}
       </SectionFooter>
 
       <SectionTitle>Ingredienti</SectionTitle>
@@ -168,6 +170,11 @@ function RecipeEditor() {
           label="Aggiungi ingrediente"
           onPress={() => router.push({ pathname: '/add', params: { mode: 'ingredient' } })}
         />
+        <ActionRow
+          label="Incolla dal messaggio"
+          symbol="sparkles"
+          onPress={() => router.push({ pathname: '/add/words', params: { mode: 'ingredient' } })}
+        />
       </ListGroup>
       <SectionFooter>
         {draft.ingredients.length > 0
@@ -184,7 +191,7 @@ function RecipeEditor() {
         <>
           <SectionTitle>Valori</SectionTitle>
           <Card style={styles.summary}>
-            <SummaryLine label="Tutta la ricetta" detail={`${formatNumber(result.weight, 0)} g`} totals={result.totals} />
+            <SummaryLine label="Tutta la ricetta" detail={`${result.estimated ? '≈ ' : ''}${formatNumber(result.weight, 0)} g`} totals={result.totals} />
             <SummaryLine label="Per 100 g" totals={result.per100} />
             {result.servingSize ? (
               <SummaryLine

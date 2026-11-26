@@ -29,9 +29,11 @@ import { useSettled } from '@/hooks/use-settled';
 import { useTheme } from '@/hooks/use-theme';
 import { formatDayTitle } from '@/lib/dates';
 import { formatKcal } from '@/lib/format';
+import { looksLikeSeveral } from '@/lib/food-words';
 import { mealLabel } from '@/lib/meals';
 import type { Food, FoodDraft } from '@/lib/nutrition';
 import { OffNetworkError, searchProducts } from '@/lib/off';
+import { useCoachKey } from '@/services/coach';
 import { haptics } from '@/services/haptics';
 
 type ListKey = 'recent' | 'favorites' | 'basic' | 'custom';
@@ -70,6 +72,7 @@ export default function AddScreen() {
   const abortRef = useRef<AbortController | null>(null);
   const trimmed = query.trim();
   const settled = useSettled();
+  const { key: coachKey } = useCoachKey();
 
   const lists = useLiveQuery(`add-lists:${list}`, (database) =>
     list === 'recent' ? getRecentFoods(database) : list === 'favorites' ? getFavoriteFoods(database) : Promise.resolve([]),
@@ -195,6 +198,24 @@ export default function AddScreen() {
         </>
       ) : (
         <>
+          {coachKey && mode !== 'favorite' && local.data && (looksLikeSeveral(trimmed) || local.data.length === 0) ? (
+            <ListGroup>
+              <Pressable
+                onPress={() => router.push({ pathname: '/add/words', params: { ...params, text: trimmed } })}
+                accessibilityRole="button"
+                style={({ pressed }) => [styles.coachRow, pressed && { backgroundColor: theme.cardPressed }]}>
+                <Icon name="sparkles" size={20} tone="accent" />
+                <View style={styles.flex}>
+                  <AppText tone="accent" weight="600">
+                    {mode === 'ingredient' ? 'Leggi con il coach' : 'Componi con il coach'}
+                  </AppText>
+                  <AppText variant="footnote" tone="textSecondary" numberOfLines={1}>
+                    {`«${trimmed}»`}
+                  </AppText>
+                </View>
+              </Pressable>
+            </ListGroup>
+          ) : null}
           {local.data && local.data.length > 0 ? (
             <>
               <SectionTitle>Sul telefono</SectionTitle>
@@ -420,6 +441,14 @@ const styles = StyleSheet.create({
     paddingHorizontal: Spacing.lg,
   },
   nested: { borderTopWidth: StyleSheet.hairlineWidth },
+  coachRow: {
+    minHeight: 56,
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: Spacing.md,
+    paddingHorizontal: Spacing.lg,
+    paddingVertical: Spacing.sm,
+  },
   footnote: { paddingHorizontal: Spacing.lg, paddingTop: Spacing.sm },
   retry: { paddingTop: Spacing.md, minHeight: 44, justifyContent: 'center' },
 });

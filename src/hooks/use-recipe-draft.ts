@@ -43,6 +43,9 @@ export function useRecipeDraft(): RecipeDraft {
 }
 
 export const recipeDraft = {
+  get(): RecipeDraft {
+    return draft;
+  },
   start(initial: Partial<Omit<RecipeDraft, 'ingredients'>> & { ingredients?: RecipeIngredient[] } = {}): void {
     update({ ...EMPTY, ...initial, ingredients: (initial.ingredients ?? []).map(withUid) });
   },
